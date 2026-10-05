@@ -241,8 +241,16 @@ describeDb('Screening pipeline', () => {
     expect(r.statusCode).toBe(201);
     vid = r.json().id;
     expect((await rec().post(`/vacancies/${vid}/criteria/extract`)).statusCode).toBe(503);
-    await admin().put('/admin/ai/anthropic', { apiKey: 'sk-ant-testtesttest' });
-    expect((await admin().put('/admin/ai/active', { provider: 'anthropic' })).statusCode).toBe(200);
+    const conn = await admin().post('/admin/ai/connections', {
+      name: 'Anthropic',
+      kind: 'anthropic',
+      apiKey: 'sk-ant-testtesttest',
+    });
+    await admin().post(`/admin/ai/connections/${conn.json().id}/models`, {
+      models: [{ modelId: 'claude-test' }],
+    });
+    const models = (await admin().get('/admin/ai')).json().connections[0].models;
+    expect((await admin().put('/admin/ai/active', { modelId: models[0].id })).statusCode).toBe(200);
   });
 
   it('proposes criteria from the JD as an editable draft, with the disqualifier carrying a rule', async () => {

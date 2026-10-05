@@ -182,10 +182,22 @@ export interface AdminUser {
   lastSeenAt: string;
   mustChangePassword: boolean;
 }
-export interface AiProvider {
-  provider: 'anthropic' | 'openai' | 'gemini';
-  model: string;
-  hasKey: boolean;
-  keyHint: string | null;
+export interface AiModel {
+  id: string;
+  connectionId: string;
+  modelId: string;
+  label: string;
   isActive: boolean;
+}
+export interface AiConnection {
+  id: string;
+  name: string;
+  kind: 'anthropic' | 'openai' | 'gemini' | 'openai_compatible';
+  baseUrl: string | null;
+  keyHint: string;
+  models: AiModel[];
+}
+export interface AiOverview {
+  active: { modelRowId: string; provider: string; model: string } | null;
+  connections: AiConnection[];
 }

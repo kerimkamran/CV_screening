@@ -5,6 +5,13 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
 
 ## 1. Push and create
 
+> **Use the Blueprint (or Runtime: Docker).** If you create the service by hand with the default "Node"
+> runtime, Render runs `npm install`/`npm run build`/`npm run start`. That now works (`npm start` migrates and
+> starts the API), but poppler is not installed there, so PDF CVs cannot be read and go to manual review.
+> If a deploy failed with `Missing script: "start"`, either pull this version, or delete the service and create it
+> from the Blueprint. A hand-made service must have Language = Docker and Dockerfile Path = `docker/render.Dockerfile`,
+> and the environment variables listed in `render.yaml`.
+
 1. Push this repository to GitHub (`kerimkamran/CV_screening`).
 2. Render dashboard → **New → Blueprint** → pick the repository. Render reads `render.yaml` and proposes the database and the service.
 3. When asked, fill the variables marked `sync: false`:
@@ -16,7 +23,10 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
 ## 2. First use
 
 1. Open the URL, sign in as the bootstrap admin, choose a new password.
-2. **Admin → AI providers**: paste the keys for up to three providers, press **Test** on each, and **Make active** on the one to use. Models are editable; the defaults are placeholders, so set the model names your accounts offer.
+2. **Admin → AI models**: you are not limited to a fixed list.
+   - **Add an AI company**: choose Anthropic, OpenAI or Google, or "Other company (OpenAI-compatible)" for Mistral, DeepSeek, Groq, xAI, OpenRouter and similar (give its https base URL, usually ending in `/v1`). Paste ONE API key; it covers all of that company's models.
+   - **Choose models**: press **Load models** on the company, tick any number of models from the list it returns (or type a model id), and **Add selected models**.
+   - **Decide which to use**: press **Use this** on one model. It runs a test call first and switches only if the test works. Switch to any other model or company whenever you like; new screenings use the new choice and each assessment records the company and model that produced it.
 3. **Admin → Users**: add recruiters. Each gets an email with the link and a temporary password and must choose their own at first sign-in.
 4. A recruiter creates a vacancy, extracts criteria, edits and freezes them, confirms the candidate notice, uploads CVs, reviews, decides, exports.
 
@@ -34,5 +44,5 @@ temporary password once on screen and passes it on securely.
 - **Backups**: use a paid Postgres plan (the free one expires after 30 days) and enable its backups. CVs are stored in the database.
 - **Scale**: keep one instance (the screening queue runs inside the API process).
 - **Logs**: structured JSON; CV text is never logged. Each response carries `x-correlation-id`.
-- **Rotate a provider key**: Admin → AI providers → paste the new key → Save. **Remove key** also deactivates that provider.
+- **Rotate a key**: Admin → AI models → the company → Key and settings → Replace API key → Save. **Remove company** deletes its key and models; if one of them was active, no model is active until you choose another.
 - **Disable a user**: Admin → Users → Disable (their session stops working on the next request).

@@ -2,6 +2,7 @@
 // Container entrypoint for the single-service deploy (Render): migrate, set up the least-privilege
 // database login if the host allows it, then start the API as PID-child with signals forwarded.
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -54,7 +55,15 @@ if (pw && pw.length >= 16 && !pw.includes('\u0000')) {
   console.warn('WARNING: APP_DB_PASSWORD not set; the API will connect as the database owner.');
 }
 
-// 3. Run the API.
+// 3. Run the API. Without Docker (a plain Node service) the web build is still served if present.
+const webDist = join(here, '..', 'apps', 'web', 'dist');
+if (!process.env.WEB_DIST_DIR && existsSync(webDist)) process.env.WEB_DIST_DIR = webDist;
+const pdf = spawnSync('pdftotext', ['-v'], { stdio: 'ignore' });
+if (pdf.error) {
+  console.warn(
+    'WARNING: pdftotext (poppler-utils) is not installed here, so PDF CVs cannot be read and will be sent to manual review. Deploy with docker/render.Dockerfile (Runtime: Docker) to fix this.',
+  );
+}
 const child = spawn(process.execPath, [join(here, '..', 'apps', 'api', 'dist', 'main.js')], {
   stdio: 'inherit',
   env: { ...process.env, DATABASE_URL: appUrl },

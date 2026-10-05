@@ -202,11 +202,8 @@ export class DocumentsController {
       manual: rows.filter((r) => r.state === 'manual').length,
       undecided: rows.filter((r) => !r.decision).length,
     };
-    const ai = (
-      await this.db.query(
-        `SELECT 1 FROM ai_setting s JOIN ai_provider_config c ON c.provider = s.active_provider WHERE c.key_ciphertext IS NOT NULL`,
-      )
-    ).rowCount;
+    const ai = (await this.db.query(`SELECT 1 FROM ai_setting WHERE active_model IS NOT NULL`))
+      .rowCount;
     return { counts, aiActive: Boolean(ai), candidates: filtered };
   }
 

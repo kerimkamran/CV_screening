@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchReadiness, session } from './api';
+import { AiSettings } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown };
@@ -104,7 +105,7 @@ describe('sign-in and gates', () => {
     );
     render(<App check={up} />);
     expect(
-      await screen.findByText(/Administrators manage users and AI providers/),
+      await screen.findByText(/Administrators manage users and AI models/),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vacancies' })).not.toBeInTheDocument();
@@ -207,5 +208,93 @@ describe('fetchReadiness', () => {
     );
     expect(seen[0]).toMatch(/\/readyz$/);
     expect(seen[0]).not.toMatch(/^https?:/);
+  });
+});
+
+describe('admin AI models', () => {
+  it("lets the admin load a company's models, add several, and switch the active one", async () => {
+    const overview = {
+      active: null,
+      connections: [
+        {
+          id: 'C1',
+          name: 'Mistral',
+          kind: 'openai_compatible',
+          baseUrl: 'https://api.example.com/v1',
+          keyHint: '1234',
+          models: [
+            { id: 'M1', connectionId: 'C1', modelId: 'small', label: 'small', isActive: false },
+          ],
+        },
+      ],
+    };
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/admin/ai')) return { body: overview };
+      if (url.endsWith('/available-models'))
+        return {
+          body: {
+            models: [
+              { id: 'small', label: 'small' },
+              { id: 'large', label: 'large' },
+              { id: 'medium', label: 'medium' },
+            ],
+          },
+        };
+      if (url.endsWith('/models/M1/test')) return { body: { ok: true, ms: 5 } };
+      if (init?.method === 'POST' || init?.method === 'PUT') return { body: {} };
+      return { status: 404, body: {} };
+    });
+    render(<AiSettings />);
+    expect(await screen.findByText(/No model is active/)).toBeInTheDocument();
+    expect(screen.getByText('small')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Load Mistral models' }));
+    // the model already chosen is not offered again
+    expect(await screen.findByLabelText('large')).toBeInTheDocument();
+    expect(screen.queryByLabelText('small')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('large'));
+    await userEvent.click(screen.getByLabelText('medium'));
+    await userEvent.click(screen.getByRole('button', { name: /Add selected models \(2\)/ }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith('/admin/ai/connections/C1/models'))).toBe(true),
+    );
+    const add = calls.find((c) => c.url.endsWith('/admin/ai/connections/C1/models'))!;
+    expect(
+      JSON.parse(String(add.init!.body)).models.map((m: { modelId: string }) => m.modelId),
+    ).toEqual(['large', 'medium']);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Use this' }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/admin/ai/active'))).toBe(true));
+    expect(
+      JSON.parse(String(calls.find((c) => c.url.endsWith('/admin/ai/active'))!.init!.body)),
+    ).toEqual({ modelId: 'M1' });
+    // the test ran first, so a failing model would never have been switched to
+    const order = calls.map((c) => c.url);
+    expect(order.findIndex((u) => u.endsWith('/models/M1/test'))).toBeLessThan(
+      order.findIndex((u) => u.endsWith('/admin/ai/active')),
+    );
+  });
+
+  it('adds a company of any kind, asking for a base URL only for OpenAI-compatible ones', async () => {
+    const calls = mockFetch((url, init) =>
+      init?.method === 'POST'
+        ? { status: 201, body: { id: 'N' } }
+        : { body: { active: null, connections: [] } },
+    );
+    render(<AiSettings />);
+    await screen.findByText(/No model is active/);
+    expect(screen.queryByLabelText(/^Base URL/)).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'openai_compatible');
+    await userEvent.type(screen.getByLabelText('Name shown to administrators'), 'DeepSeek');
+    await userEvent.type(screen.getByLabelText(/^Base URL/), 'https://api.example.com/v1');
+    await userEvent.type(screen.getByLabelText(/^API key/), 'key-1234567890');
+    await userEvent.click(screen.getByRole('button', { name: 'Add company' }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
+    expect(JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body))).toEqual({
+      name: 'DeepSeek',
+      kind: 'openai_compatible',
+      apiKey: 'key-1234567890',
+      baseUrl: 'https://api.example.com/v1',
+    });
   });
 });

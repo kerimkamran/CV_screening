@@ -11,7 +11,6 @@
     "apps/*"
   ],
   "scripts": {
-    "start": "node apps/api/dist/main.js",
     "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
     "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
@@ -26,6 +25,7 @@
     "guard:bundle": "node scripts/check-bundle-keys.mjs apps/web/dist",
     "guard:isolation": "node scripts/check-env-isolation.mjs",
     "guard:residency": "node scripts/check-residency.mjs --hcl infra/terraform",
+    "start": "node scripts/render-start.mjs",
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web"
   },

@@ -120,7 +120,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
             className={`rounded px-3 py-1.5 ${route === '/admin/ai' ? 'bg-sky-700 text-white' : 'bg-white border'}`}
             href="#/admin/ai"
           >
-            AI providers
+            AI models
           </a>
         </nav>
         {route === '/admin/ai' ? <AiSettings /> : <Users meId={me.userId} />}
@@ -137,8 +137,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   } else if (!isTa && isAdmin) {
     body = (
       <Notice kind="info">
-        Administrators manage users and AI providers under Admin. Candidate data is available only
-        to recruiters.
+        Administrators manage users and AI models under Admin. Candidate data is available only to
+        recruiters.
       </Notice>
     );
   } else {

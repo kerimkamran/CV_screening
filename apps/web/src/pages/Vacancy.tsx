@@ -485,7 +485,7 @@ function CandidatesTab({
       {data && !data.aiActive && (
         <Notice kind="warn">
           No AI provider is active, so uploaded CVs will wait in the queue. An administrator can set
-          one up under Admin → AI providers.
+          one up under Admin → AI models.
         </Notice>
       )}
 

@@ -5,7 +5,7 @@ the OIDC path and the Azure IaC remain in the repository and are selected with `
 
 ## Decided by the programme owner
 
-- AI providers: an administrator adds up to three provider keys and chooses which one is active.
+- AI models: an administrator adds any number of AI companies (Anthropic, OpenAI, Google, or any OpenAI-compatible company by base URL), one API key each; chooses models from each company's own list; and decides which one model is active. The active model can be switched at any time and every assessment records the company and model that produced it.
 - Data: real candidates, internal trial.
 - Hosting: Render.
 - Sign-in: an administrator creates recruiter accounts; the system generates a password and emails credentials and a link.
