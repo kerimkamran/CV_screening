@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ENV, type Env } from '../config/env';
+import { deriveMasterKey } from './master-key';
 
 /** AES-256-GCM. The provider name is bound as AAD so a ciphertext cannot be moved between rows. */
 @Injectable()
@@ -13,7 +14,7 @@ export class SettingsCrypto {
         'SETTINGS_ENCRYPTION_KEY is not configured; provider keys cannot be stored',
       );
     }
-    return Buffer.from(this.env.SETTINGS_ENCRYPTION_KEY, 'base64');
+    return deriveMasterKey(this.env.SETTINGS_ENCRYPTION_KEY);
   }
 
   encrypt(plaintext: string, aad: string): string {
