@@ -1,0 +1,7 @@
+# Copy to backend.hcl (git-ignored via *.hcl is NOT assumed — keep real values out of the repo).
+# State storage must itself be in an approved EU region.
+resource_group_name  = "rg-cvscreen-tfstate"
+storage_account_name = "cvscreentfstate"
+container_name       = "tfstate"
+key                  = "dev.terraform.tfstate"
+use_azuread_auth     = true

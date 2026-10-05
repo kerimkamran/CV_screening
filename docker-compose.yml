@@ -1,0 +1,20 @@
+# Local development dependencies. pgvector image is used so retrieval (S13) needs no infra change.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: cv
+      POSTGRES_PASSWORD: cv
+      POSTGRES_DB: cv_screening
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cv -d cv_screening']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  valkey:
+    image: valkey/valkey:8
+    ports: ['6379:6379']
+volumes:
+  pgdata:

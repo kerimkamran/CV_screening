@@ -1,0 +1,13 @@
+DROP TRIGGER IF EXISTS requirement_frozen_guard ON requirement;
+DROP TRIGGER IF EXISTS requirement_set_frozen_guard ON requirement_set;
+DROP FUNCTION IF EXISTS forbid_change_when_frozen();
+DROP TABLE IF EXISTS requirement;
+DROP TABLE IF EXISTS requirement_set;
+DROP TABLE IF EXISTS job_description_version;
+DROP TABLE IF EXISTS vacancy;
+DROP TABLE IF EXISTS organization;
+DROP TYPE IF EXISTS actor_kind;
+DROP TYPE IF EXISTS screening_profile;
+DROP TYPE IF EXISTS confidence_level;
+DROP TYPE IF EXISTS requirement_class;
+DROP DOMAIN IF EXISTS ulid;

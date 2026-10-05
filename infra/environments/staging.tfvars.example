@@ -1,0 +1,4 @@
+# PLAT-08: staging is isolated — own subscription (or at minimum own resource group), own state, own vault, own database.
+subscription_id = "00000000-0000-0000-0000-000000000000" # use a DIFFERENT subscription per environment where possible
+environment     = "staging"
+location        = "westeurope"

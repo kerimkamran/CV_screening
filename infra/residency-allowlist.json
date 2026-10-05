@@ -1,0 +1,5 @@
+{
+  "_comment": "PLAT-09 / D5. Approved Azure regions for any resource holding or processing candidate data. Changing this file is a governance decision (DPO + Legal), not an engineering one.",
+  "allowedRegions": ["westeurope", "northeurope"],
+  "globalResourceTypes": ["azurerm_client_config", "azurerm_subscription", "azurerm_role_assignment", "azurerm_monitor_diagnostic_setting"]
+}

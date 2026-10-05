@@ -1,0 +1,55 @@
+# Render Blueprint. In the Render dashboard: New → Blueprint → select this repository.
+# Fill the variables marked "sync: false" when prompted. See docs/deploy-render.md.
+databases:
+  - name: cv-screening-db
+    region: frankfurt # EU
+    plan: basic-256mb # the free plan is deleted after 30 days; do not use it for candidate data
+    databaseName: cv_screening
+    user: cv_owner
+    postgresMajorVersion: '17'
+    ipAllowList: [] # private network only: no public access to the candidate database
+
+services:
+  - type: web
+    name: cv-screening
+    runtime: docker
+    dockerfilePath: ./docker/render.Dockerfile
+    dockerContext: .
+    region: frankfurt # must match the database region for the private network
+    plan: starter
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_MODE
+        value: local
+      - key: TRUST_PROXY
+        value: 'true'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cv-screening-db
+          property: connectionString
+      # Generated once by Render and kept across deploys. Do not change SETTINGS_ENCRYPTION_KEY
+      # later: stored AI provider keys could no longer be decrypted.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SETTINGS_ENCRYPTION_KEY
+        generateValue: true
+      - key: APP_DB_PASSWORD
+        generateValue: true
+      # First administrator (created only while no admin exists; must change password at first sign-in).
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      # Public address of this service, e.g. https://cv-screening.onrender.com
+      - key: APP_BASE_URL
+        sync: false
+      # Email for credentials: "resend" (HTTPS API, works on every plan) or "smtp".
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false

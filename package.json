@@ -1,0 +1,43 @@
+{
+  "name": "cv-screening",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Azerconnect AI recruitment screening platform (Programme Plan v1.0)",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
+    "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build -w packages/shared && npm run test --workspaces --if-present && npm run test:scripts",
+    "test:scripts": "node --test \"scripts/__tests__/*.test.mjs\"",
+    "db:migrate": "node scripts/migrate.mjs up",
+    "db:rollback": "node scripts/migrate.mjs down",
+    "db:status": "node scripts/migrate.mjs status",
+    "db:roundtrip": "node scripts/migrate-roundtrip.mjs",
+    "guard:bundle": "node scripts/check-bundle-keys.mjs apps/web/dist",
+    "guard:isolation": "node scripts/check-env-isolation.mjs",
+    "guard:residency": "node scripts/check-residency.mjs --hcl infra/terraform",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0"
+  },
+  "overrides": {
+    "typescript": "~5.9.3"
+  }
+}
