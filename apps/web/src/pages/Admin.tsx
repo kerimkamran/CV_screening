@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, type AdminUser, type AiConnection, type AiOverview, type Role } from '../api';
+import {
+  api,
+  type AdminUser,
+  type AiCompany,
+  type AiConnection,
+  type AiModelChoice,
+  type AiOverview,
+  type Role,
+} from '../api';
 import {
   btnDanger,
   btnPrimary,
@@ -199,19 +207,20 @@ export function Users({ meId }: { meId: string }) {
   );
 }
 
-const KIND_LABEL: Record<AiConnection['kind'], string> = {
-  anthropic: 'Anthropic (Claude)',
-  openai: 'OpenAI',
-  gemini: 'Google (Gemini)',
-  openai_compatible: 'Other company (OpenAI-compatible)',
-};
+type Msg = { kind: 'ok' | 'error' | 'info'; text: string };
 
 export function AiSettings() {
   const [data, setData] = useState<AiOverview>({ active: null, connections: [] });
+  const [catalog, setCatalog] = useState<AiCompany[]>([]);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
     try {
-      setData(await api.get<AiOverview>('/admin/ai'));
+      const [overview, cat] = await Promise.all([
+        api.get<AiOverview>('/admin/ai'),
+        api.get<{ companies: AiCompany[] }>('/admin/ai/catalog'),
+      ]);
+      setData(overview);
+      setCatalog(cat.companies);
     } catch (e) {
       setError(errMsg(e));
     }
@@ -223,13 +232,20 @@ export function AiSettings() {
       <Notice kind={data.active ? 'ok' : 'warn'}>
         {data.active
           ? `Screening uses ${data.active.provider} · ${data.active.model}. You can switch to any other model below at any time; each assessment records the model that produced it.`
-          : 'No model is active. Add a company with its API key, choose models from its list, and make one active. Until then uploaded CVs wait in the queue.'}
+          : 'No model is active. Choose a company, choose a model, add the API key, then press "Use this". Until then uploaded CVs wait in the queue.'}
       </Notice>
       {error && <Notice kind="error">{error}</Notice>}
-      <AddCompany onAdded={load} />
+      {catalog.length > 0 && (
+        <AddModel catalog={catalog} connections={data.connections} onDone={load} />
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {data.connections.map((c) => (
-          <CompanyCard key={c.id} c={c} onChanged={load} />
+          <CompanyCard
+            key={c.id}
+            c={c}
+            company={catalog.find((x) => x.id === c.company)}
+            onChanged={load}
+          />
         ))}
       </div>
       <Notice kind="info">
@@ -242,30 +258,109 @@ export function AiSettings() {
   );
 }
 
-function AddCompany({ onAdded }: { onAdded: () => void }) {
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<AiConnection['kind']>('openai');
-  const [baseUrl, setBaseUrl] = useState('');
+/** Three steps: company, model, API key (plus any extra options the company needs). */
+function AddModel({
+  catalog,
+  connections,
+  onDone,
+}: {
+  catalog: AiCompany[];
+  connections: AiConnection[];
+  onDone: () => void;
+}) {
+  const [companyId, setCompanyId] = useState(catalog[0]!.id);
+  const [list, setList] = useState<AiModelChoice[] | null>(null); // live list, once loaded
+  const [live, setLive] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [typed, setTyped] = useState('');
+  const [filter, setFilter] = useState('');
   const [key, setKey] = useState('');
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [options, setOptions] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<Msg | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const company = catalog.find((c) => c.id === companyId)!;
+  const existing = connections.find((c) => c.company === companyId);
+  const have = new Set(existing?.models.map((m) => m.modelId));
+  const shown = (list ?? company.knownModels)
+    .filter((m) => !have.has(m.id))
+    .filter((m) => `${m.id} ${m.label}`.toLowerCase().includes(filter.toLowerCase()));
+  const toAdd = [...picked, ...(typed.trim() ? [typed.trim()] : [])];
+  const labelOf = (id: string) =>
+    (list ?? company.knownModels).find((m) => m.id === id)?.label ?? id;
+  const settings = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== ''));
+  const canLoad = Boolean(key.trim().length >= 8 || existing);
+
+  const chooseCompany = (id: string) => {
+    setCompanyId(id);
+    setList(null);
+    setLive(false);
+    setPicked(new Set());
+    setTyped('');
+    setFilter('');
+    setKey('');
+    setOptions({});
+    setMsg(null);
+  };
+
+  const loadAll = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r =
+        key.trim().length >= 8
+          ? await api.post<{ live: boolean; models: AiModelChoice[]; error?: string }>(
+              '/admin/ai/discover',
+              { company: companyId, apiKey: key.trim(), settings },
+            )
+          : await api.get<{ live: boolean; models: AiModelChoice[]; error?: string }>(
+              `/admin/ai/connections/${existing!.id}/available-models`,
+            );
+      setList(r.models);
+      setLive(r.live);
+      setMsg(
+        r.live
+          ? { kind: 'ok', text: `${r.models.length} models available to this key.` }
+          : { kind: 'info', text: r.error ?? 'Showing the documented models.' },
+      );
+    } catch (e) {
+      setMsg({ kind: 'error', text: errMsg(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setMsg(null);
     try {
-      await api.post('/admin/ai/connections', {
-        name,
-        kind,
-        apiKey: key,
-        ...(kind === 'openai_compatible' ? { baseUrl } : {}),
-      });
-      setName('');
+      const models = toAdd.map((modelId) => ({ modelId, label: labelOf(modelId) }));
+      if (!existing) {
+        await api.post('/admin/ai/connections', {
+          company: companyId,
+          apiKey: key.trim(),
+          ...(Object.keys(settings).length ? { settings } : {}),
+          models,
+        });
+      } else {
+        if (key.trim() || Object.keys(settings).length) {
+          await api.put(`/admin/ai/connections/${existing.id}`, {
+            ...(key.trim() ? { apiKey: key.trim() } : {}),
+            ...(Object.keys(settings).length ? { settings } : {}),
+          });
+        }
+        if (models.length)
+          await api.post(`/admin/ai/connections/${existing.id}/models`, { models });
+      }
+      setPicked(new Set());
+      setTyped('');
       setKey('');
-      setBaseUrl('');
-      setMsg({ kind: 'ok', text: 'Company added. Load its models to choose which to use.' });
-      onAdded();
+      setMsg({
+        kind: 'ok',
+        text: `Saved. Press "Test" on the model below, then "Use this" to make it the screening model.`,
+      });
+      onDone();
     } catch (err) {
       setMsg({ kind: 'error', text: errMsg(err) });
     } finally {
@@ -274,63 +369,150 @@ function AddCompany({ onAdded }: { onAdded: () => void }) {
   };
 
   return (
-    <Card title="Add an AI company">
-      <form className="grid gap-3 md:grid-cols-2" onSubmit={submit}>
-        <Field label="Type">
-          <select
-            className={input}
-            value={kind}
-            onChange={(e) => {
-              const k = e.target.value as AiConnection['kind'];
-              setKind(k);
-              if (!name && k !== 'openai_compatible') setName(KIND_LABEL[k].split(' (')[0]!);
-            }}
-          >
-            {(Object.keys(KIND_LABEL) as AiConnection['kind'][]).map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Name shown to administrators">
-          <input
-            className={input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={60}
-            required
-          />
-        </Field>
-        {kind === 'openai_compatible' && (
-          <Field
-            label="Base URL"
-            hint="The company's OpenAI-style address, ending in /v1 (see its API documentation). Must be https and public. Works for Mistral, DeepSeek, Groq, xAI, OpenRouter and similar."
-          >
+    <Card title="Add a model">
+      <form className="space-y-5" onSubmit={submit}>
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-slate-800">1. Company</h3>
+          <Field label="Company">
+            <select
+              className={input}
+              value={companyId}
+              onChange={(e) => chooseCompany(e.target.value)}
+            >
+              {catalog.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {connections.some((x) => x.company === c.id) ? ' (key added)' : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="text-xs text-slate-600">{company.dataNote}</p>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-slate-800">2. Model</h3>
+          <p className="text-xs text-slate-600">
+            {live
+              ? `All ${company.name} models this key can use. Tick one or more.`
+              : `${company.name} models from its documentation. After you add the key, load the full list from ${company.name} itself.`}
+          </p>
+          {(list ?? company.knownModels).length > 8 && (
             <input
               className={input}
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com/v1"
-              required
+              placeholder="Filter models"
+              aria-label="Filter models"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
             />
-          </Field>
-        )}
-        <Field label="API key" hint="One key for all of this company's models.">
-          <input
-            className={input}
-            type="password"
-            autoComplete="off"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            required
-            minLength={8}
-          />
-        </Field>
-        <div className="flex items-end">
-          <button className={btnPrimary} disabled={busy} type="submit">
-            Add company
+          )}
+          <ul
+            className="max-h-56 divide-y divide-slate-100 overflow-auto rounded-md border border-slate-200"
+            aria-label="Models"
+          >
+            {shown.length === 0 && (
+              <li className="px-3 py-2 text-sm text-slate-500">Nothing more to add.</li>
+            )}
+            {shown.map((m) => (
+              <li key={m.id}>
+                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(m.id)}
+                    onChange={(e) => {
+                      const next = new Set(picked);
+                      if (e.target.checked) next.add(m.id);
+                      else next.delete(m.id);
+                      setPicked(next);
+                    }}
+                  />
+                  <span className="font-mono text-xs">{m.id}</span>
+                  {m.label !== m.id && <span className="text-slate-500">{m.label}</span>}
+                  {m.note && <span className="text-xs text-amber-700">({m.note})</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-end gap-3">
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={busy || !canLoad}
+              title={canLoad ? undefined : 'Add the API key first (step 3)'}
+              onClick={() => void loadAll()}
+            >
+              Load all {company.name} models
+            </button>
+            <div className="min-w-48 flex-1">
+              <Field label="Other model ID" hint="For a model that is not in the list.">
+                <input
+                  className={input}
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder="model-id"
+                />
+              </Field>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-slate-800">3. API key</h3>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field
+              label="API key"
+              hint={
+                existing
+                  ? `Key ending …${existing.keyHint} is on file. Leave empty to keep it.`
+                  : company.keyHelp
+              }
+            >
+              <input
+                className={input}
+                type="password"
+                autoComplete="off"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                required={!existing}
+                minLength={8}
+              />
+            </Field>
+            {company.extraFields.map((f) => (
+              <Field key={f.key} label={f.label} hint={f.hint}>
+                <select
+                  className={input}
+                  value={options[f.key] ?? existing?.settings[f.key] ?? ''}
+                  required={f.required && !existing}
+                  onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })}
+                >
+                  {!f.required && <option value="">Default</option>}
+                  {f.options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ))}
+          </div>
+        </section>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            className={btnPrimary}
+            disabled={
+              busy ||
+              (!existing && toAdd.length === 0) ||
+              (existing && toAdd.length === 0 && !key.trim())
+            }
+            type="submit"
+          >
+            {existing ? 'Save' : 'Save company and model'}
+            {toAdd.length ? ` (${toAdd.length} model${toAdd.length > 1 ? 's' : ''})` : ''}
           </button>
+          <span className="text-xs text-slate-500">
+            The key is sent over HTTPS, encrypted on the server, and never shown again.
+          </span>
         </div>
       </form>
       {msg && (
@@ -342,14 +524,18 @@ function AddCompany({ onAdded }: { onAdded: () => void }) {
   );
 }
 
-function CompanyCard({ c, onChanged }: { c: AiConnection; onChanged: () => void }) {
+function CompanyCard({
+  c,
+  company,
+  onChanged,
+}: {
+  c: AiConnection;
+  company: AiCompany | undefined;
+  onChanged: () => void;
+}) {
   const [key, setKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState(c.baseUrl ?? '');
-  const [available, setAvailable] = useState<{ id: string; label: string }[] | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState('');
-  const [typed, setTyped] = useState('');
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
+  const [options, setOptions] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<Msg | null>(null);
   const [busy, setBusy] = useState(false);
 
   const run = async (fn: () => Promise<void>) => {
@@ -365,22 +551,15 @@ function CompanyCard({ c, onChanged }: { c: AiConnection; onChanged: () => void 
     }
   };
 
-  const have = new Set(c.models.map((m) => m.modelId));
-  const choices = (available ?? [])
-    .filter((m) => !have.has(m.id))
-    .filter((m) => `${m.id} ${m.label}`.toLowerCase().includes(filter.toLowerCase()));
-  const toAdd = [...picked, ...(typed.trim() ? [typed.trim()] : [])];
+  const changed = Object.entries(options).filter(([k, v]) => v !== (c.settings[k] ?? ''));
 
   return (
-    <Card
-      title={c.name}
-      actions={<span className="text-xs text-slate-500">{KIND_LABEL[c.kind]}</span>}
-    >
+    <Card title={c.name} actions={<span className="text-xs text-slate-500">key …{c.keyHint}</span>}>
       <div className="space-y-4">
         <div>
           <h3 className="mb-1 text-sm font-medium text-slate-700">Models you can use</h3>
           {c.models.length === 0 ? (
-            <p className="text-sm text-slate-500">None chosen yet. Load the list below.</p>
+            <p className="text-sm text-slate-500">None yet. Add one above.</p>
           ) : (
             <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
               {c.models.map((m) => (
@@ -444,110 +623,9 @@ function CompanyCard({ c, onChanged }: { c: AiConnection; onChanged: () => void 
           )}
         </div>
 
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className={btnSecondary}
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  const r = await api.get<{
-                    models: { id: string; label: string }[];
-                    error?: string;
-                  }>(`/admin/ai/connections/${c.id}/available-models`);
-                  setAvailable(r.models);
-                  setPicked(new Set());
-                  setMsg(
-                    r.models.length
-                      ? { kind: 'ok', text: `${r.models.length} models available to this key.` }
-                      : {
-                          kind: 'error',
-                          text: `${(r.error ?? 'The company returned no models.').replace(/\.?$/, '.')} You can still type a model id below.`,
-                        },
-                  );
-                })
-              }
-            >
-              {available ? 'Reload list' : `Load ${c.name} models`}
-            </button>
-          </div>
-          {available && available.length > 0 && (
-            <>
-              <input
-                className={input}
-                placeholder="Filter models"
-                aria-label="Filter models"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-              <ul className="max-h-48 divide-y divide-slate-100 overflow-auto rounded-md border border-slate-200">
-                {choices.length === 0 && (
-                  <li className="px-3 py-2 text-sm text-slate-500">Nothing to add.</li>
-                )}
-                {choices.map((m) => (
-                  <li key={m.id}>
-                    <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50">
-                      <input
-                        type="checkbox"
-                        checked={picked.has(m.id)}
-                        onChange={(e) => {
-                          const next = new Set(picked);
-                          if (e.target.checked) next.add(m.id);
-                          else next.delete(m.id);
-                          setPicked(next);
-                        }}
-                      />
-                      <span className="font-mono text-xs">{m.id}</span>
-                      {m.label !== m.id && <span className="text-slate-500">{m.label}</span>}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <Field label="Or type a model id" hint="For a model that is not in the list.">
-            <input
-              className={input}
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              placeholder="model-id"
-            />
-          </Field>
-          <button
-            className={btnPrimary}
-            disabled={busy || toAdd.length === 0}
-            onClick={() =>
-              run(async () => {
-                await api.post(`/admin/ai/connections/${c.id}/models`, {
-                  models: toAdd.map((modelId) => ({
-                    modelId,
-                    label: available?.find((a) => a.id === modelId)?.label,
-                  })),
-                });
-                setPicked(new Set());
-                setTyped('');
-                setMsg({ kind: 'ok', text: `Added ${toAdd.length}.` });
-              })
-            }
-          >
-            Add selected models{toAdd.length ? ` (${toAdd.length})` : ''}
-          </button>
-        </div>
-
         <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-slate-700">
-            Key and settings (key ending …{c.keyHint})
-          </summary>
+          <summary className="cursor-pointer font-medium text-slate-700">Key and settings</summary>
           <div className="mt-2 space-y-2">
-            {c.kind === 'openai_compatible' && (
-              <Field label="Base URL">
-                <input
-                  className={input}
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                />
-              </Field>
-            )}
             <Field label="Replace API key" hint="The stored key is never shown.">
               <input
                 className={input}
@@ -558,19 +636,36 @@ function CompanyCard({ c, onChanged }: { c: AiConnection; onChanged: () => void 
                 onChange={(e) => setKey(e.target.value)}
               />
             </Field>
+            {company?.extraFields.map((f) => (
+              <Field key={f.key} label={f.label} hint={f.hint}>
+                <select
+                  className={input}
+                  value={options[f.key] ?? c.settings[f.key] ?? ''}
+                  onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })}
+                >
+                  {!f.required && <option value="">Default</option>}
+                  {f.options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ))}
             <div className="flex flex-wrap gap-2">
               <button
                 className={btnPrimary}
-                disabled={busy || (!key && baseUrl === (c.baseUrl ?? ''))}
+                disabled={busy || (!key && changed.length === 0)}
                 onClick={() =>
                   run(async () => {
                     await api.put(`/admin/ai/connections/${c.id}`, {
                       ...(key ? { apiKey: key } : {}),
-                      ...(c.kind === 'openai_compatible' && baseUrl !== c.baseUrl
-                        ? { baseUrl }
+                      ...(changed.length
+                        ? { settings: { ...c.settings, ...Object.fromEntries(changed) } }
                         : {}),
                     });
                     setKey('');
+                    setOptions({});
                     setMsg({ kind: 'ok', text: 'Saved.' });
                   })
                 }

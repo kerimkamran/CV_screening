@@ -8,7 +8,7 @@ It is decision support — a human owns every adverse decision.
 ## MVP for an internal trial (this branch)
 
 Runnable end to end: admin-created recruiter accounts (generated password emailed with the sign-in link), an admin-managed
-AI gateway (any number of AI companies, one key each, models chosen from each company's list, one active, encrypted server-side), vacancy + job description → AI-proposed criteria that the
+AI gateway (choose company → model → key: Google, OpenAI, Anthropic, Z.ai, Sakana Fugu, NVIDIA; one key each, models chosen from each company's list, one active, encrypted server-side), vacancy + job description → AI-proposed criteria that the
 recruiter edits and freezes → bulk CV upload (PDF/DOCX/TXT, deduplicated) → deterministic knockout → per-criterion assessment with
 verbatim evidence → deterministic score with breakdown → named-human decisions with reasons → Excel export, erasure and audit.
 

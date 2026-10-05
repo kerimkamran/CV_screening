@@ -241,12 +241,9 @@ describeDb('Screening pipeline', () => {
     expect(r.statusCode).toBe(201);
     vid = r.json().id;
     expect((await rec().post(`/vacancies/${vid}/criteria/extract`)).statusCode).toBe(503);
-    const conn = await admin().post('/admin/ai/connections', {
-      name: 'Anthropic',
-      kind: 'anthropic',
+    await admin().post('/admin/ai/connections', {
+      company: 'anthropic',
       apiKey: 'sk-ant-testtesttest',
-    });
-    await admin().post(`/admin/ai/connections/${conn.json().id}/models`, {
       models: [{ modelId: 'claude-test' }],
     });
     const models = (await admin().get('/admin/ai')).json().connections[0].models;

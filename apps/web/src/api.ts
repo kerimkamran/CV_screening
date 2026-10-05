@@ -191,13 +191,34 @@ export interface AiModel {
 }
 export interface AiConnection {
   id: string;
+  company: string;
   name: string;
-  kind: 'anthropic' | 'openai' | 'gemini' | 'openai_compatible';
-  baseUrl: string | null;
+  /** Non-secret options such as data region. */
+  settings: Record<string, string>;
   keyHint: string;
   models: AiModel[];
 }
 export interface AiOverview {
   active: { modelRowId: string; provider: string; model: string } | null;
   connections: AiConnection[];
+}
+export interface AiExtraField {
+  key: string;
+  label: string;
+  hint?: string;
+  required: boolean;
+  options: { value: string; label: string }[];
+}
+export interface AiCompany {
+  id: string;
+  name: string;
+  keyHelp: string;
+  dataNote: string;
+  extraFields: AiExtraField[];
+  knownModels: { id: string; label: string; note?: string }[];
+}
+export interface AiModelChoice {
+  id: string;
+  label: string;
+  note?: string;
 }

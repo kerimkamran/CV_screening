@@ -1,24 +1,21 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { DbService } from '../db/db.service';
+import { COMPANIES, isCompany, type CompanyId } from './catalog';
 import {
   ADAPTERS,
-  assertPublicHost,
-  MODEL_LISTERS,
+  listModels,
   ProviderError,
   type CompletionRequest,
   type CompletionResult,
   type FetchLike,
   type ModelInfo,
-  type ProviderKind,
   type Target,
 } from './providers';
 import { SettingsCrypto } from './settings-crypto';
 
 export const FETCH = Symbol('FETCH');
 
-interface Resolved extends Target {
-  name: string;
-}
+type Connection = Omit<Target, 'model'>;
 
 /**
  * The only code that ever sees a provider key, and only on the server. Routes calls to whichever
@@ -28,8 +25,6 @@ interface Resolved extends Target {
 export class AiGateway {
   private readonly log = new Logger('ai-gateway');
   fetcher: FetchLike = fetch;
-  /** Refuses non-public addresses for administrator-supplied base URLs. Replaceable in tests. */
-  hostCheck: (url: string) => Promise<void> = assertPublicHost;
 
   constructor(
     private readonly db: DbService,
@@ -49,7 +44,7 @@ export class AiGateway {
   /** Uses the active model, or the given model (by its row id) when testing one specifically. */
   async complete(req: CompletionRequest, modelRowId?: string): Promise<CompletionResult> {
     const target = await this.resolve(modelRowId ?? (await this.requireActive()));
-    await this.checkHost(target);
+    const name = COMPANIES[target.company].name;
     try {
       return await this.attempt(target, req);
     } catch (e) {
@@ -58,26 +53,30 @@ export class AiGateway {
         try {
           return await this.attempt(target, { ...req, omitTemperature: true });
         } catch (e2) {
-          throw this.wrap(e2, target.name);
+          throw this.wrap(e2, name);
         }
       }
-      throw this.wrap(e, target.name);
+      throw this.wrap(e, name);
     }
   }
 
   /** Models the stored key of a connection can use. */
   async listModels(connectionId: string): Promise<ModelInfo[]> {
-    const t = await this.connection(connectionId);
-    await this.checkHost(t);
+    return this.discover(await this.connection(connectionId));
+  }
+
+  /** Same, for a key that is not stored yet (used once, never kept). */
+  async discover(c: Connection): Promise<ModelInfo[]> {
     try {
-      return await MODEL_LISTERS[t.kind](this.fetcher, t);
+      return await listModels(this.fetcher, c);
     } catch (e) {
-      throw this.wrap(e, t.name);
+      throw this.wrap(e, COMPANIES[c.company].name);
     }
   }
 
-  private async attempt(t: Resolved, req: CompletionRequest): Promise<CompletionResult> {
-    const call = () => ADAPTERS[t.kind](this.fetcher, t, req);
+  private async attempt(t: Target, req: CompletionRequest): Promise<CompletionResult> {
+    const adapter = ADAPTERS[COMPANIES[t.company].protocol];
+    const call = () => adapter(this.fetcher, t, req);
     let text: string;
     try {
       text = await call();
@@ -86,16 +85,7 @@ export class AiGateway {
       await new Promise((r) => setTimeout(r, 1500));
       text = await call();
     }
-    return { text, provider: t.name, model: t.model };
-  }
-
-  private async checkHost(t: Resolved | Omit<Resolved, 'model'>) {
-    if (t.kind !== 'openai_compatible') return;
-    try {
-      await this.hostCheck(t.baseUrl!);
-    } catch (e) {
-      throw this.wrap(new ProviderError((e as Error).message, false), t.name);
-    }
+    return { text, provider: COMPANIES[t.company].name, model: t.model };
   }
 
   private wrap(e: unknown, name: string): Error {
@@ -113,33 +103,31 @@ export class AiGateway {
     const a = await this.active();
     if (!a) {
       throw new ServiceUnavailableException(
-        'No AI model is active. An administrator must add a connection, choose a model and make it active.',
+        'No AI model is active. An administrator must add a company, choose a model and make it active.',
       );
     }
     return a.modelRowId;
   }
 
-  private async connection(connectionId: string): Promise<Omit<Resolved, 'model'>> {
+  private async connection(connectionId: string): Promise<Connection> {
     const { rows } = await this.db.query<{
-      name: string;
-      kind: ProviderKind;
-      base_url: string | null;
+      company: string;
+      settings: Record<string, string>;
       key_ciphertext: string;
       key_aad: string;
-    }>(`SELECT name, kind, base_url, key_ciphertext, key_aad FROM ai_connection WHERE id = $1`, [
+    }>(`SELECT company, settings, key_ciphertext, key_aad FROM ai_connection WHERE id = $1`, [
       connectionId,
     ]);
     const r = rows[0];
-    if (!r) throw new ServiceUnavailableException('Unknown AI connection');
+    if (!r || !isCompany(r.company)) throw new ServiceUnavailableException('Unknown AI company');
     return {
-      name: r.name,
-      kind: r.kind,
-      baseUrl: r.base_url,
+      company: r.company as CompanyId,
+      settings: r.settings ?? {},
       key: this.crypto.decrypt(r.key_ciphertext, r.key_aad),
     };
   }
 
-  private async resolve(modelRowId: string): Promise<Resolved> {
+  private async resolve(modelRowId: string): Promise<Target> {
     const { rows } = await this.db.query<{ connection_id: string; model_id: string }>(
       `SELECT connection_id, model_id FROM ai_model WHERE id = $1`,
       [modelRowId],

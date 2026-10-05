@@ -16,7 +16,7 @@ document, not legal advice; the DPO and Legal own the conclusions.
 ## Still required before or during the trial (owners in brackets)
 
 1. DPIA and, for the plan's high-risk classification, the FRIA and EU AI Act documentation (DPO / Legal).
-2. Data-processing agreements and transfer assessments with the chosen model provider(s) and Render (DPO / Legal / IT). Until then, do not use CVs of EU data subjects with a provider whose processing location is not covered.
+2. Data-processing agreements and transfer assessments with the chosen model provider(s) and Render (DPO / Legal / IT). Until then, do not use CVs of EU data subjects with a provider whose processing location is not covered. Per company on the AI-model list: Google, OpenAI and Anthropic process in the US by default (OpenAI offers an EU-residency project option); Z.ai is a China-based provider; Sakana Fugu orchestrates several underlying models, so more than one party may handle the text; NVIDIA's free API catalog is for development only. Enable and activate only the companies whose DPA and transfer assessment are complete.
 3. Review against Azerbaijani personal-data law, including any localisation or registration duties (Legal).
 4. Retention schedule and a purge routine; today deletion is manual per candidate (HR / DPO).
 5. A process to answer a candidate's request for human review, access, or deletion within the statutory time (HR).

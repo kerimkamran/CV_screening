@@ -211,57 +211,146 @@ describe('fetchReadiness', () => {
   });
 });
 
-describe('admin AI models', () => {
-  it("lets the admin load a company's models, add several, and switch the active one", async () => {
-    const overview = {
-      active: null,
-      connections: [
+const catalog = {
+  companies: [
+    {
+      id: 'google',
+      name: 'Google',
+      keyHelp: 'A Gemini API key.',
+      dataNote: 'Google data note.',
+      extraFields: [],
+      knownModels: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' }],
+    },
+    {
+      id: 'openai',
+      name: 'OpenAI',
+      keyHelp: 'An OpenAI key.',
+      dataNote: 'OpenAI data note.',
+      extraFields: [
         {
-          id: 'C1',
-          name: 'Mistral',
-          kind: 'openai_compatible',
-          baseUrl: 'https://api.example.com/v1',
-          keyHint: '1234',
-          models: [
-            { id: 'M1', connectionId: 'C1', modelId: 'small', label: 'small', isActive: false },
+          key: 'dataRegion',
+          label: 'Data region',
+          required: false,
+          options: [
+            { value: 'global', label: 'Global (default)' },
+            { value: 'eu', label: 'Europe' },
           ],
         },
       ],
-    };
+      knownModels: [
+        { id: 'gpt-6-astra', label: 'GPT-6 Astra' },
+        { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+      ],
+    },
+    {
+      id: 'nvidia',
+      name: 'NVIDIA',
+      keyHelp: 'An nvapi key.',
+      dataNote: 'NVIDIA data note.',
+      extraFields: [],
+      knownModels: [{ id: 'nvidia/nemotron-a', label: 'Nemotron A' }],
+    },
+  ],
+};
+
+const overviewWith = (connections: unknown[]) => ({ active: null, connections });
+
+describe('admin AI models', () => {
+  it('adds a company in three steps: company, model (full live list), then the API key', async () => {
     const calls = mockFetch((url, init) => {
-      if (url.endsWith('/admin/ai')) return { body: overview };
-      if (url.endsWith('/available-models'))
+      if (url.endsWith('/admin/ai/catalog')) return { body: catalog };
+      if (url.endsWith('/admin/ai/discover'))
         return {
           body: {
+            live: true,
             models: [
-              { id: 'small', label: 'small' },
-              { id: 'large', label: 'large' },
-              { id: 'medium', label: 'medium' },
+              { id: 'nvidia/nemotron-a', label: 'Nemotron A' },
+              { id: 'nvidia/nemotron-b', label: 'Nemotron B' },
             ],
           },
         };
-      if (url.endsWith('/models/M1/test')) return { body: { ok: true, ms: 5 } };
-      if (init?.method === 'POST' || init?.method === 'PUT') return { body: {} };
+      if (url.endsWith('/admin/ai')) return { body: overviewWith([]) };
+      if (init?.method === 'POST') return { status: 201, body: { id: 'N', added: 1 } };
       return { status: 404, body: {} };
     });
     render(<AiSettings />);
     expect(await screen.findByText(/No model is active/)).toBeInTheDocument();
-    expect(screen.getByText('small')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Load Mistral models' }));
-    // the model already chosen is not offered again
-    expect(await screen.findByLabelText('large')).toBeInTheDocument();
-    expect(screen.queryByLabelText('small')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByLabelText('large'));
-    await userEvent.click(screen.getByLabelText('medium'));
-    await userEvent.click(screen.getByRole('button', { name: /Add selected models \(2\)/ }));
+    await userEvent.selectOptions(screen.getByLabelText('Company'), 'nvidia');
+    expect(screen.getByText('NVIDIA data note.')).toBeInTheDocument();
+    // Before the key is added the documented models are shown and the full list cannot be loaded.
+    expect(screen.getByLabelText(/nemotron-a/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load all NVIDIA models' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText(/^API key/), 'nvapi-1234567890');
+    await userEvent.click(screen.getByRole('button', { name: 'Load all NVIDIA models' }));
+    expect(await screen.findByLabelText(/nemotron-b/)).toBeInTheDocument();
+    const discover = calls.find((c) => c.url.endsWith('/admin/ai/discover'))!;
+    expect(JSON.parse(String(discover.init!.body))).toMatchObject({
+      company: 'nvidia',
+      apiKey: 'nvapi-1234567890',
+    });
+
+    await userEvent.click(screen.getByLabelText(/nemotron-b/));
+    await userEvent.click(
+      screen.getByRole('button', { name: /Save company and model \(1 model\)/ }),
+    );
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith('/admin/ai/connections'))).toBe(true),
+    );
+    expect(
+      JSON.parse(String(calls.find((c) => c.url.endsWith('/admin/ai/connections'))!.init!.body)),
+    ).toEqual({
+      company: 'nvidia',
+      apiKey: 'nvapi-1234567890',
+      models: [{ modelId: 'nvidia/nemotron-b', label: 'Nemotron B' }],
+    });
+  });
+
+  it('shows a company’s extra options, and for an added company keeps its key and adds models', async () => {
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/admin/ai/catalog')) return { body: catalog };
+      if (url.endsWith('/models/M1/test')) return { body: { ok: true, ms: 5 } };
+      if (url.endsWith('/admin/ai'))
+        return {
+          body: overviewWith([
+            {
+              id: 'C1',
+              company: 'openai',
+              name: 'OpenAI',
+              settings: {},
+              keyHint: '1234',
+              models: [
+                {
+                  id: 'M1',
+                  connectionId: 'C1',
+                  modelId: 'gpt-6-astra',
+                  label: 'GPT-6 Astra',
+                  isActive: false,
+                },
+              ],
+            },
+          ]),
+        };
+      if (init?.method === 'POST' || init?.method === 'PUT') return { body: {} };
+      return { status: 404, body: {} };
+    });
+    render(<AiSettings />);
+    await screen.findByText(/No model is active/);
+    await userEvent.selectOptions(screen.getByLabelText('Company'), 'openai');
+    expect(screen.getAllByLabelText('Data region').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Key ending …1234 is on file/)).toBeInTheDocument();
+    // the model already added is not offered again
+    expect(screen.queryByRole('checkbox', { name: /gpt-6-astra/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/gpt-6-luna/));
+    await userEvent.click(screen.getByRole('button', { name: /^Save \(1 model\)/ }));
     await waitFor(() =>
       expect(calls.some((c) => c.url.endsWith('/admin/ai/connections/C1/models'))).toBe(true),
     );
-    const add = calls.find((c) => c.url.endsWith('/admin/ai/connections/C1/models'))!;
+    expect(calls.some((c) => c.init?.method === 'PUT')).toBe(false); // key kept as is
     expect(
-      JSON.parse(String(add.init!.body)).models.map((m: { modelId: string }) => m.modelId),
-    ).toEqual(['large', 'medium']);
+      JSON.parse(String(calls.find((c) => c.url.endsWith('/connections/C1/models'))!.init!.body)),
+    ).toEqual({ models: [{ modelId: 'gpt-6-luna', label: 'GPT-6 Luna' }] });
 
     await userEvent.click(screen.getByRole('button', { name: 'Use this' }));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/admin/ai/active'))).toBe(true));
@@ -273,28 +362,5 @@ describe('admin AI models', () => {
     expect(order.findIndex((u) => u.endsWith('/models/M1/test'))).toBeLessThan(
       order.findIndex((u) => u.endsWith('/admin/ai/active')),
     );
-  });
-
-  it('adds a company of any kind, asking for a base URL only for OpenAI-compatible ones', async () => {
-    const calls = mockFetch((url, init) =>
-      init?.method === 'POST'
-        ? { status: 201, body: { id: 'N' } }
-        : { body: { active: null, connections: [] } },
-    );
-    render(<AiSettings />);
-    await screen.findByText(/No model is active/);
-    expect(screen.queryByLabelText(/^Base URL/)).not.toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText('Type'), 'openai_compatible');
-    await userEvent.type(screen.getByLabelText('Name shown to administrators'), 'DeepSeek');
-    await userEvent.type(screen.getByLabelText(/^Base URL/), 'https://api.example.com/v1');
-    await userEvent.type(screen.getByLabelText(/^API key/), 'key-1234567890');
-    await userEvent.click(screen.getByRole('button', { name: 'Add company' }));
-    await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
-    expect(JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body))).toEqual({
-      name: 'DeepSeek',
-      kind: 'openai_compatible',
-      apiKey: 'key-1234567890',
-      baseUrl: 'https://api.example.com/v1',
-    });
   });
 });

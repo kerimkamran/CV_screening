@@ -23,10 +23,12 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
 ## 2. First use
 
 1. Open the URL, sign in as the bootstrap admin, choose a new password.
-2. **Admin → AI models**: you are not limited to a fixed list.
-   - **Add an AI company**: choose Anthropic, OpenAI or Google, or "Other company (OpenAI-compatible)" for Mistral, DeepSeek, Groq, xAI, OpenRouter and similar (give its https base URL, usually ending in `/v1`). Paste ONE API key; it covers all of that company's models.
-   - **Choose models**: press **Load models** on the company, tick any number of models from the list it returns (or type a model id), and **Add selected models**.
-   - **Decide which to use**: press **Use this** on one model. It runs a test call first and switches only if the test works. Switch to any other model or company whenever you like; new screenings use the new choice and each assessment records the company and model that produced it.
+2. **Admin → AI models**: three steps in one form.
+   - **1. Company**: Google, OpenAI, Anthropic, Z.ai, Sakana Fugu or NVIDIA. A short note under the choice says where that company processes data.
+   - **2. Model**: the company's documented models are listed straight away. After you type the key, **Load all <company> models** asks the company itself which models your key can use (Sakana and Z.ai may not offer a live list: then the documented models stay, and you can type any other model ID). Tick one or more.
+   - **3. API key**: paste ONE key per company; it covers all of that company's models. Extra options appear only where a company needs them (OpenAI: optional "Europe" data region, valid only for a project created with EU data residency).
+   - Press **Save company and model**, then **Test** and **Use this** on the model you want. **Use this** runs a test call first and switches only if it works. Switch to any other model or company whenever you like; each assessment records the company and model that produced it.
+   - To add more models to a company that already has its key, pick the company again: the key shows as "on file" and you only tick models.
 3. **Admin → Users**: add recruiters. Each gets an email with the link and a temporary password and must choose their own at first sign-in.
 4. A recruiter creates a vacancy, extracts criteria, edits and freezes them, confirms the candidate notice, uploads CVs, reviews, decides, exports.
 

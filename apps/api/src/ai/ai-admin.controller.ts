@@ -21,10 +21,11 @@ import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService, type Queryable } from '../db/db.service';
 import { AiGateway } from './ai-gateway.service';
-import { normaliseBaseUrl, PROVIDER_KINDS, validateBaseUrl } from './providers';
+import { COMPANIES, COMPANY_IDS, publicCatalog, validateSettings, type CompanyId } from './catalog';
+import type { ModelInfo } from './providers';
 import { SettingsCrypto } from './settings-crypto';
 
-const nameSchema = z.string().trim().min(1).max(60);
+const companySchema = z.enum(COMPANY_IDS);
 const keySchema = z.string().trim().min(8).max(500);
 const modelIdSchema = z
   .string()
@@ -32,23 +33,23 @@ const modelIdSchema = z
   .min(1)
   .max(150)
   .regex(/^[\w.\-:/@]+$/, 'model id has unsupported characters');
-const baseUrlSchema = z
-  .string()
-  .trim()
-  .max(300)
-  .transform((v, ctx) => {
-    try {
-      validateBaseUrl(v);
-      return normaliseBaseUrl(v);
-    } catch (e) {
-      ctx.addIssue({ code: 'custom', message: (e as Error).message });
-      return z.NEVER;
-    }
-  });
+const settingsSchema = z.record(z.string().max(40), z.unknown()).optional();
+const modelsSchema = z
+  .array(z.object({ modelId: modelIdSchema, label: z.string().trim().max(150).optional() }))
+  .max(100);
+
+/** Applies the company's own rules to its options, as a 400 on failure. */
+function settingsFor(company: CompanyId, raw: Record<string, unknown> | undefined) {
+  try {
+    return validateSettings(company, raw);
+  } catch (e) {
+    throw new BadRequestException((e as Error).message);
+  }
+}
 
 /**
- * ADMIN-only. An admin adds any number of AI companies ("connections"), each with one api key;
- * picks models from the company's own list; and decides which one model is active.
+ * ADMIN-only. The admin chooses a supported AI company, chooses models from that company's list,
+ * and adds ONE api key for the company; then decides which one model is active.
  * Keys go in, never out: responses carry only the last four characters.
  * Every change is audited in the same transaction, without the key.
  */
@@ -62,17 +63,23 @@ export class AiAdminController {
     private readonly gateway: AiGateway,
   ) {}
 
+  /** The companies the admin can choose from, with their options and documented models. */
+  @Get('catalog')
+  catalog() {
+    return { companies: publicCatalog() };
+  }
+
   @Get()
   async list() {
     const conns = await this.db.query<{
       id: string;
+      company: string;
       name: string;
-      kind: string;
-      baseUrl: string | null;
+      settings: Record<string, string>;
       keyHint: string;
       updatedAt: string;
     }>(
-      `SELECT id, name, kind, base_url AS "baseUrl", key_hint AS "keyHint", updated_at AS "updatedAt"
+      `SELECT id, company, name, settings, key_hint AS "keyHint", updated_at AS "updatedAt"
          FROM ai_connection ORDER BY lower(name)`,
     );
     const models = await this.db.query<{
@@ -96,6 +103,7 @@ export class AiAdminController {
     };
   }
 
+  /** Adds a company with its one key, and (optionally) the models picked for it, in one step. */
   @Post('connections')
   async create(
     @Body() body: unknown,
@@ -104,34 +112,46 @@ export class AiAdminController {
   ) {
     const b = parse(
       z.object({
-        name: nameSchema,
-        kind: z.enum(PROVIDER_KINDS),
-        baseUrl: baseUrlSchema.optional(),
+        company: companySchema,
         apiKey: keySchema,
+        settings: settingsSchema,
+        models: modelsSchema.optional(),
       }),
       body,
     );
-    if (b.kind === 'openai_compatible' && !b.baseUrl) {
-      throw new BadRequestException('Base URL is required for an OpenAI-compatible company');
-    }
-    if (b.kind !== 'openai_compatible' && b.baseUrl) {
-      throw new BadRequestException('Base URL applies only to OpenAI-compatible companies');
-    }
-    if (b.baseUrl) await this.checkHost(b.baseUrl);
+    const settings = settingsFor(b.company, b.settings);
+    const name = COMPANIES[b.company].name;
     const id = newId();
     const aad = `conn:${id}`;
     const cipher = this.crypto.encrypt(b.apiKey, aad);
     return this.db.withTx(async (tx) => {
-      await this.insertConnection(tx, id, b, cipher, aad, actor.userId);
-      await this.record(tx, actor, req, 'ai.connection_added', id, {
-        name: b.name,
-        kind: b.kind,
-        baseUrl: b.baseUrl,
+      await this.guardDuplicate(tx, name, async () => {
+        await tx.query(
+          `INSERT INTO ai_connection (id, company, name, settings, key_ciphertext, key_hint, key_aad, updated_by)
+           VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)`,
+          [
+            id,
+            b.company,
+            name,
+            JSON.stringify(settings),
+            cipher,
+            b.apiKey.slice(-4),
+            aad,
+            actor.userId,
+          ],
+        );
       });
-      return { id };
+      const added = await this.insertModels(tx, id, b.models ?? []);
+      await this.record(tx, actor, req, 'ai.connection_added', id, {
+        company: b.company,
+        settings,
+        models: (b.models ?? []).map((m) => m.modelId),
+      });
+      return { id, added };
     });
   }
 
+  /** Replaces the key and/or the options of a company. */
   @Put('connections/:id')
   async update(
     @Param('id') rawId: string,
@@ -140,46 +160,32 @@ export class AiAdminController {
     @Req() req: FastifyRequest,
   ) {
     const id = parse(ulidSchema, rawId);
-    const b = parse(
-      z.object({
-        name: nameSchema.optional(),
-        baseUrl: baseUrlSchema.optional(),
-        apiKey: keySchema.optional(),
-      }),
-      body,
-    );
-    if (!b.name && !b.baseUrl && !b.apiKey) throw new BadRequestException('Nothing to update');
-    if (b.baseUrl) await this.checkHost(b.baseUrl);
+    const b = parse(z.object({ apiKey: keySchema.optional(), settings: settingsSchema }), body);
+    if (!b.apiKey && !b.settings) throw new BadRequestException('Nothing to update');
     return this.db.withTx(async (tx) => {
-      const cur = await tx.query<{ kind: string; key_aad: string }>(
-        `SELECT kind, key_aad FROM ai_connection WHERE id = $1 FOR UPDATE`,
+      const cur = await tx.query<{ company: CompanyId; key_aad: string }>(
+        `SELECT company, key_aad FROM ai_connection WHERE id = $1 FOR UPDATE`,
         [id],
       );
       const c = cur.rows[0];
       if (!c) throw new NotFoundException();
-      if (b.baseUrl && c.kind !== 'openai_compatible') {
-        throw new BadRequestException('Base URL applies only to OpenAI-compatible companies');
-      }
-      await this.guardName(tx, b.name, id, async () => {
-        await tx.query(
-          `UPDATE ai_connection SET
-              name = COALESCE($2, name), base_url = COALESCE($3, base_url),
-              key_ciphertext = COALESCE($4, key_ciphertext), key_hint = COALESCE($5, key_hint),
-              updated_by = $6, updated_at = now()
-            WHERE id = $1`,
-          [
-            id,
-            b.name ?? null,
-            b.baseUrl ?? null,
-            b.apiKey ? this.crypto.encrypt(b.apiKey, c.key_aad) : null,
-            b.apiKey ? b.apiKey.slice(-4) : null,
-            actor.userId,
-          ],
-        );
-      });
+      const settings = b.settings ? settingsFor(c.company, b.settings) : null;
+      await tx.query(
+        `UPDATE ai_connection SET
+            settings = COALESCE($2::jsonb, settings),
+            key_ciphertext = COALESCE($3, key_ciphertext), key_hint = COALESCE($4, key_hint),
+            updated_by = $5, updated_at = now()
+          WHERE id = $1`,
+        [
+          id,
+          settings ? JSON.stringify(settings) : null,
+          b.apiKey ? this.crypto.encrypt(b.apiKey, c.key_aad) : null,
+          b.apiKey ? b.apiKey.slice(-4) : null,
+          actor.userId,
+        ],
+      );
       await this.record(tx, actor, req, 'ai.connection_updated', id, {
-        name: b.name,
-        baseUrl: b.baseUrl,
+        settings,
         keyReplaced: Boolean(b.apiKey),
       });
       return { id, saved: true };
@@ -202,17 +208,34 @@ export class AiAdminController {
     });
   }
 
-  /** The models this company's key can use, for the admin's picker. */
+  /**
+   * Every model of a company that a key can use. For a company that is already added, the stored
+   * key is used. Before it is added, the admin may send the key once (it is used for this one
+   * request and neither stored nor logged). If the company offers no live list, the models from
+   * its documentation are returned and the admin can still type any model id.
+   */
+  @Post('discover')
+  @HttpCode(200)
+  async discover(@Body() body: unknown) {
+    const b = parse(
+      z.object({ company: companySchema, apiKey: keySchema, settings: settingsSchema }),
+      body,
+    );
+    const settings = settingsFor(b.company, b.settings);
+    return this.live(b.company, () =>
+      this.gateway.discover({ company: b.company, key: b.apiKey, settings }),
+    );
+  }
+
   @Get('connections/:id/available-models')
   async available(@Param('id') rawId: string) {
     const id = parse(ulidSchema, rawId);
-    try {
-      return { models: await this.gateway.listModels(id) };
-    } catch (e) {
-      if (e instanceof NotFoundException) throw e;
-      // 200 with a message so the UI can fall back to typing a model id.
-      return { models: [], error: (e as Error).message.slice(0, 200) };
-    }
+    const row = await this.db.query<{ company: CompanyId }>(
+      `SELECT company FROM ai_connection WHERE id = $1`,
+      [id],
+    );
+    if (!row.rows[0]) throw new NotFoundException();
+    return this.live(row.rows[0].company, () => this.gateway.listModels(id));
   }
 
   /** Adds models to the admin's shortlist for this company (picked from the list, or typed). */
@@ -224,27 +247,11 @@ export class AiAdminController {
     @Req() req: FastifyRequest,
   ) {
     const id = parse(ulidSchema, rawId);
-    const { models } = parse(
-      z.object({
-        models: z
-          .array(z.object({ modelId: modelIdSchema, label: z.string().trim().max(150).optional() }))
-          .min(1)
-          .max(100),
-      }),
-      body,
-    );
+    const { models } = parse(z.object({ models: modelsSchema.min(1) }), body);
     return this.db.withTx(async (tx) => {
       const exists = await tx.query(`SELECT 1 FROM ai_connection WHERE id = $1`, [id]);
       if (!exists.rowCount) throw new NotFoundException();
-      let added = 0;
-      for (const m of models) {
-        const r = await tx.query(
-          `INSERT INTO ai_model (id, connection_id, model_id, label) VALUES ($1, $2, $3, $4)
-           ON CONFLICT (connection_id, model_id) DO NOTHING`,
-          [newId(), id, m.modelId, m.label || m.modelId],
-        );
-        added += r.rowCount ?? 0;
-      }
+      const added = await this.insertModels(tx, id, models);
       await this.record(tx, actor, req, 'ai.models_added', id, {
         models: models.map((m) => m.modelId),
       });
@@ -315,46 +322,59 @@ export class AiAdminController {
     }
   }
 
-  private async checkHost(url: string) {
+  /** The company's live list, or (200, with a message) its documented models when it has none. */
+  private async live(company: CompanyId, fetchLive: () => Promise<ModelInfo[]>) {
     try {
-      await this.gateway.hostCheck(url);
+      const models = await fetchLive();
+      if (models.length) return { live: true, models };
+      return {
+        live: false,
+        models: this.known(company),
+        error: 'The company returned no models for this key; showing its documented models.',
+      };
     } catch (e) {
-      throw new BadRequestException((e as Error).message);
+      if (e instanceof NotFoundException) throw e;
+      return {
+        live: false,
+        models: this.known(company),
+        error: `${(e as Error).message.slice(0, 160)}. Showing the documented models; you can also type a model id.`,
+      };
     }
   }
 
-  private async insertConnection(
-    tx: Queryable,
-    id: string,
-    b: { name: string; kind: string; baseUrl?: string; apiKey: string },
-    cipher: string,
-    aad: string,
-    actorId: string,
-  ) {
-    await this.guardName(tx, b.name, undefined, async () => {
-      await tx.query(
-        `INSERT INTO ai_connection (id, name, kind, base_url, key_ciphertext, key_hint, key_aad, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [id, b.name, b.kind, b.baseUrl ?? null, cipher, b.apiKey.slice(-4), aad, actorId],
-      );
-    });
+  private known(company: CompanyId): ModelInfo[] {
+    return COMPANIES[company].knownModels.map((m) => ({ id: m.id, label: m.label }));
   }
 
-  /** Runs `write`, turning the unique-name violation into a clear 409. */
-  private async guardName(
+  private async insertModels(
     tx: Queryable,
-    name: string | undefined,
-    _selfId: string | undefined,
-    write: () => Promise<void>,
-  ) {
+    connectionId: string,
+    models: { modelId: string; label?: string | undefined }[],
+  ): Promise<number> {
+    let added = 0;
+    for (const m of models) {
+      const r = await tx.query(
+        `INSERT INTO ai_model (id, connection_id, model_id, label) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (connection_id, model_id) DO NOTHING`,
+        [newId(), connectionId, m.modelId, m.label || m.modelId],
+      );
+      added += r.rowCount ?? 0;
+    }
+    return added;
+  }
+
+  /** Runs `write`, turning the one-connection-per-company violation into a clear 409. */
+  private async guardDuplicate(tx: Queryable, name: string, write: () => Promise<void>) {
     try {
-      await tx.query('SAVEPOINT name_guard');
+      await tx.query('SAVEPOINT dup_guard');
       await write();
-      await tx.query('RELEASE SAVEPOINT name_guard');
+      await tx.query('RELEASE SAVEPOINT dup_guard');
     } catch (e) {
       if ((e as { code?: string }).code === '23505') {
-        await tx.query('ROLLBACK TO SAVEPOINT name_guard');
-        throw new ConflictException(`A company named "${name}" already exists`);
+        await tx.query('ROLLBACK TO SAVEPOINT dup_guard');
+        throw new ConflictException(
+          `${name} is already added. Add more models to it, or replace its key.`,
+        );
       }
       throw e;
     }
