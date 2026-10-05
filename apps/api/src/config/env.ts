@@ -36,7 +36,7 @@ const EnvSchema = z.object({
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
   /**
    * AI provider keys are NOT environment variables: an ADMIN enters them in the app and they are
-   * stored AES-256-GCM encrypted. This is the master key for that encryption (32 bytes, base64).
+   * stored AES-256-GCM encrypted. This is the master key for that encryption: 32 bytes base64, or any secret of 32+ characters (hashed).
    */
   SETTINGS_ENCRYPTION_KEY: z.string().optional(),
   /** Directory holding the built web app; served by the API when set (single-service deploy). */
@@ -82,9 +82,9 @@ const Refined = EnvSchema.superRefine((e, ctx) => {
   }
   if (e.SETTINGS_ENCRYPTION_KEY !== undefined) {
     need(
-      Buffer.from(e.SETTINGS_ENCRYPTION_KEY, 'base64').length === 32,
+      e.SETTINGS_ENCRYPTION_KEY.trim().length >= 32,
       'SETTINGS_ENCRYPTION_KEY',
-      'must be 32 bytes, base64-encoded',
+      'must be at least 32 characters (a 32-byte base64 value is used as is; any other secret is hashed to 256 bits)',
     );
   }
   if (e.EMAIL_PROVIDER === 'smtp') need(e.SMTP_HOST, 'SMTP_HOST', 'required for smtp');

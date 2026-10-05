@@ -14,6 +14,19 @@ describe('loadEnv (PLAT-05)', () => {
     expect(env.READINESS_TIMEOUT_MS).toBe(2000);
   });
 
+  it('accepts any settings encryption secret of 32+ characters, and refuses a short one', () => {
+    const base = { ...OIDC, DATABASE_URL: 'postgres://u:p@h:5432/d' };
+    for (const key of [
+      'eeb76cdc4734dc743eff1117ad3526dd',
+      Buffer.alloc(32, 7).toString('base64'),
+    ]) {
+      expect(loadEnv({ ...base, SETTINGS_ENCRYPTION_KEY: key }).SETTINGS_ENCRYPTION_KEY).toBe(key);
+    }
+    expect(() => loadEnv({ ...base, SETTINGS_ENCRYPTION_KEY: 'short' })).toThrow(
+      /SETTINGS_ENCRYPTION_KEY/,
+    );
+  });
+
   it('fails fast when DATABASE_URL is missing', () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
   });
