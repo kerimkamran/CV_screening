@@ -10,7 +10,9 @@
     "packages/*",
     "apps/*"
   ],
-  "scripts": {
+     "scripts": {
+     "start": "npm run start:prod --workspace @cv/api"
+   }
     "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
     "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
