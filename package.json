@@ -11,8 +11,7 @@
     "apps/*"
   ],
      "scripts": {
-     "start": "npm run start:prod --workspace @cv/api"
-   }
+     "start": "npm run start:prod --workspace @cv/api",
     "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
     "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
@@ -28,8 +27,7 @@
     "guard:isolation": "node scripts/check-env-isolation.mjs",
     "guard:residency": "node scripts/check-residency.mjs --hcl infra/terraform",
     "dev:api": "npm run dev -w apps/api",
-    "dev:web": "npm run dev -w apps/web"
-  },
+    "dev:web": "npm run dev -w apps/web"}
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
