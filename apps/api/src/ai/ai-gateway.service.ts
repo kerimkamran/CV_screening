@@ -96,6 +96,7 @@ export class AiGateway {
       `${name}: ${msg}`,
       false,
       e instanceof ProviderError ? e.status : undefined,
+      e instanceof ProviderError ? e.detail : undefined,
     );
   }
 

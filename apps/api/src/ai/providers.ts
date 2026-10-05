@@ -29,8 +29,31 @@ export class ProviderError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly status?: number,
+    /**
+     * The provider's own short reason (e.g. "API key not valid"). Only ever shown by the admin
+     * "Test" and model-list calls, which carry no candidate data; never logged or audited.
+     */
+    readonly detail?: string,
   ) {
     super(message);
+  }
+}
+
+/** Pulls `error.message` (Google, OpenAI, Anthropic and most chat APIs nest it there), capped. */
+export async function providerReason(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { error?: unknown; message?: unknown };
+    const err = body.error;
+    const text =
+      typeof err === 'string'
+        ? err
+        : typeof err === 'object' && err !== null
+          ? str((err as { message?: unknown }).message)
+          : str(body.message);
+    const clean = text.replace(/\s+/g, ' ').trim().slice(0, 200);
+    return clean || undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -59,11 +82,13 @@ async function send(
     redirect: 'error', // never follow a redirect with a key attached
   });
   if (!res.ok) {
-    // Never include the response body: it can echo request content (CV text).
+    // The message stays body-free (a body can echo request content, i.e. CV text); the short
+    // `detail` is only surfaced by the admin Test / model-list calls.
     throw new ProviderError(
       `provider responded ${res.status}`,
       res.status === 429 || res.status >= 500,
       res.status,
+      res.status >= 400 && res.status < 500 ? await providerReason(res) : undefined,
     );
   }
   return res.json();

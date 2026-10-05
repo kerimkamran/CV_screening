@@ -1,5 +1,5 @@
 import { COMPANIES, COMPANY_IDS, isCompany, publicCatalog, validateSettings } from './catalog';
-import { ADAPTERS, listModels, type FetchLike, type Target } from './providers';
+import { ADAPTERS, ProviderError, listModels, type FetchLike, type Target } from './providers';
 
 interface Seen {
   url: string;
@@ -171,5 +171,49 @@ describe('live model lists keep only the company’s own text models', () => {
       data: [{ id: 'gpt-6-astra' }, { id: 'gpt-realtime-2' }, { id: 'text-embedding-3-large' }],
     });
     expect((await listModels(f, t('openai'))).map((m) => m.id)).toEqual(['gpt-6-astra']);
+  });
+});
+
+describe('provider error reasons', () => {
+  const failing = (status: number, body: unknown): FetchLike =>
+    (async () => new Response(JSON.stringify(body), { status })) as FetchLike;
+  const req = { system: 's', user: 'u', maxTokens: 16 };
+
+  it('keeps the message body-free but carries the provider’s short reason on 4xx', async () => {
+    const f = failing(400, {
+      error: {
+        code: 400,
+        message: 'API key not valid.\nPlease pass a valid API key.',
+        status: 'INVALID_ARGUMENT',
+      },
+    });
+    const e = await ADAPTERS.gemini(f, target('google', 'gemini-3.8-flash'), req).catch(
+      (x: unknown) => x,
+    );
+    expect(e).toBeInstanceOf(ProviderError);
+    expect((e as ProviderError).message).toBe('provider responded 400');
+    expect((e as ProviderError).detail).toBe('API key not valid. Please pass a valid API key.');
+  });
+
+  it('caps the reason and ignores bodies it cannot read, and 5xx carry none', async () => {
+    const long = await ADAPTERS.openai(
+      failing(401, { error: { message: 'x'.repeat(900) } }),
+      target('openai', 'gpt-6-astra'),
+      req,
+    ).catch((x: unknown) => x);
+    expect((long as ProviderError).detail).toHaveLength(200);
+    const plain = (async () => new Response('<html>nope</html>', { status: 403 })) as FetchLike;
+    const bad = await ADAPTERS.anthropic(
+      plain,
+      target('anthropic', 'claude-sonnet-5-5'),
+      req,
+    ).catch((x: unknown) => x);
+    expect((bad as ProviderError).detail).toBeUndefined();
+    const down = await ADAPTERS.openai(
+      failing(503, { error: { message: 'busy' } }),
+      target('openai', 'gpt-6-astra'),
+      req,
+    ).catch((x: unknown) => x);
+    expect((down as ProviderError).detail).toBeUndefined();
   });
 });

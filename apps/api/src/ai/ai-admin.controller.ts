@@ -22,7 +22,7 @@ import { parse, ulidSchema } from '../common/validate';
 import { DbService, type Queryable } from '../db/db.service';
 import { AiGateway } from './ai-gateway.service';
 import { COMPANIES, COMPANY_IDS, publicCatalog, validateSettings, type CompanyId } from './catalog';
-import type { ModelInfo } from './providers';
+import { ProviderError, type ModelInfo } from './providers';
 import { SettingsCrypto } from './settings-crypto';
 
 const companySchema = z.enum(COMPANY_IDS);
@@ -318,7 +318,12 @@ export class AiAdminController {
       return { ok: r.text.trim().length > 0, ms: Date.now() - started, model: r.model };
     } catch (e) {
       if (e instanceof NotFoundException) throw e;
-      return { ok: false, ms: Date.now() - started, error: (e as Error).message.slice(0, 200) };
+      const detail = e instanceof ProviderError && e.detail ? ` (${e.detail})` : '';
+      return {
+        ok: false,
+        ms: Date.now() - started,
+        error: `${(e as Error).message}${detail}`.slice(0, 400),
+      };
     }
   }
 
@@ -334,10 +339,13 @@ export class AiAdminController {
       };
     } catch (e) {
       if (e instanceof NotFoundException) throw e;
+      const detail = e instanceof ProviderError && e.detail ? ` (${e.detail})` : '';
       return {
         live: false,
         models: this.known(company),
-        error: `${(e as Error).message.slice(0, 160)}. Showing the documented models; you can also type a model id.`,
+        error:
+          `${(e as Error).message}${detail}`.slice(0, 300) +
+          `. Showing the documented models; you can also type a model id.`,
       };
     }
   }
