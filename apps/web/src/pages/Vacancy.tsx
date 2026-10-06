@@ -629,7 +629,7 @@ function CandidatesTab({
           <Field label="Filter">
             <select className={input} value={band} onChange={(e) => setBand(e.target.value)}>
               <option value="">All</option>
-              <option value="needs_review">Needs review</option>
+              <option value="needs_review">Needs a look</option>
               <option value="strong_match">Strong match</option>
               <option value="possible_match">Possible match</option>
               <option value="weak_match">Weak match</option>

@@ -15,6 +15,7 @@ import {
 } from '../results-logic';
 import { btnSecondary, errMsg, Notice } from '../ui';
 import { setFocus, useFocus } from '../focus';
+import { useIntake } from '../intake';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
 import { RequirementsDrawer } from './RequirementsDrawer';
@@ -57,6 +58,10 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [details, setDetails] = useState<Record<string, Detail | 'loading' | 'error'>>({});
   const [proof, setProof] = useState<{ doc: string; req: string } | null>(null);
 
+  const intake = useIntake(vacancyId);
+  const sending = intake !== null && intake.sent < intake.total;
+  const [skipped, setSkipped] = useState<{ filename: string; reason: string }[]>([]);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [adj, setAdj] = useState<Adjustments | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [adjNote, setAdjNote] = useState('');
@@ -77,6 +82,22 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     }
   }, [vacancyId]);
   useEffect(() => void load(), [load]);
+  // Files that were not taken in are listed, never dropped silently (spec 6.1.4).
+  const sentCount = intake?.sent ?? 0;
+  useEffect(() => {
+    api
+      .get<{ skipped: { filename: string; reason: string }[] }>(`/vacancies/${vacancyId}/skipped`)
+      .then(
+        (r) => setSkipped(Array.isArray(r?.skipped) ? r.skipped : []),
+        () => undefined,
+      );
+  }, [vacancyId, sentCount, data?.counts.total]);
+  // While files are still going up, keep looking for the ones already read.
+  useEffect(() => {
+    if (!sending) return;
+    const t = setInterval(() => void load(), 4000);
+    return () => clearInterval(t);
+  }, [sending, load]);
   const pending = data?.counts.queued ?? 0;
   useEffect(() => {
     if (!pending) return;
@@ -308,6 +329,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         </Notice>
       )}
 
+      {sending && (
+        <Notice kind="info">
+          <span role="status">
+            Sending {intake!.sent} of {intake!.total} files. You can start looking now: the rest
+            appear here as they are read.
+          </span>
+        </Notice>
+      )}
+      {intake?.error && <Notice kind="error">Some files could not be sent. {intake.error}</Notice>}
       {pending > 0 && (
         <div role="status" aria-live="polite" className="space-y-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -329,6 +359,32 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             value={read}
             aria-label="Resumes read"
           />
+        </div>
+      )}
+      {pending > 0 && (
+        <p className="text-sm text-ink-2">
+          {scored.length} ready, {pending} being read, {human.length} need a look
+        </p>
+      )}
+      {skipped.length > 0 && (
+        <div className="text-sm text-ink-2">
+          {skipped.length} skipped,{' '}
+          <button
+            className="text-link underline"
+            aria-expanded={showSkipped}
+            onClick={() => setShowSkipped((v) => !v)}
+          >
+            {showSkipped ? 'hide which' : 'see which'}
+          </button>
+          {showSkipped && (
+            <ul className="mt-1 max-h-48 list-disc overflow-auto pl-5">
+              {skipped.map((x, i) => (
+                <li key={i}>
+                  {x.filename}: {x.reason}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       {pending === 0 && stoppedCount > 0 && (

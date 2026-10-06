@@ -54,6 +54,9 @@ const EnvSchema = z.object({
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   /** Upload limits (MVP, in-process). */
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(50).default(10),
+  /** A ZIP of resumes (spec 6.1.4): the archive itself, and the most resumes one run may hold. */
+  MAX_ZIP_MB: z.coerce.number().int().min(1).max(500).default(100),
+  MAX_RESUMES_PER_RUN: z.coerce.number().int().min(1).max(5000).default(500),
   /**
    * IAM-06: bounded session lifetime. Tokens whose own lifetime (exp - iat) exceeds this are
    * refused, so a misconfigured IdP cannot mint effectively-permanent credentials. Idle timeout

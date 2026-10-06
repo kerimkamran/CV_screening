@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Criteria, type Requirement } from '../api';
 import { go } from '../route';
+import { filesFromDrop, isZip, startIntake } from '../intake';
 import { Sky } from '../Sky';
 import { btnPrimary, btnSecondary, Card, errMsg, Field, input, Notice } from '../ui';
 import { NOTICE_TEXT } from './Vacancy';
@@ -26,7 +27,7 @@ const EXPERIENCE_LINE: Record<Experience, string> = {
 };
 
 const DRAFT_KEY = 'cv-home-draft';
-const MAX_BATCH = 50;
+const COLLAPSE_ABOVE = 8;
 const MIN_TEXT = 50;
 
 interface Draft {
@@ -51,12 +52,23 @@ function loadDraft(): Draft {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
-const okFile = (f: File) => /\.(pdf|docx|txt)$/i.test(f.name);
+const okFile = (f: File) => /\.(pdf|docx|txt|zip)$/i.test(f.name);
+/** Operating-system litter inside a dropped folder: never worth a line. */
+const litter = (f: File) => /^(\.|~\$|Thumbs\.db$|desktop\.ini$)/i.test(f.name);
+const label = (f: File) =>
+  (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+const fileKey = (f: File) => `${label(f)}:${f.size}`;
 
 export function Home() {
   const [draft] = useState(loadDraft);
   const [files, setFiles] = useState<File[]>([]);
-  const [rejected, setRejected] = useState<string[]>([]);
+  const [skipped, setSkipped] = useState<{ name: string; reason: string }[]>([]);
+  const [showList, setShowList] = useState(false);
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [link, setLink] = useState('');
+  const [linkRead, setLinkRead] = useState('');
+  const [linkProblem, setLinkProblem] = useState('');
   const [title, setTitle] = useState(draft.title);
   const [experience, setExperience] = useState<Experience>(draft.experience);
   const [text, setText] = useState(draft.text);
@@ -68,12 +80,13 @@ export function Home() {
   const [readText, setReadText] = useState(''); // the text the chips were read from
   const [newSkill, setNewSkill] = useState('');
   const [notice, setNotice] = useState(false);
-  const [busy, setBusy] = useState<'' | 'read' | 'word' | 'run'>('');
+  const [busy, setBusy] = useState<'' | 'read' | 'word' | 'link' | 'run'>('');
   const [error, setError] = useState('');
   const [showErrors, setShowErrors] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const wordRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -85,13 +98,25 @@ export function Home() {
 
   // ---------------------------------------------------------------- resumes
   function addFiles(list: File[]) {
-    const bad: string[] = [];
-    const good = list.filter((f) => (okFile(f) ? true : (bad.push(f.name), false)));
-    setRejected(bad);
+    const skip: { name: string; reason: string }[] = [];
+    const good: File[] = [];
+    for (const f of list) {
+      if (litter(f)) continue;
+      if (okFile(f)) good.push(f);
+      else skip.push({ name: label(f), reason: 'only PDF, DOCX and TXT files can be read.' });
+    }
     setFiles((cur) => {
-      const have = new Set(cur.map((f) => `${f.name}:${f.size}`));
-      return [...cur, ...good.filter((f) => !have.has(`${f.name}:${f.size}`))];
+      const have = new Set(cur.map(fileKey));
+      const fresh = good.filter((f) => {
+        const dup = have.has(fileKey(f));
+        have.add(fileKey(f));
+        if (dup) skip.push({ name: label(f), reason: 'added twice.' });
+        return !dup;
+      });
+      return [...cur, ...fresh];
     });
+    setSkipped(skip);
+    setShowSkipped(false);
   }
 
   // ---------------------------------------------------------------- role
@@ -122,6 +147,26 @@ export function Home() {
     } finally {
       setBusy('');
       if (wordRef.current) wordRef.current.value = '';
+    }
+  }
+
+  async function readLink() {
+    if (!link.trim()) return;
+    setLinkProblem('');
+    setBusy('link');
+    try {
+      const r = await api.post<{ host: string; text: string; words: number; truncated: boolean }>(
+        '/vacancies/read-link',
+        { url: link.trim() },
+      );
+      setLinkRead(`${r.host} · ${plural(r.words, 'word', 'words')}`);
+      setText((t) => (t.trim() ? `${t.trim()}\n\n${r.text}` : r.text));
+      setLinkOpen(false);
+      setLink('');
+    } catch (e) {
+      setLinkProblem(errMsg(e));
+    } finally {
+      setBusy('');
     }
   }
 
@@ -197,9 +242,8 @@ export function Home() {
       });
       await api.post(`/vacancies/${vacancyId}/criteria/freeze`);
       await api.post(`/vacancies/${vacancyId}/notice-confirm`);
-      for (let i = 0; i < files.length; i += MAX_BATCH) {
-        await api.upload(`/vacancies/${vacancyId}/documents`, files.slice(i, i + MAX_BATCH));
-      }
+      // The first group goes up now; the rest keeps going while the results are open.
+      await startIntake(vacancyId, files);
       try {
         localStorage.removeItem(DRAFT_KEY);
       } catch {
@@ -240,20 +284,48 @@ export function Home() {
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              addFiles(Array.from(e.dataTransfer.files));
+              void filesFromDrop(e.dataTransfer).then(addFiles);
             }}
             className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
           >
             <p className="font-medium">Drop resumes here</p>
-            <p className="text-sm text-ink-3">PDF, DOCX or TXT, up to 50 files at a time</p>
-            <button type="button" className={btnSecondary} onClick={() => fileRef.current?.click()}>
-              Choose files
-            </button>
+            <p className="text-sm text-ink-3">
+              PDF, DOCX or TXT files, a whole folder, or a ZIP of resumes
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => fileRef.current?.click()}
+              >
+                Choose files
+              </button>
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => folderRef.current?.click()}
+              >
+                Choose a folder
+              </button>
+            </div>
+            <input
+              ref={folderRef}
+              type="file"
+              multiple
+              // @ts-expect-error webkitdirectory is not in the DOM typings
+              webkitdirectory=""
+              aria-label="Choose a folder of resumes"
+              className="sr-only"
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = '';
+              }}
+            />
             <input
               ref={fileRef}
               type="file"
               multiple
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.docx,.txt,.zip"
               aria-label="Choose resume files"
               className="sr-only"
               onChange={(e) => {
@@ -262,34 +334,69 @@ export function Home() {
               }}
             />
           </div>
-          {rejected.length > 0 && (
+          {skipped.length > 0 && skipped.length <= 3 && (
             <p role="alert" className="mt-2 text-sm text-warn-text">
-              {rejected.join(', ')}: only PDF, DOCX and TXT files can be read.
+              {skipped.map((x) => `${x.name}: ${x.reason}`).join(' ')}
             </p>
+          )}
+          {skipped.length > 3 && (
+            <div className="mt-2 text-sm text-warn-text" role="status">
+              {skipped.length} skipped,{' '}
+              <button
+                type="button"
+                className="underline"
+                aria-expanded={showSkipped}
+                onClick={() => setShowSkipped((v) => !v)}
+              >
+                {showSkipped ? 'hide which' : 'see which'}
+              </button>
+              {showSkipped && (
+                <ul className="mt-1 max-h-40 list-disc overflow-auto pl-5">
+                  {skipped.map((x, i) => (
+                    <li key={i}>
+                      {x.name}: {x.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
           {files.length > 0 ? (
             <div className="mt-3">
-              <p className="text-sm font-medium">
+              <p className="text-sm font-medium" role="status">
                 {plural(files.length, 'resume', 'resumes')} added
-              </p>
-              <ul className="mt-1 max-h-56 divide-y divide-line overflow-auto text-sm">
-                {files.map((f, i) => (
-                  <li
-                    key={`${f.name}:${f.size}`}
-                    className="flex items-center justify-between gap-2 py-1"
-                  >
-                    <span className="truncate">{f.name}</span>
+                {files.some(isZip) && ' (a ZIP is unpacked when you start)'}
+                {files.length > COLLAPSE_ABOVE && (
+                  <>
+                    {' · '}
                     <button
                       type="button"
-                      className="shrink-0 text-link hover:underline"
-                      aria-label={`Remove ${f.name}`}
-                      onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
+                      className="font-normal text-link underline"
+                      aria-expanded={showList}
+                      onClick={() => setShowList((v) => !v)}
                     >
-                      Remove
+                      {showList ? 'Hide the list' : 'Show the list'}
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  </>
+                )}
+              </p>
+              {(files.length <= COLLAPSE_ABOVE || showList) && (
+                <ul className="mt-1 max-h-56 divide-y divide-line overflow-auto text-sm">
+                  {files.map((f, i) => (
+                    <li key={fileKey(f)} className="flex items-center justify-between gap-2 py-1">
+                      <span className="truncate">{label(f)}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-link hover:underline"
+                        aria-label={`Remove ${label(f)}`}
+                        onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ) : (
             showErrors && <p className="mt-2 text-sm text-err-ink">Add at least one resume.</p>
@@ -361,7 +468,58 @@ export function Home() {
                 onChange={(e) => void attachWord(e.target.files?.[0])}
               />
               {wordFile && <span className="text-ink-3">Read {wordFile}</span>}
+              <span aria-hidden="true" className="text-ink-3">
+                ·
+              </span>
+              <button
+                type="button"
+                className="text-link hover:underline"
+                aria-expanded={linkOpen}
+                disabled={busy !== ''}
+                onClick={() => setLinkOpen((v) => !v)}
+              >
+                Add a vacancy link
+              </button>
+              {linkRead && <span className="text-ink-3">Read from {linkRead}</span>}
             </div>
+            {linkOpen && (
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <Field
+                    label="Vacancy link"
+                    hint="A public page. If it cannot be read, paste the text."
+                  >
+                    <input
+                      className={input}
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://example.com/jobs/network-engineer"
+                      value={link}
+                      onChange={(e) => setLink(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void readLink();
+                        }
+                      }}
+                    />
+                  </Field>
+                </div>
+                <button
+                  type="button"
+                  className={btnSecondary}
+                  disabled={busy !== '' || !link.trim()}
+                  onClick={() => void readLink()}
+                >
+                  {busy === 'link' ? 'Reading the page…' : 'Read the page'}
+                </button>
+              </div>
+            )}
+            {linkProblem && (
+              <p role="alert" className="text-sm text-err-ink">
+                {linkProblem}
+              </p>
+            )}
             {wordProblem && (
               <p role="alert" className="text-sm text-err-ink">
                 {wordProblem}

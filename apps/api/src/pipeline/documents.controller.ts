@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ConflictException,
   Controller,
   Get,
@@ -13,6 +14,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { newId } from '@cv/shared';
+import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/multipart';
 import { AuditService } from '../audit/audit.service';
@@ -37,13 +39,15 @@ import { AdjustmentService } from './adjustments.service';
 import { CandidatesService } from './candidates.service';
 import { ReportService } from './report.service';
 import { ExportService } from './export.service';
+import { LinkProblem, LinkReader } from './link-reader';
+import { unpackZip, ZipProblem } from './zip-intake';
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
 const MAX_FILES = 50;
 
 export interface UploadOutcome {
   filename: string;
-  status: 'queued' | 'duplicate' | 'unreadable' | 'rejected';
+  status: 'queued' | 'duplicate' | 'unreadable' | 'rejected' | 'skipped';
   documentId?: string;
   message?: string;
 }
@@ -52,6 +56,8 @@ export interface UploadOutcome {
 @Controller()
 export class DocumentsController {
   private readonly log = new Logger('documents');
+  /** Overridable in tests; production always uses the guarded defaults. */
+  links = new LinkReader();
 
   constructor(
     private readonly db: DbService,
@@ -89,6 +95,41 @@ export class DocumentsController {
     throw new BadRequestException('No file received');
   }
 
+  /**
+   * Home screen: read the text of a public vacancy page. The server fetches it (never the browser)
+   * with the safeguards in `link-reader.ts`. Nothing is stored; the recruiter reviews the text.
+   */
+  @Post('vacancies/read-link')
+  @HttpCode(200)
+  async readVacancyLink(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const { url } = parse(z.object({ url: z.string().trim().min(4).max(2000) }), body);
+    try {
+      const r = await this.links.read(url);
+      await this.audit.record(this.db, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'vacancy.link_read',
+        entityType: 'vacancy_link',
+        entityId: newId(),
+        after: { host: r.host, words: r.words },
+      });
+      return r;
+    } catch (e) {
+      if (!(e instanceof LinkProblem)) throw e;
+      if (e.kind === 'invalid') throw new BadRequestException(e.message);
+      this.log.warn(`vacancy link not read (${e.kind}): ${e.message}`);
+      throw new BadRequestException({
+        message: "Couldn't read that page. Paste the text instead.",
+        code: 'LINK_UNREADABLE',
+      });
+    }
+  }
+
   /** DOC-01..04: bulk upload. Per-file outcomes; one bad file never fails the batch. */
   @Post('vacancies/:id/documents')
   @HttpCode(200)
@@ -114,15 +155,77 @@ export class DocumentsController {
     if (!req.isMultipart()) throw new BadRequestException('Expected multipart/form-data');
 
     const results: UploadOutcome[] = [];
+    const maxZip = this.env.MAX_ZIP_MB * 1024 * 1024;
+    const maxFile = this.env.MAX_UPLOAD_MB * 1024 * 1024;
+    const have = Number(
+      (
+        await this.db.query<{ n: string }>(
+          `SELECT count(*) AS n FROM cv_document WHERE vacancy_id = $1`,
+          [vid],
+        )
+      ).rows[0]!.n,
+    );
+    let room = Math.max(this.env.MAX_RESUMES_PER_RUN - have, 0);
     let n = 0;
-    for await (const part of req.parts({
-      limits: { fileSize: this.env.MAX_UPLOAD_MB * 1024 * 1024, files: MAX_FILES },
-    })) {
+    /** Take one resume in, unless the run is full. */
+    const take = async (filename: string, buf: Buffer) => {
+      if (room <= 0) {
+        results.push({
+          filename,
+          status: 'skipped',
+          message: `A run holds at most ${this.env.MAX_RESUMES_PER_RUN} resumes`,
+        });
+        return;
+      }
+      const r = await this.ingest(p, vid, frozen.id, filename, buf, req.ip);
+      if (r.status === 'queued' || r.status === 'unreadable') room--;
+      results.push(r);
+    };
+    // The part limit is the larger ZIP limit; ordinary files are held to their own limit below.
+    for await (const part of req.parts({ limits: { fileSize: maxZip, files: MAX_FILES } })) {
       if (part.type !== 'file') continue;
       n++;
       const filename = (part.filename || 'cv').slice(0, 200);
       const buf = await part.toBuffer();
+      const isZip = /\.zip$/i.test(filename) && buf[0] === 0x50 && buf[1] === 0x4b;
       if (part.file.truncated) {
+        results.push({
+          filename,
+          status: 'rejected',
+          message: `Larger than ${isZip ? this.env.MAX_ZIP_MB : this.env.MAX_UPLOAD_MB} MB`,
+        });
+        continue;
+      }
+      if (isZip) {
+        try {
+          const u = await unpackZip(buf, {
+            maxEntries: this.env.MAX_RESUMES_PER_RUN * 2,
+            maxEntryBytes: maxFile,
+            maxTotalBytes: maxZip * 2,
+            maxRatio: 200,
+          });
+          for (const s of u.skipped) {
+            results.push({
+              filename: `${filename} › ${s.name}`,
+              status: 'skipped',
+              message: s.reason,
+            });
+          }
+          for (const f of u.files) await take(`${f.name}`, f.data);
+          if (u.files.length === 0 && u.skipped.length === 0) {
+            results.push({
+              filename,
+              status: 'skipped',
+              message: 'No resumes found in this ZIP',
+            });
+          }
+        } catch (e) {
+          if (!(e instanceof ZipProblem)) throw e;
+          results.push({ filename, status: 'rejected', message: e.message });
+        }
+        continue;
+      }
+      if (buf.length > maxFile) {
         results.push({
           filename,
           status: 'rejected',
@@ -130,10 +233,37 @@ export class DocumentsController {
         });
         continue;
       }
-      results.push(await this.ingest(p, vid, frozen.id, filename, buf, req.ip));
+      await take(filename, buf);
     }
     if (n === 0) throw new BadRequestException('No files received');
+    // Skipped files are never dropped silently: keep the list with the vacancy (spec 6.1.4).
+    const skipped = results.filter((r) => r.status !== 'queued' && r.status !== 'unreadable');
+    for (const r of skipped) {
+      await this.db.query(
+        `INSERT INTO intake_skip (id, vacancy_id, filename, reason, skipped_by) VALUES ($1,$2,$3,$4,$5)`,
+        [newId(), vid, r.filename.slice(0, 300), (r.message ?? 'Skipped').slice(0, 300), p.userId],
+      );
+    }
     return { results };
+  }
+
+  /** "3 skipped, see which": every file that was not taken in, and why. */
+  @Get('vacancies/:id/skipped')
+  async skipped(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
+    const vid = parse(ulidSchema, id);
+    await this.scope.assert(p, vid);
+    const { rows } = await this.db.query<{ filename: string; reason: string; at: Date }>(
+      `SELECT filename, reason, skipped_at AS at FROM intake_skip
+        WHERE vacancy_id = $1 ORDER BY skipped_at, id LIMIT 1000`,
+      [vid],
+    );
+    return {
+      skipped: rows.map((r) => ({
+        filename: r.filename,
+        reason: r.reason,
+        at: new Date(r.at).toISOString(),
+      })),
+    };
   }
 
   private async ingest(
