@@ -5,6 +5,7 @@ import { App } from './App';
 import { fetchReadiness, session } from './api';
 import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
+import { Report } from './pages/Report';
 import { Results } from './pages/Results';
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown };
@@ -780,5 +781,210 @@ describe('Results: bands, names hidden, proof', () => {
     expect(calls.some((c) => c.url.endsWith('/reveal-names'))).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
     await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
+  });
+});
+
+describe('Report: evaluation report (spec 6.5)', () => {
+  const it_ = (id: string, text: string, classification: string, status: string) => ({
+    requirementId: id,
+    text,
+    classification,
+    weight: 10,
+    status,
+    points: 1,
+    earned: 0,
+  });
+  const cand = (n: number, score: number | null, extra: Record<string, unknown> = {}) => ({
+    screeningId: `S${n}`,
+    documentId: `D${String(n).padStart(2, '0')}`,
+    filename: `cv_person${n}.pdf`,
+    uploadedAt: `2026-10-01T10:${String(n).padStart(2, '0')}:00Z`,
+    parseStatus: 'parsed',
+    erased: false,
+    state: score === null ? 'manual' : 'completed',
+    candidateName: `Real Name ${n}`,
+    band: score === null ? 'needs_review' : 'possible_match',
+    score:
+      score === null
+        ? null
+        : {
+            value: score,
+            breakdown: {
+              formula: 'f',
+              earned: 1,
+              possible: 2,
+              mandatoryGaps: 1,
+              items: [
+                it_('R1', 'Routing', 'mandatory', 'met'),
+                it_('R2', 'Kubernetes', 'mandatory', 'not_found'),
+              ],
+            },
+          },
+    knockoutTriggered: false,
+    injectionSuspected: false,
+    error: null,
+    decision: null,
+    ...extra,
+  });
+
+  function setup(rows: unknown[], pending = 0) {
+    session.set('t');
+    return mockFetch((url) => {
+      if (url.endsWith('/vacancies/V/candidates'))
+        return {
+          body: {
+            counts: { total: rows.length, queued: pending, failed: 0, manual: 1, undecided: 1 },
+            aiActive: true,
+            candidates: rows,
+          },
+        };
+      if (url.endsWith('/vacancies/V/criteria'))
+        return {
+          body: {
+            versions: [
+              { id: 'C1', version: 1, frozenAt: '2026-10-01T09:00:00Z' },
+              { id: 'C2', version: 2, frozenAt: '2026-10-01T11:00:00Z' },
+            ],
+            current: {
+              id: 'C2',
+              version: 2,
+              frozen: true,
+              requirements: [
+                { id: 'R1', text: 'Routing', classification: 'mandatory', weight: 10, rule: null },
+                {
+                  id: 'R2',
+                  text: 'Kubernetes',
+                  classification: 'mandatory',
+                  weight: 10,
+                  rule: null,
+                },
+                { id: 'R3', text: 'Python', classification: 'preferred', weight: 5, rule: null },
+              ],
+            },
+          },
+        };
+      if (url.endsWith('/me'))
+        return {
+          body: { userId: 'U', email: 'a@b.c', displayName: 'Aysel', roles: ['TA_PARTNER'] },
+        };
+      if (url.includes('/screenings/'))
+        return {
+          body: {
+            summary: 'Six years on carrier routing.',
+            aiProvider: 'google',
+            aiModel: 'gemini-x',
+            assessments: [
+              {
+                requirementId: 'R1',
+                text: 'Routing',
+                status: 'met',
+                evidence: [{ quote: 'Designed the BGP peering for two carriers' }],
+              },
+              { requirementId: 'R2', text: 'Kubernetes', status: 'not_found', evidence: [] },
+            ],
+          },
+        };
+      return { body: {} };
+    });
+  }
+
+  it('shows the role, how it was scored, pseudonyms, quotes and what was not read, with no names', async () => {
+    setup([cand(1, 62), cand(2, 74), cand(3, null, { parseStatus: 'empty' })]);
+    render(<Report vacancyId="V" title="Core Network Engineer" createdAt="2026-10-01T08:00:00Z" />);
+    expect(await screen.findByText('Core Network Engineer')).toBeInTheDocument();
+    expect(screen.getByText(/3 read, 2 scored, 1 need a human look/)).toBeInTheDocument();
+    expect(screen.getByText('Must-have (2)')).toBeInTheDocument();
+    expect(screen.getByText('Nice-to-have (1)')).toBeInTheDocument();
+    expect(screen.getByText(/Requirements version 2 frozen on/)).toBeInTheDocument();
+    expect(screen.getByText(/AI suggests, a human decides/)).toBeInTheDocument();
+    // Best match first, as numbers only; the quote and the reason arrive from the detail call.
+    const entries = screen.getAllByRole('heading', { level: 4 });
+    expect(entries[0]).toHaveTextContent('1. Candidate 02');
+    expect(entries[1]).toHaveTextContent('2. Candidate 01');
+    expect(
+      (await screen.findAllByText('Designed the BGP peering for two carriers')).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Not found in this CV\. Searched for: Kubernetes/).length).toBe(2);
+    expect(await screen.findByText(/Read by google \(gemini-x\)/)).toBeInTheDocument();
+    expect(screen.getByText('Not read (1)')).toBeInTheDocument();
+    expect(screen.getByText(/Candidate 03: Scan only/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing all 2 scored/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/cv_person|Real Name/);
+    expect(document.body.textContent).not.toMatch(/stays inside Azerconnect/);
+    expect(screen.getByText(/prepared for Aysel/)).toBeInTheDocument();
+  });
+
+  it('keeps the top 15 expanded, the rest compact until asked, and says how many are shown', async () => {
+    const rows = Array.from({ length: 20 }, (_, i) => cand(i + 1, 90 - i));
+    setup(rows);
+    render(<Report vacancyId="V" title="Big role" createdAt="2026-10-01T08:00:00Z" />);
+    expect(await screen.findByText('Showing 15 of 20 scored')).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(15);
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 20' }));
+    expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(20);
+    expect(screen.getByText('Showing all 20 scored')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Show details' })).toHaveLength(5);
+  });
+
+  it('says it is still scanning and will update', async () => {
+    setup(
+      [
+        cand(1, 62),
+        cand(2, null, { state: 'queued', parseStatus: 'parsed', score: null, band: null }),
+      ],
+      1,
+    );
+    render(<Report vacancyId="V" title="Role" createdAt="2026-10-01T08:00:00Z" />);
+    expect(await screen.findByText(/1 of 2 read, this report will update/)).toBeInTheDocument();
+  });
+
+  it('offers a retry when the report cannot be prepared', async () => {
+    session.set('t');
+    mockFetch(() => ({ status: 500, body: { message: 'boom' } }));
+    render(<Report vacancyId="V" title="Role" createdAt="2026-10-01T08:00:00Z" />);
+    expect(await screen.findByText(/could not be prepared/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});
+
+describe('Home sky (spec 8.1)', () => {
+  function stubMotion(reduce: boolean, hover: boolean) {
+    vi.stubGlobal(
+      'matchMedia',
+      (q: string) =>
+        ({
+          matches: q.includes('reduce') ? reduce : q.includes('hover: none') ? !hover : false,
+          media: q,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        }) as unknown as MediaQueryList,
+    );
+  }
+
+  it('turns the cursor effects on for a mouse and follows the pointer', async () => {
+    stubMotion(false, true);
+    const { Sky } = await import('./Sky');
+    render(<Sky>Hello</Sky>);
+    const sky = screen.getByTestId('sky');
+    expect(sky).toHaveAttribute('data-calm', 'false');
+    expect(screen.getByTestId('sky-glow')).toBeInTheDocument();
+    expect(screen.getByTestId('sky-bright')).toBeInTheDocument();
+    sky.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 30 }));
+    expect(sky.style.getPropertyValue('--mx')).toBe('40px');
+    sky.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(sky.style.getPropertyValue('--mx')).toBe('-1000px');
+  });
+
+  it.each([
+    ['reduced motion', true, true],
+    ['a touch screen', false, false],
+  ])('keeps the sky still for %s', async (_n, reduce, hover) => {
+    stubMotion(reduce, hover);
+    const { Sky } = await import('./Sky');
+    render(<Sky>Hello</Sky>);
+    expect(screen.getByTestId('sky')).toHaveAttribute('data-calm', 'true');
+    expect(screen.queryByTestId('sky-glow')).toBeNull();
+    expect(screen.queryByTestId('sky-bright')).toBeNull();
+    expect(document.querySelector('.sky-twinkle')).toBeNull();
   });
 });

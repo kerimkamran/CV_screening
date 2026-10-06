@@ -142,3 +142,45 @@ export function skillChips(b: Breakdown | undefined) {
     s === 'met' ? 'found' : s === 'partially_met' ? 'partly' : 'missing';
   return items.map((i) => ({ ...i, kind: kind(i.status) }));
 }
+
+/** Plain reason a file was not read, for the report's data-quality list (spec 6.5). */
+export function unreadReason(
+  r: Pick<CandidateRow, 'state' | 'parseStatus' | 'error'>,
+): string | null {
+  if (r.state === 'queued' || r.state === 'processing' || r.state === 'completed') return null;
+  if (r.parseStatus === 'empty') return 'Scan only: no readable text in the file';
+  if (r.parseStatus === 'failed') return 'Damaged or locked file';
+  if (r.state === 'failed') return 'Could not be scored. Try again from the Table tab';
+  return 'No readable text in the file';
+}
+
+export interface ReportCounts {
+  read: number;
+  scored: number;
+  needLook: number;
+  unread: number;
+  total: number;
+}
+
+/** Header numbers for the evaluation report. "Need a human look" matches the Results screen. */
+export function reportCounts(rows: CandidateRow[]): ReportCounts {
+  const live = rows.filter((r) => !r.erased);
+  const pending = live.filter((r) => r.state === 'queued' || r.state === 'processing').length;
+  const bands = live.map((r) => matchBand(r));
+  const idle = live.map((r) => r.state !== 'queued' && r.state !== 'processing');
+  return {
+    total: live.length,
+    read: live.length - pending,
+    scored: bands.filter(
+      (b, i) => idle[i] && (b === 'strong' || b === 'good' || b === 'partial' || b === 'limited'),
+    ).length,
+    needLook: bands.filter((b, i) => idle[i] && b === 'human').length,
+    unread: live.filter((r) => unreadReason(r) !== null).length,
+  };
+}
+
+/** Must-haves found out of all must-haves, from the stored breakdown. */
+export function mustHaveTally(b: Breakdown | undefined): { found: number; total: number } {
+  const m = (b?.items ?? []).filter((i) => i.classification === 'mandatory');
+  return { found: m.filter((i) => i.status === 'met').length, total: m.length };
+}

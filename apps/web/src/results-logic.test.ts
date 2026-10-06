@@ -6,8 +6,11 @@ import {
   linkStars,
   matchBand,
   orderCandidates,
+  mustHaveTally,
   pseudonyms,
+  reportCounts,
   skillChips,
+  unreadReason,
 } from './results-logic';
 
 const row = (id: string, score: number | null, o: Partial<CandidateRow> = {}): CandidateRow =>
@@ -125,5 +128,38 @@ describe('skill chips (spec 6.2.3)', () => {
       ['K8s', 'partly'],
       ['SQL', 'found'],
     ]);
+  });
+});
+
+describe('evaluation report logic (spec 6.5)', () => {
+  it('gives a plain reason for each unread file and none for files still in progress', () => {
+    expect(unreadReason(row('a', null, { parseStatus: 'empty' }))).toMatch(/Scan only/);
+    expect(unreadReason(row('b', null, { parseStatus: 'failed' }))).toMatch(/Damaged or locked/);
+    expect(unreadReason(row('c', null, { state: 'failed', error: 'x' }))).toMatch(
+      /Could not be scored/,
+    );
+    expect(unreadReason(row('d', 80))).toBeNull();
+    expect(unreadReason(row('e', null, { state: 'queued' }))).toBeNull();
+  });
+
+  it('counts read, scored and need-a-human-look, ignoring erased files', () => {
+    const rows = [
+      row('a', 90),
+      row('b', 40),
+      row('c', null, { parseStatus: 'empty' }),
+      row('d', 60, { state: 'queued', score: null, band: null }),
+      row('e', 75, { erased: true }),
+      row('f', 75, { band: 'needs_review' }),
+    ];
+    expect(reportCounts(rows)).toEqual({ total: 5, read: 4, scored: 2, needLook: 2, unread: 1 });
+  });
+
+  it('tallies must-haves found from the breakdown', () => {
+    const item = (classification: string, status: string) => ({ classification, status }) as never;
+    const b = {
+      items: [item('mandatory', 'met'), item('mandatory', 'not_found'), item('preferred', 'met')],
+    } as never;
+    expect(mustHaveTally(b)).toEqual({ found: 1, total: 2 });
+    expect(mustHaveTally(undefined)).toEqual({ found: 0, total: 0 });
   });
 });

@@ -225,3 +225,23 @@
     opacity: 1;
   }
 }
+
+/* Home sky (design spec 8.1): twinkle is off when the person asks for reduced motion. */
+@keyframes sky-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.sky-twinkle {
+  animation: sky-twinkle 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-twinkle {
+    animation: none;
+    opacity: 0.7;
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Criteria, type Requirement } from '../api';
 import { go } from '../route';
+import { Sky } from '../Sky';
 import { btnPrimary, btnSecondary, Card, errMsg, Field, input, Notice } from '../ui';
 import { NOTICE_TEXT } from './Vacancy';
 
@@ -221,10 +222,10 @@ export function Home() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <Sky>
         <h1 className="text-2xl font-bold tracking-tight">Who fits this role?</h1>
-        <p className="mt-1 text-ink-2">Add resumes, then describe the role.</p>
-      </div>
+        <p className="mt-1 text-[#B9C8F2]">Add resumes, then describe the role.</p>
+      </Sky>
 
       {error && <Notice kind="error">{error}</Notice>}
 

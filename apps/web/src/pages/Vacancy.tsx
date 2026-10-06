@@ -6,6 +6,7 @@ import {
   type Criteria,
   type Requirement,
 } from '../api';
+import { Report } from './Report';
 import { Results } from './Results';
 import {
   BandBadge,
@@ -25,9 +26,17 @@ interface V {
   department: string | null;
   location: string | null;
   candidateNoticeConfirmedAt: string | null;
+  createdAt: string;
 }
 
-type Tab = 'results' | 'candidates' | 'criteria';
+type Tab = 'results' | 'report' | 'candidates' | 'criteria';
+
+const TAB_LABEL: Record<Tab, string> = {
+  results: 'Results',
+  report: 'Report',
+  candidates: 'Table',
+  criteria: 'Criteria',
+};
 
 export function Vacancy({ id }: { id: string }) {
   const [v, setV] = useState<V | null>(null);
@@ -53,7 +62,7 @@ export function Vacancy({ id }: { id: string }) {
         </p>
       </div>
       <div role="tablist" className="flex gap-1 border-b">
-        {(['results', 'candidates', 'criteria'] as Tab[]).map((t) => (
+        {(['results', 'report', 'candidates', 'criteria'] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
@@ -61,12 +70,14 @@ export function Vacancy({ id }: { id: string }) {
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
-            {t === 'results' ? 'Results' : t === 'candidates' ? 'Table' : 'Criteria'}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
       {tab === 'criteria' ? (
         <CriteriaTab id={id} />
+      ) : tab === 'report' ? (
+        <Report vacancyId={id} title={v.title} createdAt={v.createdAt} />
       ) : tab === 'results' ? (
         <Results vacancyId={id} onTable={() => setTab('candidates')} />
       ) : (
