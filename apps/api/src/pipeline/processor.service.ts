@@ -72,7 +72,7 @@ export class ProcessorService implements OnApplicationBootstrap, OnModuleDestroy
     if (!(await this.ai.active())) return false;
     const claimed = await this.db.query<{ id: string }>(
       `UPDATE screening SET state = 'processing', started_at = now(), attempts = attempts + 1
-        WHERE id = (SELECT id FROM screening WHERE state = 'queued' AND run_after <= now()
+        WHERE id = (SELECT id FROM screening WHERE state = 'queued' AND cancelled_at IS NULL AND run_after <= now()
                      ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
         RETURNING id`,
     );

@@ -232,6 +232,7 @@ export class DocumentsController {
     const counts = {
       total: rows.length,
       queued: rows.filter((r) => r.state === 'queued' || r.state === 'processing').length,
+      stopped: rows.filter((r) => r.state === 'stopped').length,
       failed: rows.filter((r) => r.state === 'failed').length,
       manual: rows.filter((r) => r.state === 'manual').length,
       undecided: rows.filter((r) => !r.decision).length,
@@ -249,7 +250,8 @@ export class DocumentsController {
          SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1)
        SELECT sc.id AS "screeningId", d.id AS "documentId", d.filename, d.uploaded_at AS "uploadedAt",
               d.parse_status AS "parseStatus", d.erased_at IS NOT NULL AS erased,
-              COALESCE(sc.state::text, 'queued') AS state, sc.candidate_name AS "candidateName", sc.band,
+              CASE WHEN sc.state = 'queued' AND sc.cancelled_at IS NOT NULL THEN 'stopped'
+                   ELSE COALESCE(sc.state::text, 'queued') END AS state, sc.candidate_name AS "candidateName", sc.band,
               sc.score::float AS score, sc.breakdown, sc.knockout_triggered AS "knockoutTriggered",
               sc.injection_suspected AS "injectionSuspected", sc.error,
               (SELECT json_build_object('outcome', x.outcome, 'reason', x.reason, 'decidedAt', x.decided_at,
@@ -267,6 +269,71 @@ export class DocumentsController {
       ...r,
       score: score !== null && breakdown ? { value: score, breakdown } : null,
     }));
+  }
+
+  /**
+   * Design spec 6.3: stop the scan and keep what has been scored. Files already being read finish;
+   * the ones still waiting are marked, not deleted, and can be continued.
+   */
+  @Post('vacancies/:id/stop')
+  @HttpCode(200)
+  async stop(
+    @Param('id') id: string,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const vid = parse(ulidSchema, id);
+    await this.scope.assert(p, vid);
+    return this.db.withTx(async (tx) => {
+      const r = await tx.query(
+        `UPDATE screening sc SET cancelled_at = now()
+           FROM cv_document d
+          WHERE d.id = sc.document_id AND d.vacancy_id = $1
+            AND sc.state = 'queued' AND sc.cancelled_at IS NULL`,
+        [vid],
+      );
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'screening.stopped',
+        entityType: 'vacancy',
+        entityId: vid,
+        after: { stopped: r.rowCount },
+      });
+      return { stopped: r.rowCount };
+    });
+  }
+
+  /** Undo a stop: the waiting files go back in the queue. */
+  @Post('vacancies/:id/continue')
+  @HttpCode(200)
+  async continueRun(
+    @Param('id') id: string,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const vid = parse(ulidSchema, id);
+    await this.scope.assert(p, vid);
+    return this.db.withTx(async (tx) => {
+      const r = await tx.query(
+        `UPDATE screening sc SET cancelled_at = NULL, run_after = now()
+           FROM cv_document d
+          WHERE d.id = sc.document_id AND d.vacancy_id = $1
+            AND sc.state = 'queued' AND sc.cancelled_at IS NOT NULL`,
+        [vid],
+      );
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'screening.continued',
+        entityType: 'vacancy',
+        entityId: vid,
+        after: { continued: r.rowCount },
+      });
+      return { continued: r.rowCount };
+    });
   }
 
   /** Re-queue screenings against the latest frozen criteria for documents that lack one. */

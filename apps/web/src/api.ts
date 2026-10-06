@@ -165,7 +165,8 @@ export interface CandidateRow {
   uploadedAt: string;
   parseStatus: string;
   erased: boolean;
-  state: 'queued' | 'processing' | 'completed' | 'failed' | 'manual';
+  /** `stopped`: waiting when the recruiter stopped the scan; "Continue" puts it back in the queue. */
+  state: 'queued' | 'processing' | 'completed' | 'failed' | 'manual' | 'stopped';
   candidateName: string | null;
   band: 'strong_match' | 'possible_match' | 'weak_match' | 'needs_review' | null;
   score: { value: number; breakdown: Breakdown } | null;

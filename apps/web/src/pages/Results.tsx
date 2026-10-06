@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type CandidateRow } from '../api';
 import {
   BAND_LABEL,
+  isPending,
   layoutStars,
   linkStars,
   matchBand,
@@ -21,7 +22,14 @@ import { btnSecondary, errMsg, Notice } from '../ui';
  */
 
 interface Listing {
-  counts: { total: number; queued: number; failed: number; manual: number; undecided: number };
+  counts: {
+    total: number;
+    queued: number;
+    stopped?: number;
+    failed: number;
+    manual: number;
+    undecided: number;
+  };
   aiActive: boolean;
   candidates: CandidateRow[];
 }
@@ -86,9 +94,22 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     ordered.filter((r) => b.includes(bandOf.get(r.documentId)!));
   const ranked = inBand('strong', 'good', 'partial');
   const limited = inBand('limited');
-  const human = inBand('human').filter((r) => r.state !== 'queued' && r.state !== 'processing');
+  const human = inBand('human').filter((r) => !isPending(r) && r.state !== 'stopped');
   const scored = [...ranked, ...limited];
-  const read = (data?.counts.total ?? 0) - pending;
+  const stoppedCount = data?.counts.stopped ?? 0;
+  const read = (data?.counts.total ?? 0) - pending - stoppedCount;
+  const [busy, setBusy] = useState(false);
+  async function runControl(path: 'stop' | 'continue') {
+    setBusy(true);
+    try {
+      await api.post(`/vacancies/${vacancyId}/${path}`);
+      await load();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const rowById = useMemo(() => new Map(all.map((r) => [r.documentId, r])), [all]);
   const nameOf = (r: CandidateRow) =>
@@ -146,7 +167,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const mapRows = scored.slice(0, mapAll ? MAP_MAX : MAP_TOP);
   const stars = layoutStars(mapRows.map((r) => r.documentId));
   const links = linkStars(mapRows.length);
-  const counts = (b: MatchBand) => inBand(b).length;
+  const counts = (b: MatchBand) => (b === 'human' ? human.length : inBand(b).length);
 
   if (error && !data) return <Notice kind="error">{error}</Notice>;
   if (!data) return <p className="text-sm text-ink-3">Loading…</p>;
@@ -178,16 +199,26 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           <p className="text-ink-2">Select a star. Brighter means a better fit.</p>
         </div>
         <p className="text-sm text-ink-3" aria-live="polite">
-          {data.counts.total} {data.counts.total === 1 ? 'resume' : 'resumes'} scanned
+          {data.counts.total} {data.counts.total === 1 ? 'resume' : 'resumes'} in this scan
           {data.counts.failed > 0 && ` · ${data.counts.failed} failed (see Table)`}
         </p>
       </div>
 
       {pending > 0 && (
         <div role="status" aria-live="polite" className="space-y-1">
-          <p className="text-sm text-ink-2">
-            {read} of {data.counts.total} read
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-ink-2">
+              {read} of {data.counts.total} read. You can leave this page: the scan continues and is
+              kept in Past scans.
+            </p>
+            <button
+              className={btnSecondary}
+              disabled={busy}
+              onClick={() => void runControl('stop')}
+            >
+              Stop the scan
+            </button>
+          </div>
           <progress
             className="h-2 w-full"
             max={data.counts.total}
@@ -195,6 +226,21 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             aria-label="Resumes read"
           />
         </div>
+      )}
+      {pending === 0 && stoppedCount > 0 && (
+        <Notice kind="warn">
+          <span role="status">
+            Stopped at {read} of {data.counts.total}. What was scored is kept.
+          </span>{' '}
+          <button className="underline" disabled={busy} onClick={() => void runControl('continue')}>
+            Continue reading the other {stoppedCount}
+          </button>
+        </Notice>
+      )}
+      {pending === 0 && stoppedCount === 0 && (
+        <p className="text-sm text-ink-2" role="status">
+          {read} read, {scored.length} scored, {human.length} need a human look
+        </p>
       )}
 
       <ul className="flex flex-wrap gap-2 text-sm" aria-label="Candidates by match">
@@ -248,8 +294,10 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             <div
               data-testid="star-map"
               className="relative h-[360px] overflow-hidden rounded-3xl"
+              data-scanning={pending > 0 ? 'true' : 'false'}
               style={{ background: '#0C1A3D' }}
             >
+              {pending > 0 && <div aria-hidden="true" className="sky-sweep" />}
               <svg
                 className="absolute inset-0 h-full w-full"
                 viewBox="0 0 100 100"

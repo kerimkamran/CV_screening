@@ -732,6 +732,8 @@ function stateLabel(c: CandidateRow) {
       return `Failed${c.error ? `: ${c.error}` : ''}`;
     case 'manual':
       return 'No readable text: review the original';
+    case 'stopped':
+      return 'Stopped before it was read';
     default:
       return c.state;
   }

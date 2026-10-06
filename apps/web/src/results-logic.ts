@@ -16,6 +16,9 @@ export function matchBand(row: Pick<CandidateRow, 'state' | 'score' | 'band'>): 
   return v >= 80 ? 'strong' : v >= 70 ? 'good' : v >= 50 ? 'partial' : 'limited';
 }
 
+export const isPending = (r: Pick<CandidateRow, 'state'>) =>
+  r.state === 'queued' || r.state === 'processing';
+
 export const BAND_LABEL: Record<MatchBand, string> = {
   strong: 'Strong',
   good: 'Good',
@@ -148,6 +151,7 @@ export function unreadReason(
   r: Pick<CandidateRow, 'state' | 'parseStatus' | 'error'>,
 ): string | null {
   if (r.state === 'queued' || r.state === 'processing' || r.state === 'completed') return null;
+  if (r.state === 'stopped') return 'Stopped before it was read';
   if (r.parseStatus === 'empty') return 'Scan only: no readable text in the file';
   if (r.parseStatus === 'failed') return 'Damaged or locked file';
   if (r.state === 'failed') return 'Could not be scored. Try again from the Table tab';
@@ -158,6 +162,7 @@ export interface ReportCounts {
   read: number;
   scored: number;
   needLook: number;
+  stopped: number;
   unread: number;
   total: number;
 }
@@ -165,12 +170,14 @@ export interface ReportCounts {
 /** Header numbers for the evaluation report. "Need a human look" matches the Results screen. */
 export function reportCounts(rows: CandidateRow[]): ReportCounts {
   const live = rows.filter((r) => !r.erased);
-  const pending = live.filter((r) => r.state === 'queued' || r.state === 'processing').length;
+  const pending = live.filter(isPending).length;
+  const stopped = live.filter((r) => r.state === 'stopped').length;
   const bands = live.map((r) => matchBand(r));
-  const idle = live.map((r) => r.state !== 'queued' && r.state !== 'processing');
+  const idle = live.map((r) => !isPending(r) && r.state !== 'stopped');
   return {
     total: live.length,
-    read: live.length - pending,
+    read: live.length - pending - stopped,
+    stopped,
     scored: bands.filter(
       (b, i) => idle[i] && (b === 'strong' || b === 'good' || b === 'partial' || b === 'limited'),
     ).length,

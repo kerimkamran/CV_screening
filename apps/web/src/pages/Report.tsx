@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type CandidateRow, type Criteria, type Me } from '../api';
 import {
   BAND_LABEL,
+  isPending,
   matchBand,
   mustHaveTally,
   orderCandidates,
@@ -135,8 +136,7 @@ export function Report({
   const frozen = criteria.versions.filter((v) => v.frozenAt).sort((a, b) => a.version - b.version);
   const changes = frozen.slice(1);
   const bandCount = (b: MatchBand) =>
-    all.filter((r) => matchBand(r) === b && r.state !== 'queued' && r.state !== 'processing')
-      .length;
+    all.filter((r) => matchBand(r) === b && !isPending(r) && r.state !== 'stopped').length;
   const aiLine = (() => {
     const d = Object.values(details).find((x): x is Detail => typeof x === 'object' && !!x.aiModel);
     return d ? `Read by ${d.aiProvider ?? 'the AI provider'} (${d.aiModel}).` : null;
@@ -158,10 +158,18 @@ export function Report({
         </p>
       </header>
 
-      {counts.total > counts.read && (
+      {counts.total > counts.read + counts.stopped && (
         <div role="status" aria-live="polite">
           <Notice kind="info">
             {counts.read} of {counts.total} read, this report will update.
+          </Notice>
+        </div>
+      )}
+      {counts.stopped > 0 && (
+        <div role="status">
+          <Notice kind="warn">
+            Stopped at {counts.read} of {counts.total}. Files not read are listed under Data
+            quality.
           </Notice>
         </div>
       )}
@@ -254,7 +262,7 @@ export function Report({
         </h3>
         {scored.length === 0 ? (
           <Notice kind="info">
-            {counts.read < counts.total
+            {counts.read < counts.total - counts.stopped
               ? 'No candidate has been scored yet.'
               : 'No candidate could be scored. See “Not read” below.'}
           </Notice>

@@ -151,7 +151,26 @@ describe('evaluation report logic (spec 6.5)', () => {
       row('e', 75, { erased: true }),
       row('f', 75, { band: 'needs_review' }),
     ];
-    expect(reportCounts(rows)).toEqual({ total: 5, read: 4, scored: 2, needLook: 2, unread: 1 });
+    expect(reportCounts(rows)).toEqual({
+      total: 5,
+      read: 4,
+      scored: 2,
+      needLook: 2,
+      stopped: 0,
+      unread: 1,
+    });
+  });
+
+  it('keeps stopped files apart from unreadable ones and says why they were not read', () => {
+    const rows = [row('a', 90), row('b', null, { state: 'stopped', parseStatus: 'parsed' })];
+    expect(unreadReason(rows[1]!)).toBe('Stopped before it was read');
+    expect(reportCounts(rows)).toMatchObject({
+      total: 2,
+      read: 1,
+      scored: 1,
+      stopped: 1,
+      needLook: 0,
+    });
   });
 
   it('tallies must-haves found from the breakdown', () => {

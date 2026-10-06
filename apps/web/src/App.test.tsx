@@ -988,3 +988,73 @@ describe('Home sky (spec 8.1)', () => {
     expect(document.querySelector('.sky-twinkle')).toBeNull();
   });
 });
+
+describe('Results: stopping and continuing a scan (spec 6.3)', () => {
+  const doc = (n: number, state: string, score: number | null = null) => ({
+    screeningId: `S${n}`,
+    documentId: `D${n}`,
+    filename: `cv${n}.pdf`,
+    uploadedAt: `2026-10-01T10:00:0${n}Z`,
+    parseStatus: 'parsed',
+    erased: false,
+    state,
+    candidateName: null,
+    band: score === null ? null : 'possible_match',
+    score:
+      score === null
+        ? null
+        : {
+            value: score,
+            breakdown: { formula: 'f', earned: 1, possible: 2, mandatoryGaps: 0, items: [] },
+          },
+    knockoutTriggered: false,
+    injectionSuspected: false,
+    error: null,
+    decision: null,
+  });
+
+  function setup(rows: unknown[], counts: Record<string, number>) {
+    session.set('t');
+    return mockFetch((url, init) => {
+      if (url.endsWith('/vacancies/V/candidates'))
+        return {
+          body: {
+            counts: { total: rows.length, failed: 0, manual: 0, undecided: 1, ...counts },
+            aiActive: true,
+            candidates: rows,
+          },
+        };
+      if (url.includes('/screenings/')) return { body: { summary: null, assessments: [] } };
+      void init;
+      return { body: {} };
+    });
+  }
+
+  it('offers Stop while reading and says the scan continues if you leave', async () => {
+    const calls = setup([doc(1, 'completed', 80), doc(2, 'queued')], { queued: 1 });
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(await screen.findByText(/1 of 2 read\. You can leave this page/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop the scan' }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/vacancies/V/stop'))).toBe(true));
+  });
+
+  it('says Stopped at N of M, keeps what was scored, and can continue', async () => {
+    const calls = setup([doc(1, 'completed', 80), doc(2, 'stopped'), doc(3, 'stopped')], {
+      queued: 0,
+      stopped: 2,
+    });
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(await screen.findByText(/Stopped at 1 of 3/)).toBeInTheDocument();
+    expect(screen.queryByText(/Needs a human look \(/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Continue reading the other 2/ }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith('/vacancies/V/continue'))).toBe(true),
+    );
+  });
+
+  it('ends with one summary line when everything is read', async () => {
+    setup([doc(1, 'completed', 80), doc(2, 'manual')], { manual: 1 });
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(await screen.findByText('2 read, 1 scored, 1 need a human look')).toBeInTheDocument();
+  });
+});
