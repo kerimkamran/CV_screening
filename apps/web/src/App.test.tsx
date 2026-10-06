@@ -448,3 +448,61 @@ describe('invitation links', () => {
     expect(written).toEqual([field.value]);
   });
 });
+
+describe('page background', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-bg');
+    localStorage.clear();
+  });
+
+  const signedIn = (background: string | null, saved: unknown[] = []) => {
+    session.set('t');
+    return mockFetch((url, init) => {
+      if (url.endsWith('/me/preferences')) {
+        saved.push(JSON.parse(String(init?.body)));
+        return { body: {} };
+      }
+      if (url.endsWith('/me'))
+        return {
+          body: {
+            userId: 'u',
+            displayName: 'Ayla',
+            email: 'a@x.az',
+            roles: ['TA_PARTNER'],
+            background,
+          },
+        };
+      return { body: [] };
+    });
+  };
+
+  it('applies the background saved for the user when they sign in', async () => {
+    signedIn('sky');
+    render(<App check={up} />);
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('sky'));
+  });
+
+  it('follows the device when nothing is saved', async () => {
+    document.documentElement.setAttribute('data-bg', 'dark');
+    signedIn(null);
+    render(<App check={up} />);
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
+    expect(await screen.findByLabelText('Match my device')).toBeChecked();
+  });
+
+  it('lets the user pick one of four, saves it, and can go back to the device', async () => {
+    const saved: unknown[] = [];
+    signedIn(null, saved);
+    render(<App check={up} />);
+    await userEvent.click(await screen.findByText('Background'));
+    for (const name of ['White', 'White-grey', 'Sky', 'Dark'])
+      expect(screen.getByLabelText(name)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Sky'));
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('sky'));
+    expect(saved).toEqual([{ background: 'sky' }]);
+    expect(localStorage.getItem('cv-background')).toBe('sky');
+    await userEvent.click(screen.getByLabelText('Match my device'));
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
+    expect(saved).toEqual([{ background: 'sky' }, { background: null }]);
+  });
+});

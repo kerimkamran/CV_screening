@@ -1,1 +1,227 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+
+/*
+ * Design tokens (spec section 4). Every colour in the app comes from these variables, so the four
+ * page backgrounds are one set of values each. Default is the device: Dark when the device is
+ * dark, otherwise White-grey. An explicit choice sets data-bg on <html> and always wins.
+ */
+:root {
+  --c-bg: #f6f8fc;
+  --c-card: #ffffff;
+  --c-sel: #eaf1fe;
+  --c-hover: #eef2f9;
+  --c-field: #ffffff;
+  --c-line: #d5dce8;
+  --c-edge: #6b7a99;
+  --c-ink: #0a1530;
+  --c-ink-2: #46537a;
+  --c-ink-3: #4c5c80;
+  --c-accent: #1f5ae8;
+  --c-accent-hover: #1a4dcb;
+  --c-on-accent: #ffffff;
+  --c-link: #1f5ae8;
+  --c-focus: #1f5ae8;
+  --c-danger: #b42318;
+  --c-danger-hover: #912018;
+  --c-tag: #e3edff;
+  --c-tag-ink: #0c3fa8;
+  --c-neutral: #e3e8f2;
+  --c-info: #e3edff;
+  --c-info-ink: #0c3fa8;
+  --c-info-line: #b3cdf7;
+  --c-ok: #d6f2e2;
+  --c-ok-ink: #0b5a33;
+  --c-ok-line: #8fd3ae;
+  --c-ok-text: #0b6b3c;
+  --c-warn: #fbe9be;
+  --c-warn-ink: #6b4200;
+  --c-warn-line: #e6c35f;
+  --c-warn-text: #8a5a00;
+  --c-err: #fadde6;
+  --c-err-ink: #8a1f45;
+  --c-err-line: #e79ab2;
+  color-scheme: light;
+}
+
+:root[data-bg='white'] {
+  --c-bg: #ffffff;
+  --c-hover: #f3f6fb;
+  color-scheme: light;
+}
+
+:root[data-bg='grey'] {
+  --c-bg: #f6f8fc;
+  --c-card: #ffffff;
+  --c-sel: #eaf1fe;
+  --c-hover: #eef2f9;
+  --c-field: #ffffff;
+  --c-line: #d5dce8;
+  --c-edge: #6b7a99;
+  --c-ink: #0a1530;
+  --c-ink-2: #46537a;
+  --c-ink-3: #4c5c80;
+  --c-tag: #e3edff;
+  --c-tag-ink: #0c3fa8;
+  --c-warn-text: #8a5a00;
+  --c-ok-text: #0b6b3c;
+  color-scheme: light;
+}
+
+:root[data-bg='sky'] {
+  --c-bg: #dceafb;
+  --c-card: #f4f9ff;
+  --c-sel: #d8e8fc;
+  --c-hover: #e8f1fd;
+  --c-field: #ffffff;
+  --c-line: #a9c0e0;
+  --c-edge: #566a91;
+  --c-ink: #0a1530;
+  --c-ink-2: #33426b;
+  --c-ink-3: #3b4b73;
+  --c-tag: #c2d8f8;
+  --c-tag-ink: #0a3796;
+  --c-warn-text: #7f4d00;
+  --c-ok-text: #0b5a33;
+  color-scheme: light;
+}
+
+/* Dark: chosen explicitly, or by the device when nothing is chosen. */
+:root[data-bg='dark'] {
+  --c-bg: #0a1530;
+  --c-card: #0f1d45;
+  --c-sel: #142654;
+  --c-hover: #142654;
+  --c-field: rgb(255 255 255 / 0.07);
+  --c-line: rgb(255 255 255 / 0.14);
+  --c-edge: rgb(255 255 255 / 0.4);
+  --c-ink: #e8eeff;
+  --c-ink-2: #b9c8f2;
+  --c-ink-3: #9fb0d0;
+  --c-accent: #2a63f0;
+  --c-accent-hover: #2158d9;
+  --c-link: #8fb4ff;
+  --c-focus: #5c93ff;
+  --c-danger: #c42b1c;
+  --c-danger-hover: #a82417;
+  --c-tag: #1d3266;
+  --c-tag-ink: #cfe0ff;
+  --c-neutral: #1f2b4d;
+  --c-info: #1d3266;
+  --c-info-ink: #cfe0ff;
+  --c-info-line: #2f4a8f;
+  --c-ok: #0f3d2a;
+  --c-ok-ink: #9fe3be;
+  --c-ok-line: #1e6b49;
+  --c-ok-text: #9fe3be;
+  --c-warn: #4a3508;
+  --c-warn-ink: #f5d58b;
+  --c-warn-line: #7a5a12;
+  --c-warn-text: #f5d58b;
+  --c-err: #4d1b30;
+  --c-err-ink: #f8b6cb;
+  --c-err-line: #7d2f4c;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-bg]) {
+    --c-bg: #0a1530;
+    --c-card: #0f1d45;
+    --c-sel: #142654;
+    --c-hover: #142654;
+    --c-field: rgb(255 255 255 / 0.07);
+    --c-line: rgb(255 255 255 / 0.14);
+    --c-edge: rgb(255 255 255 / 0.4);
+    --c-ink: #e8eeff;
+    --c-ink-2: #b9c8f2;
+    --c-ink-3: #9fb0d0;
+    --c-accent: #2a63f0;
+    --c-accent-hover: #2158d9;
+    --c-link: #8fb4ff;
+    --c-focus: #5c93ff;
+    --c-danger: #c42b1c;
+    --c-danger-hover: #a82417;
+    --c-tag: #1d3266;
+    --c-tag-ink: #cfe0ff;
+    --c-neutral: #1f2b4d;
+    --c-info: #1d3266;
+    --c-info-ink: #cfe0ff;
+    --c-info-line: #2f4a8f;
+    --c-ok: #0f3d2a;
+    --c-ok-ink: #9fe3be;
+    --c-ok-line: #1e6b49;
+    --c-ok-text: #9fe3be;
+    --c-warn: #4a3508;
+    --c-warn-ink: #f5d58b;
+    --c-warn-line: #7a5a12;
+    --c-warn-text: #f5d58b;
+    --c-err: #4d1b30;
+    --c-err-ink: #f8b6cb;
+    --c-err-line: #7d2f4c;
+    color-scheme: dark;
+  }
+}
+
+@theme {
+  --font-sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-page: var(--c-bg);
+  --color-card: var(--c-card);
+  --color-sel: var(--c-sel);
+  --color-hover: var(--c-hover);
+  --color-field: var(--c-field);
+  --color-line: var(--c-line);
+  --color-edge: var(--c-edge);
+  --color-ink: var(--c-ink);
+  --color-ink-2: var(--c-ink-2);
+  --color-ink-3: var(--c-ink-3);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-on-accent: var(--c-on-accent);
+  --color-link: var(--c-link);
+  --color-focus: var(--c-focus);
+  --color-danger: var(--c-danger);
+  --color-danger-hover: var(--c-danger-hover);
+  --color-tag: var(--c-tag);
+  --color-tag-ink: var(--c-tag-ink);
+  --color-neutral: var(--c-neutral);
+  --color-info: var(--c-info);
+  --color-info-ink: var(--c-info-ink);
+  --color-info-line: var(--c-info-line);
+  --color-ok: var(--c-ok);
+  --color-ok-ink: var(--c-ok-ink);
+  --color-ok-line: var(--c-ok-line);
+  --color-ok-text: var(--c-ok-text);
+  --color-warn: var(--c-warn);
+  --color-warn-ink: var(--c-warn-ink);
+  --color-warn-line: var(--c-warn-line);
+  --color-warn-text: var(--c-warn-text);
+  --color-err: var(--c-err);
+  --color-err-ink: var(--c-err-ink);
+  --color-err-line: var(--c-err-line);
+}
+
+@layer base {
+  html {
+    background: var(--c-bg);
+  }
+  body {
+    background: var(--c-bg);
+    color: var(--c-ink);
+  }
+  *,
+  ::before,
+  ::after {
+    border-color: var(--c-line);
+  }
+  input,
+  select,
+  textarea {
+    background-color: var(--c-field);
+    color: var(--c-ink);
+  }
+  ::placeholder {
+    color: var(--c-ink-3);
+    opacity: 1;
+  }
+}

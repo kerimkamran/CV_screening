@@ -9,12 +9,14 @@ import {
   type Me,
   type Session,
 } from './api';
+import { Appearance } from './Appearance';
 import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Vacancies } from './pages/Vacancies';
 import { Vacancy } from './pages/Vacancy';
 import { useRoute } from './route';
+import { applyBackground, isBackground } from './theme';
 import { Notice } from './ui';
 
 const IDLE_MS = 30 * 60 * 1000; // IAM-06: idle sign-out
@@ -43,7 +45,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   const loadMe = useCallback(async () => {
     if (!session.get()) return setBooting(false);
     try {
-      setMe(await api.get<Me>('/me'));
+      const m = await api.get<Me>('/me');
+      setMe(m);
+      applyBackground(isBackground(m.background) ? m.background : null);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status === 401) session.set(null);
     } finally {
@@ -96,7 +100,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         }}
       />
     );
-  } else if (booting) body = <p className="text-sm text-slate-500">Loading…</p>;
+  } else if (booting) body = <p className="text-sm text-ink-3">Loading…</p>;
   else if (!me) {
     body = (
       <>
@@ -125,13 +129,13 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         <h1 className="text-xl font-semibold">Administration</h1>
         <nav className="flex gap-2 text-sm">
           <a
-            className={`rounded px-3 py-1.5 ${route === '/admin' ? 'bg-sky-700 text-white' : 'bg-white border'}`}
+            className={`rounded px-3 py-1.5 ${route === '/admin' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
             href="#/admin"
           >
             Users
           </a>
           <a
-            className={`rounded px-3 py-1.5 ${route === '/admin/ai' ? 'bg-sky-700 text-white' : 'bg-white border'}`}
+            className={`rounded px-3 py-1.5 ${route === '/admin/ai' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
             href="#/admin/ai"
           >
             AI models
@@ -168,10 +172,10 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b bg-white">
+    <div className="min-h-screen bg-page text-ink">
+      <header className="border-b bg-card">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <a href="#/" className="font-semibold text-sky-800">
+          <a href="#/" className="font-semibold text-link">
             Azerconnect CV Screening
           </a>
           {me && !me.mustChangePassword && (
@@ -186,11 +190,15 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
                   Admin
                 </a>
               )}
+              <Appearance
+                value={isBackground(me.background) ? me.background : null}
+                onChange={(background) => setMe((m) => (m ? { ...m, background } : m))}
+              />
               <a href="#/password" className="hover:underline">
                 Password
               </a>
-              <span className="text-slate-500">{me.displayName ?? me.email}</span>
-              <button className="text-sky-800 hover:underline" onClick={() => signOut()}>
+              <span className="text-ink-2">{me.displayName ?? me.email}</span>
+              <button className="text-link hover:underline" onClick={() => signOut()}>
                 Sign out
               </button>
             </nav>
@@ -198,7 +206,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-slate-500">
+      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-ink-3">
         <p>
           AI-assisted screening: scores and rankings are recommendations. Every decision about a
           candidate is made by a person and recorded under their name.

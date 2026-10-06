@@ -113,6 +113,8 @@ export interface Me {
   displayName: string | null;
   roles: Role[];
   mustChangePassword?: boolean;
+  /** Chosen page background; null or absent means follow the device. */
+  background?: 'white' | 'grey' | 'sky' | 'dark' | null;
 }
 export interface Session {
   token: string;

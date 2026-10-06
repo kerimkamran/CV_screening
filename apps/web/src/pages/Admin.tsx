@@ -81,7 +81,7 @@ function InviteLink({ created }: { created: Created }) {
       </div>
       {copied === 'yes' && <p className="text-xs text-green-800">Link copied.</p>}
       {copied === 'no' && (
-        <p className="text-xs text-amber-800">
+        <p className="text-xs text-warn-text">
           Your browser blocked copying. The link is selected above: press Ctrl+C (Cmd+C on Mac).
         </p>
       )}
@@ -173,7 +173,7 @@ export function Users({ meId }: { meId: string }) {
             </button>
           </div>
         </form>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-ink-3">
           The user gets an email with a one-time link to choose their own password. If email is not
           set up, or fails, you get the link to copy and send yourself.
         </p>
@@ -193,7 +193,7 @@ export function Users({ meId }: { meId: string }) {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Users</caption>
-            <thead className="border-b text-xs uppercase text-slate-500">
+            <thead className="border-b text-xs uppercase text-ink-3">
               <tr>
                 <th className="py-2 pr-3">Name</th>
                 <th className="pr-3">Email</th>
@@ -207,7 +207,7 @@ export function Users({ meId }: { meId: string }) {
               {users
                 .filter((u) => u.issuer !== 'system')
                 .map((u) => (
-                  <tr key={u.id} className="border-b border-slate-100 align-top">
+                  <tr key={u.id} className="border-b border-line align-top">
                     <td className="py-2 pr-3 font-medium">{u.displayName}</td>
                     <td className="pr-3">{u.email}</td>
                     <td className="pr-3">
@@ -220,7 +220,7 @@ export function Users({ meId }: { meId: string }) {
                           ? 'Invited'
                           : 'Active'}
                     </td>
-                    <td className="pr-3 text-xs text-slate-500">{when(u.lastSeenAt)}</td>
+                    <td className="pr-3 text-xs text-ink-3">{when(u.lastSeenAt)}</td>
                     <td className="space-x-2 whitespace-nowrap py-1">
                       {u.status === 'active' && (
                         <button
@@ -426,7 +426,7 @@ function AddModel({
     <Card title="Add a model">
       <form className="space-y-5" onSubmit={submit}>
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-800">1. Company</h3>
+          <h3 className="text-sm font-semibold text-ink">1. Company</h3>
           <Field label="Company">
             <select
               className={input}
@@ -441,12 +441,12 @@ function AddModel({
               ))}
             </select>
           </Field>
-          <p className="text-xs text-slate-600">{company.dataNote}</p>
+          <p className="text-xs text-ink-2">{company.dataNote}</p>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-800">2. Model</h3>
-          <p className="text-xs text-slate-600">
+          <h3 className="text-sm font-semibold text-ink">2. Model</h3>
+          <p className="text-xs text-ink-2">
             {live
               ? `All ${company.name} models this key can use. Tick one or more.`
               : `${company.name} models from its documentation. After you add the key, load the full list from ${company.name} itself.`}
@@ -461,15 +461,15 @@ function AddModel({
             />
           )}
           <ul
-            className="max-h-56 divide-y divide-slate-100 overflow-auto rounded-md border border-slate-200"
+            className="max-h-56 divide-y divide-line overflow-auto rounded-md border border-line"
             aria-label="Models"
           >
             {shown.length === 0 && (
-              <li className="px-3 py-2 text-sm text-slate-500">Nothing more to add.</li>
+              <li className="px-3 py-2 text-sm text-ink-3">Nothing more to add.</li>
             )}
             {shown.map((m) => (
               <li key={m.id}>
-                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50">
+                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-page">
                   <input
                     type="checkbox"
                     checked={picked.has(m.id)}
@@ -481,8 +481,8 @@ function AddModel({
                     }}
                   />
                   <span className="font-mono text-xs">{m.id}</span>
-                  {m.label !== m.id && <span className="text-slate-500">{m.label}</span>}
-                  {m.note && <span className="text-xs text-amber-700">({m.note})</span>}
+                  {m.label !== m.id && <span className="text-ink-3">{m.label}</span>}
+                  {m.note && <span className="text-xs text-warn-text">({m.note})</span>}
                 </label>
               </li>
             ))}
@@ -511,7 +511,7 @@ function AddModel({
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-slate-800">3. API key</h3>
+          <h3 className="text-sm font-semibold text-ink">3. API key</h3>
           <div className="grid gap-3 md:grid-cols-2">
             <Field
               label="API key"
@@ -564,7 +564,7 @@ function AddModel({
             {existing ? 'Save' : 'Save company and model'}
             {toAdd.length ? ` (${toAdd.length} model${toAdd.length > 1 ? 's' : ''})` : ''}
           </button>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-3">
             The key is sent over HTTPS, encrypted on the server, and never shown again.
           </span>
         </div>
@@ -608,14 +608,14 @@ function CompanyCard({
   const changed = Object.entries(options).filter(([k, v]) => v !== (c.settings[k] ?? ''));
 
   return (
-    <Card title={c.name} actions={<span className="text-xs text-slate-500">key …{c.keyHint}</span>}>
+    <Card title={c.name} actions={<span className="text-xs text-ink-3">key …{c.keyHint}</span>}>
       <div className="space-y-4">
         <div>
-          <h3 className="mb-1 text-sm font-medium text-slate-700">Models you can use</h3>
+          <h3 className="mb-1 text-sm font-medium text-ink-2">Models you can use</h3>
           {c.models.length === 0 ? (
-            <p className="text-sm text-slate-500">None yet. Add one above.</p>
+            <p className="text-sm text-ink-3">None yet. Add one above.</p>
           ) : (
-            <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+            <ul className="divide-y divide-line rounded-md border border-line">
               {c.models.map((m) => (
                 <li key={m.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate font-mono text-xs" title={m.label}>
@@ -640,7 +640,7 @@ function CompanyCard({
                     Test
                   </button>
                   {m.isActive ? (
-                    <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-900">
+                    <span className="rounded bg-ok px-2 py-1 text-xs font-medium text-ok-ink">
                       Active
                     </span>
                   ) : (
@@ -678,7 +678,7 @@ function CompanyCard({
         </div>
 
         <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-slate-700">Key and settings</summary>
+          <summary className="cursor-pointer font-medium text-ink-2">Key and settings</summary>
           <div className="mt-2 space-y-2">
             <Field label="Replace API key" hint="The stored key is never shown.">
               <input

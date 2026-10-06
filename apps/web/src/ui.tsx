@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import type { ReqStatus } from './api';
 
 export const btn =
-  'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 disabled:opacity-50 disabled:cursor-not-allowed';
-export const btnPrimary = `${btn} bg-sky-700 text-white hover:bg-sky-800`;
-export const btnSecondary = `${btn} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`;
-export const btnDanger = `${btn} bg-red-700 text-white hover:bg-red-800`;
+  'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
+export const btnPrimary = `${btn} bg-accent text-on-accent hover:bg-accent-hover`;
+export const btnSecondary = `${btn} border border-edge bg-card text-ink hover:bg-page`;
+export const btnDanger = `${btn} bg-danger text-on-accent hover:bg-danger-hover`;
 export const input =
-  'block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-600';
+  'block w-full rounded-md border border-edge px-2.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus';
 
 export function Field({
   label,
@@ -20,9 +20,9 @@ export function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-700">{label}</span>
+      <span className="mb-1 block font-medium text-ink-2">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-ink-3">{hint}</span>}
     </label>
   );
 }
@@ -37,10 +37,10 @@ export function Card({
   actions?: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-line bg-card p-4 shadow-sm">
       {(title || actions) && (
         <div className="mb-3 flex items-center justify-between gap-2">
-          {title && <h2 className="text-base font-semibold text-slate-900">{title}</h2>}
+          {title && <h2 className="text-base font-semibold text-ink">{title}</h2>}
           {actions}
         </div>
       )}
@@ -57,10 +57,10 @@ export function Notice({
   children: ReactNode;
 }) {
   const c = {
-    info: 'border-sky-200 bg-sky-50 text-sky-900',
-    warn: 'border-amber-300 bg-amber-50 text-amber-900',
-    error: 'border-red-300 bg-red-50 text-red-900',
-    ok: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+    info: 'border-info-line bg-info text-info-ink',
+    warn: 'border-warn-line bg-warn text-warn-ink',
+    error: 'border-err-line bg-err text-err-ink',
+    ok: 'border-ok-line bg-ok text-ok-ink',
   }[kind];
   return (
     <div
@@ -73,38 +73,38 @@ export function Notice({
 }
 
 const STATUS: Record<ReqStatus, [string, string]> = {
-  met: ['Met', 'bg-emerald-100 text-emerald-900'],
-  partially_met: ['Partially met', 'bg-lime-100 text-lime-900'],
-  not_met: ['Not met', 'bg-red-100 text-red-900'],
-  not_found: ['Not found in CV', 'bg-slate-200 text-slate-800'],
-  ambiguous: ['Unclear', 'bg-amber-100 text-amber-900'],
-  not_applicable: ['Not applicable', 'bg-slate-100 text-slate-600'],
+  met: ['Met', 'bg-ok text-ok-ink'],
+  partially_met: ['Partially met', 'bg-ok text-ok-ink'],
+  not_met: ['Not met', 'bg-err text-err-ink'],
+  not_found: ['Not found in CV', 'bg-neutral text-ink'],
+  ambiguous: ['Unclear', 'bg-warn text-warn-ink'],
+  not_applicable: ['Not applicable', 'bg-neutral text-ink-2'],
 };
 export const statusLabel = (s: ReqStatus) => STATUS[s][0];
 
 /** Status is always text plus colour, never colour alone. */
 export function StatusBadge({ status }: { status: ReqStatus | null }) {
-  if (!status) return <span className="text-xs text-slate-400">—</span>;
+  if (!status) return <span className="text-xs text-ink-3">—</span>;
   const [label, cls] = STATUS[status];
   return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
 }
 
 const BAND: Record<string, [string, string]> = {
-  strong_match: ['Strong match', 'bg-emerald-100 text-emerald-900'],
-  possible_match: ['Possible match', 'bg-sky-100 text-sky-900'],
-  weak_match: ['Weak match', 'bg-slate-200 text-slate-800'],
-  needs_review: ['Needs review', 'bg-amber-100 text-amber-900'],
+  strong_match: ['Strong match', 'bg-ok text-ok-ink'],
+  possible_match: ['Possible match', 'bg-tag text-tag-ink'],
+  weak_match: ['Weak match', 'bg-neutral text-ink'],
+  needs_review: ['Needs review', 'bg-warn text-warn-ink'],
 };
 export function BandBadge({ band }: { band: string | null }) {
-  if (!band) return <span className="text-xs text-slate-400">—</span>;
-  const [label, cls] = BAND[band] ?? [band, 'bg-slate-100'];
+  if (!band) return <span className="text-xs text-ink-3">—</span>;
+  const [label, cls] = BAND[band] ?? [band, 'bg-neutral'];
   return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
 }
 
 export const OUTCOME: Record<string, [string, string]> = {
-  shortlist: ['Shortlisted', 'bg-emerald-100 text-emerald-900'],
-  hold: ['On hold', 'bg-amber-100 text-amber-900'],
-  reject: ['Rejected', 'bg-red-100 text-red-900'],
+  shortlist: ['Shortlisted', 'bg-ok text-ok-ink'],
+  hold: ['On hold', 'bg-warn text-warn-ink'],
+  reject: ['Rejected', 'bg-err text-err-ink'],
 };
 
 export function when(iso: string | null | undefined) {

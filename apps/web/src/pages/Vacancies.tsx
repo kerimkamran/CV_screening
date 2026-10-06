@@ -46,13 +46,13 @@ export function Vacancies({ canCreate }: { canCreate: boolean }) {
           <a
             key={v.id}
             href={`#/vacancies/${v.id}`}
-            className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-sky-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+            className="block rounded-lg border border-line bg-card p-4 shadow-sm hover:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
-            <div className="font-medium text-slate-900">{v.title}</div>
-            <div className="text-sm text-slate-500">
+            <div className="font-medium text-ink">{v.title}</div>
+            <div className="text-sm text-ink-3">
               {[v.department, v.location].filter(Boolean).join(' · ') || ' '}
             </div>
-            <div className="mt-2 text-xs text-slate-500">
+            <div className="mt-2 text-xs text-ink-3">
               {v.documentCount} CV{v.documentCount === 1 ? '' : 's'} · created {when(v.createdAt)}
             </div>
           </a>

@@ -51,7 +51,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
           <button className={`${btnPrimary} w-full`} disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-3">
             Accounts are created by your administrator, who sends you an invitation link.
           </p>
         </form>
@@ -175,12 +175,12 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
         {invalid ? (
           <div className="space-y-3">
             <Notice kind="error">{invalid}</Notice>
-            <a className="text-sm text-sky-800 hover:underline" href="#/">
+            <a className="text-sm text-link hover:underline" href="#/">
               Go to sign in
             </a>
           </div>
         ) : !who ? (
-          <p className="text-sm text-slate-500">Checking your link…</p>
+          <p className="text-sm text-ink-3">Checking your link…</p>
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <p className="text-sm">

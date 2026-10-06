@@ -303,4 +303,29 @@ describeDb('Local accounts', () => {
     const verify = await db.owner.query(`SELECT * FROM audit_event_verify_chain()`);
     expect(JSON.stringify(verify.rows[0])).not.toMatch(/false/);
   });
+
+  it('stores the page background per user, follows the device when cleared, and refuses other values', async () => {
+    const put = (token: string, body: unknown) =>
+      app.inject({
+        method: 'PUT',
+        url: '/me/preferences',
+        payload: body as object,
+        headers: { authorization: `Bearer ${token}` },
+      });
+    expect((await get('/me', adminToken)).json().background).toBeNull();
+    expect((await put(adminToken, { background: 'sky' })).statusCode).toBe(200);
+    expect((await get('/me', adminToken)).json().background).toBe('sky');
+    expect((await put(adminToken, { background: 'dark' })).statusCode).toBe(200);
+    expect((await get('/me', adminToken)).json().background).toBe('dark');
+    const rows = await db.owner.query('SELECT user_id FROM user_preference');
+    expect(rows.rowCount).toBe(1); // one row, keyed by the signed-in user
+    expect((await put(adminToken, { background: 'pink' })).statusCode).toBe(400);
+    expect((await put(adminToken, {})).statusCode).toBe(400);
+    expect((await put(adminToken, { background: null })).statusCode).toBe(200);
+    expect((await get('/me', adminToken)).json().background).toBeNull();
+    expect(
+      (await app.inject({ method: 'PUT', url: '/me/preferences', payload: { background: 'sky' } }))
+        .statusCode,
+    ).toBe(401);
+  });
 });

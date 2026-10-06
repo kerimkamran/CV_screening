@@ -39,15 +39,15 @@ export function Vacancy({ id }: { id: string }) {
   useEffect(() => void reload(), [reload]);
 
   if (error) return <Notice kind="error">{error}</Notice>;
-  if (!v) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!v) return <p className="text-sm text-ink-3">Loading…</p>;
   return (
     <div className="space-y-4">
       <div>
-        <a href="#/vacancies" className="text-sm text-sky-700 hover:underline">
+        <a href="#/vacancies" className="text-sm text-link hover:underline">
           ← Vacancies
         </a>
         <h1 className="text-xl font-semibold">{v.title}</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-ink-3">
           {[v.department, v.location].filter(Boolean).join(' · ')}
         </p>
       </div>
@@ -58,7 +58,7 @@ export function Vacancy({ id }: { id: string }) {
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? 'border-sky-700 text-sky-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
             {t === 'candidates' ? 'Candidates' : 'Criteria'}
           </button>
@@ -188,7 +188,7 @@ function CriteriaTab({ id }: { id: string }) {
             </button>
           </div>
         ) : (
-          <p className="max-h-40 overflow-auto whitespace-pre-wrap text-sm text-slate-700">{jd}</p>
+          <p className="max-h-40 overflow-auto whitespace-pre-wrap text-sm text-ink-2">{jd}</p>
         )}
       </Card>
 
@@ -234,13 +234,13 @@ function CriteriaTab({ id }: { id: string }) {
         }
       >
         {rows.length === 0 && !frozen && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-ink-3">
             No criteria yet. Extract them with AI or add your own.
           </p>
         )}
         <div className="space-y-3">
           {rows.map((r, i) => (
-            <div key={r.id ?? i} className="rounded-md border border-slate-200 p-3">
+            <div key={r.id ?? i} className="rounded-md border border-line p-3">
               <div className="grid gap-2 sm:grid-cols-[1fr_14rem_6rem_auto]">
                 <Field label="Criterion">
                   <input
@@ -340,7 +340,7 @@ function CriteriaTab({ id }: { id: string }) {
                 </div>
               )}
               {(r.confidence === 'low' || r.confidence === 'medium') && !dirty && (
-                <p className="mt-1 text-xs text-amber-700">
+                <p className="mt-1 text-xs text-warn-text">
                   The AI was {r.confidence === 'low' ? 'unsure' : 'moderately sure'} about this one.
                   Please check it.
                 </p>
@@ -393,7 +393,7 @@ function CriteriaTab({ id }: { id: string }) {
           </div>
         )}
         {frozen && c?.versions && c.versions.length > 1 && (
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-ink-3">
             After creating and freezing a new version, use “Screen with latest criteria” on the
             Candidates tab.
           </p>
@@ -491,12 +491,12 @@ function CandidatesTab({
 
       {!vacancy.candidateNoticeConfirmedAt ? (
         <Card title="Before you upload: candidate notice">
-          <p className="mb-2 text-sm text-slate-700">
+          <p className="mb-2 text-sm text-ink-2">
             Candidates must be told that AI assists the screening of their application. Share this
             text (for example in the job advert or the application confirmation), then confirm
             below. Uploading is blocked until you do.
           </p>
-          <blockquote className="mb-3 rounded border-l-4 border-sky-600 bg-sky-50 p-3 text-sm text-slate-800">
+          <blockquote className="mb-3 rounded border-l-4 border-accent bg-sel p-3 text-sm text-ink">
             {NOTICE_TEXT}
           </blockquote>
           <label className="mb-3 flex items-start gap-2 text-sm">
@@ -517,7 +517,7 @@ function CandidatesTab({
         </Card>
       ) : (
         <Card title="Upload CVs">
-          <p className="mb-2 text-sm text-slate-600">
+          <p className="mb-2 text-sm text-ink-2">
             PDF, DOCX or TXT, up to 10 MB each, up to 50 files at a time. Scanned (image-only) PDFs
             cannot be read and are flagged for manual review.
           </p>
@@ -531,7 +531,7 @@ function CandidatesTab({
             onChange={(e) => void upload(Array.from(e.target.files ?? []))}
             className="block text-sm"
           />
-          {busy && <p className="mt-2 text-sm text-slate-500">Uploading and reading files…</p>}
+          {busy && <p className="mt-2 text-sm text-ink-3">Uploading and reading files…</p>}
           {uploads.length > 0 && (
             <ul className="mt-3 space-y-1 text-sm">
               {uploads.map((u, i) => (
@@ -539,10 +539,10 @@ function CandidatesTab({
                   key={i}
                   className={
                     u.status === 'queued'
-                      ? 'text-emerald-800'
+                      ? 'text-ok-text'
                       : u.status === 'duplicate'
-                        ? 'text-slate-600'
-                        : 'text-amber-800'
+                        ? 'text-ink-2'
+                        : 'text-warn-text'
                   }
                 >
                   {u.filename}:{' '}
@@ -592,7 +592,7 @@ function CandidatesTab({
         }
       >
         {data && (
-          <p className="mb-3 text-sm text-slate-600" aria-live="polite">
+          <p className="mb-3 text-sm text-ink-2" aria-live="polite">
             {data.counts.total} CV(s) · {data.counts.undecided} awaiting your decision
             {data.counts.queued > 0 && ` · ${data.counts.queued} being screened`}
             {data.counts.failed > 0 && ` · ${data.counts.failed} failed`}
@@ -612,7 +612,7 @@ function CandidatesTab({
           </Field>
         </div>
         {data && data.counts.total === 0 && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-ink-3">
             No CVs yet. Freeze the criteria on the Criteria tab, confirm the notice, then upload.
           </p>
         )}
@@ -620,7 +620,7 @@ function CandidatesTab({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <caption className="sr-only">Candidates ranked by score</caption>
-              <thead className="border-b text-xs uppercase text-slate-500">
+              <thead className="border-b text-xs uppercase text-ink-3">
                 <tr>
                   <th className="py-2 pr-3">Candidate</th>
                   <th className="pr-3">Score</th>
@@ -631,11 +631,11 @@ function CandidatesTab({
               </thead>
               <tbody>
                 {rows.map((c) => (
-                  <tr key={c.documentId} className="border-b border-slate-100 align-top">
+                  <tr key={c.documentId} className="border-b border-line align-top">
                     <td className="py-2 pr-3">
                       {c.screeningId && !c.erased ? (
                         <a
-                          className="font-medium text-sky-800 hover:underline"
+                          className="font-medium text-link hover:underline"
                           href={`#/screenings/${c.screeningId}`}
                         >
                           {c.candidateName || c.filename}
@@ -643,24 +643,22 @@ function CandidatesTab({
                       ) : (
                         <span>{c.erased ? 'Erased' : c.filename}</span>
                       )}
-                      {c.candidateName && (
-                        <div className="text-xs text-slate-500">{c.filename}</div>
-                      )}
+                      {c.candidateName && <div className="text-xs text-ink-3">{c.filename}</div>}
                     </td>
                     <td className="pr-3">{c.score ? c.score.value : '—'}</td>
                     <td className="pr-3">
                       {c.state === 'completed' ? (
                         <BandBadge band={c.band} />
                       ) : (
-                        <span className="text-xs text-slate-600">{stateLabel(c)}</span>
+                        <span className="text-xs text-ink-2">{stateLabel(c)}</span>
                       )}
                     </td>
                     <td className="pr-3 text-xs">
                       {c.knockoutTriggered && (
-                        <div className="text-amber-800">Knockout rule matched</div>
+                        <div className="text-warn-text">Knockout rule matched</div>
                       )}
                       {c.injectionSuspected && (
-                        <div className="text-amber-800">Text tries to instruct the AI</div>
+                        <div className="text-warn-text">Text tries to instruct the AI</div>
                       )}
                       {c.score && c.score.breakdown.mandatoryGaps > 0 && (
                         <div>{c.score.breakdown.mandatoryGaps} mandatory gap(s)</div>
@@ -674,7 +672,7 @@ function CandidatesTab({
                           {OUTCOME[c.decision.outcome]![0]}
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-500">Undecided</span>
+                        <span className="text-xs text-ink-3">Undecided</span>
                       )}
                     </td>
                     <td>
@@ -703,7 +701,7 @@ function CandidatesTab({
           </div>
         )}
         {data && data.counts.total > 0 && rows.length === 0 && (
-          <p className="text-sm text-slate-500">Nothing matches this filter.</p>
+          <p className="text-sm text-ink-3">Nothing matches this filter.</p>
         )}
       </Card>
     </div>
