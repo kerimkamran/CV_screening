@@ -8,7 +8,7 @@ the OIDC path and the Azure IaC remain in the repository and are selected with `
 - AI models: an administrator chooses from a fixed list of AI companies (Google, OpenAI, Anthropic, Z.ai, Sakana Fugu, NVIDIA), adds ONE API key per company, chooses models from the company's own list, and decides which one model is active. Endpoints are fixed in the server (no administrator-typed addresses). Qwen was considered and dropped by the programme owner. The active model can be switched at any time and every assessment records the company and model that produced it.
 - Data: real candidates, internal trial.
 - Hosting: Render.
-- Sign-in: an administrator creates recruiter accounts; the system generates a password and emails credentials and a link.
+- Sign-in: an administrator creates recruiter accounts; the system emails credentials and a one-time invitation link, or (when email is unavailable) the admin copies that link and sends it. Opening the link lets the user choose their own password (single use, 72 h, only a SHA-256 hash stored, token kept in the URL fragment so it is not sent to the server on page load).
 
 ## What this changes, and why it is acceptable only for a trial
 

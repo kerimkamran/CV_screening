@@ -13,7 +13,7 @@ const createSchema = z.object({
   role: z.enum(ROLES).default('TA_PARTNER'),
 });
 
-/** Admin-created accounts: the system generates the password and emails it with the sign-in link. */
+/** Admin-created accounts: credentials are emailed, or the admin copies a one-time setup link instead. */
 @Roles('ADMIN')
 @Controller('admin/users')
 export class AccountsController {
@@ -33,6 +33,17 @@ export class AccountsController {
     @Req() req: FastifyRequest,
   ) {
     return this.auth.resetPassword(actor, parse(ulidSchema, userId), req.ip);
+  }
+
+  /** A one-time link the admin can copy and send by any channel; its holder chooses their own password. */
+  @Post(':userId/setup-link')
+  @HttpCode(200)
+  setupLink(
+    @Param('userId') userId: string,
+    @CurrentPrincipal() actor: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    return this.auth.issueSetupLink(actor, parse(ulidSchema, userId), req.ip);
   }
 
   @Post(':userId/status')

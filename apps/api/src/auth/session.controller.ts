@@ -6,6 +6,8 @@ import { AnyAuthenticated, CurrentPrincipal, Public } from './decorators';
 import { LocalAuthService } from './local-auth.service';
 import type { Principal } from './principal';
 
+const tokenSchema = z.object({ token: z.string().min(20).max(200) });
+
 /** Built-in sign-in. All routes answer 404 unless AUTH_MODE=local. */
 @Controller('auth')
 export class SessionController {
@@ -20,6 +22,27 @@ export class SessionController {
       body,
     );
     return this.auth.login(email, password, req.ip);
+  }
+
+  /** Who an invitation / password-setup link is for (so the page can say so). */
+  @Public()
+  @Post('setup-link/check')
+  @HttpCode(200)
+  checkSetup(@Body() body: unknown, @Req() req: FastifyRequest) {
+    const { token } = parse(tokenSchema, body);
+    return this.auth.inspectSetupLink(token, req.ip);
+  }
+
+  /** Opens the link: the holder chooses a password and is signed in. The link works once. */
+  @Public()
+  @Post('setup-password')
+  @HttpCode(200)
+  setPassword(@Body() body: unknown, @Req() req: FastifyRequest) {
+    const { token, newPassword } = parse(
+      tokenSchema.extend({ newPassword: z.string().max(256) }),
+      body,
+    );
+    return this.auth.completeSetup(token, newPassword, req.ip);
   }
 
   @AnyAuthenticated()

@@ -11,7 +11,7 @@ import {
 } from './api';
 import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
-import { ChangePassword, Login } from './pages/Login';
+import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Vacancies } from './pages/Vacancies';
 import { Vacancy } from './pages/Vacancy';
 import { useRoute } from './route';
@@ -81,8 +81,22 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   const isTa = !!me?.roles.some((r) => r === 'TA_PARTNER' || r === 'TA_LEAD');
   const isAdmin = !!me?.roles.includes('ADMIN');
 
+  // An invitation link works for anyone, signed in or not.
+  const setupToken = /^\/set-password\?token=([\w-]{20,200})$/.exec(route)?.[1];
+
   let body;
-  if (booting) body = <p className="text-sm text-slate-500">Loading…</p>;
+  if (setupToken) {
+    body = (
+      <SetPassword
+        token={setupToken}
+        onDone={() => {
+          window.location.hash = '/';
+          setNote('');
+          void loadMe();
+        }}
+      />
+    );
+  } else if (booting) body = <p className="text-sm text-slate-500">Loading…</p>;
   else if (!me) {
     body = (
       <>

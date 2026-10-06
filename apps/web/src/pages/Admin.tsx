@@ -29,8 +29,64 @@ const ROLE_LABEL: Record<string, string> = {
 
 interface Created {
   user: { id: string; email: string; displayName: string };
-  emailSent: boolean;
-  temporaryPassword?: string;
+  /** Absent when the admin only asked for a link (nothing was emailed). */
+  emailSent?: boolean;
+  setupToken: string;
+  expiresAt: string;
+}
+
+/** Built from the address the admin is using, so it always points at this very site. */
+export const inviteLink = (token: string) =>
+  `${window.location.origin}/#/set-password?token=${encodeURIComponent(token)}`;
+
+/** The one-time link an administrator sends to a user, who opens it and chooses a password. */
+function InviteLink({ created }: { created: Created }) {
+  const [copied, setCopied] = useState<'yes' | 'no' | ''>('');
+  const link = inviteLink(created.setupToken);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied('yes');
+    } catch {
+      setCopied('no'); // clipboard blocked: the field below is pre-selected for a manual copy
+    }
+  }
+  const who = created.user.email;
+  return (
+    <div className="space-y-2">
+      {created.emailSent === true ? (
+        <Notice kind="ok">
+          Credentials were emailed to {who}. You can also send an invitation link yourself.
+        </Notice>
+      ) : (
+        <Notice kind="warn">
+          {created.emailSent === false
+            ? 'Email could not be sent (check the email settings). '
+            : ''}
+          Copy this link and send it to {who} by any channel. When they open it they choose their
+          own password. It works once and expires {when(created.expiresAt)}. It is shown only once.
+        </Notice>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <input
+          readOnly
+          aria-label="Invitation link"
+          className={`${input} min-w-0 flex-1 font-mono text-xs`}
+          value={link}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <button type="button" className={btnPrimary} onClick={() => void copy()}>
+          Copy link
+        </button>
+      </div>
+      {copied === 'yes' && <p className="text-xs text-green-800">Link copied.</p>}
+      {copied === 'no' && (
+        <p className="text-xs text-amber-800">
+          Your browser blocked copying. The link is selected above: press Ctrl+C (Cmd+C on Mac).
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function Users({ meId }: { meId: string }) {
@@ -70,7 +126,7 @@ export function Users({ meId }: { meId: string }) {
     setCreated(null);
     try {
       const r = await fn();
-      if (r && typeof r === 'object' && 'emailSent' in r) setCreated(r as Created);
+      if (r && typeof r === 'object' && 'setupToken' in r) setCreated(r as Created);
       await load();
     } catch (e) {
       setError(errMsg(e));
@@ -113,13 +169,13 @@ export function Users({ meId }: { meId: string }) {
           </Field>
           <div className="flex items-end">
             <button className={`${btnPrimary} w-full`} disabled={busy}>
-              Create and email credentials
+              Create user
             </button>
           </div>
         </form>
         <p className="mt-2 text-xs text-slate-500">
-          The system generates a password and emails it with the sign-in link. The user must choose
-          their own password at first sign-in.
+          The user gets an email with a one-time link to choose their own password. If email is not
+          set up, or fails, you get the link to copy and send yourself.
         </p>
         {error && (
           <div className="mt-3">
@@ -128,17 +184,7 @@ export function Users({ meId }: { meId: string }) {
         )}
         {created && (
           <div className="mt-3">
-            {created.emailSent ? (
-              <Notice kind="ok">Credentials were emailed to {created.user.email}.</Notice>
-            ) : (
-              <Notice kind="warn">
-                Email could not be sent (check the email settings). Give this temporary password to{' '}
-                {created.user.email} through a secure channel. It is shown only once:{' '}
-                <code className="select-all rounded bg-white px-1.5 py-0.5 font-mono text-base">
-                  {created.temporaryPassword}
-                </code>
-              </Notice>
-            )}
+            <InviteLink created={created} />
           </div>
         )}
       </Card>
@@ -176,6 +222,14 @@ export function Users({ meId }: { meId: string }) {
                     </td>
                     <td className="pr-3 text-xs text-slate-500">{when(u.lastSeenAt)}</td>
                     <td className="space-x-2 whitespace-nowrap py-1">
+                      {u.status === 'active' && (
+                        <button
+                          className={btnSecondary}
+                          onClick={() => act(() => api.post(`/admin/users/${u.id}/setup-link`))}
+                        >
+                          Copy invite link
+                        </button>
+                      )}
                       <button
                         className={btnSecondary}
                         onClick={() => act(() => api.post(`/admin/users/${u.id}/reset-password`))}

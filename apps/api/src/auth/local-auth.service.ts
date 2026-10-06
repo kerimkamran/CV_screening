@@ -9,6 +9,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createHash, randomBytes } from 'node:crypto';
 import { newId, type Role } from '@cv/shared';
 import type { PoolClient } from 'pg';
 import { AuditService } from '../audit/audit.service';
@@ -31,6 +32,10 @@ const MAX_FAILURES = 5;
 const ipLimiter = new RateLimiter(30, 60_000);
 const LOCK_MINUTES = 15;
 const BAD_CREDENTIALS = 'Invalid email or password';
+/** How long an invitation / password-setup link stays usable. It also works only once. */
+export const SETUP_LINK_HOURS = 72;
+const INVALID_LINK = 'This link is invalid or has expired. Ask your administrator for a new one.';
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
 export interface SessionResult {
   token: string;
@@ -38,11 +43,18 @@ export interface SessionResult {
   mustChangePassword: boolean;
 }
 
-export interface CredentialsResult {
+/** A one-time link that lets its holder choose their own password. Shown to the admin once. */
+export interface SetupLink {
+  /** The secret part. The browser builds the link from its own address: `/#/set-password?token=…`. */
+  setupToken: string;
+  /** The same link on APP_BASE_URL, when that is configured (this is what the email carries). */
+  setupLink?: string;
+  expiresAt: string;
+}
+
+export interface CredentialsResult extends SetupLink {
   user: { id: string; email: string; displayName: string };
   emailSent: boolean;
-  /** Present ONLY when the email could not be delivered, so the admin can pass it on. Shown once. */
-  temporaryPassword?: string;
 }
 
 @Injectable()
@@ -206,7 +218,7 @@ export class LocalAuthService {
     const email = input.email.trim().toLowerCase();
     const password = generatePassword();
     const hash = await hashPassword(password);
-    const userId = await this.db.withTx(async (tx) => {
+    const made = await this.db.withTx(async (tx) => {
       const dup = await tx.query(`SELECT 1 FROM app_user WHERE lower(email) = $1`, [email]);
       if (dup.rowCount) throw new ConflictException('An account with this email already exists');
       const id = newId();
@@ -231,9 +243,9 @@ export class LocalAuthService {
         entityId: id,
         after: { email, role: input.role }, // never the password
       });
-      return id;
+      return { id, link: await this.newSetupLink(tx, id, actor.userId) };
     });
-    return this.deliver(userId, email, input.displayName.trim(), password, 'welcome');
+    return this.deliver(made.id, email, input.displayName.trim(), password, 'welcome', made.link);
   }
 
   async resetPassword(actor: Principal, userId: string, ip?: string): Promise<CredentialsResult> {
@@ -263,9 +275,130 @@ export class LocalAuthService {
         entityType: 'app_user',
         entityId: userId,
       });
-      return rows[0];
+      return { ...rows[0], link: await this.newSetupLink(tx, userId, actor.userId) };
     });
-    return this.deliver(userId, who.email, who.display_name, password, 'reset');
+    return this.deliver(userId, who.email, who.display_name, password, 'reset', who.link);
+  }
+
+  /** A fresh invitation / password-setup link for any built-in account. Older unused links stop working. */
+  async issueSetupLink(
+    actor: Principal,
+    userId: string,
+    ip?: string,
+  ): Promise<SetupLink & { user: { id: string; email: string; displayName: string } }> {
+    this.assertLocal();
+    return this.db.withTx(async (tx) => {
+      const { rows } = await tx.query<{ email: string; display_name: string; status: string }>(
+        `SELECT u.email, u.display_name, u.status FROM app_user u
+          JOIN local_credential c ON c.user_id = u.id WHERE u.id = $1 FOR UPDATE OF c`,
+        [userId],
+      );
+      const u = rows[0];
+      if (!u) throw new NotFoundException();
+      if (u.status !== 'active') throw new ConflictException('user is disabled');
+      const link = await this.newSetupLink(tx, userId, actor.userId);
+      await this.audit.record(tx, {
+        actorId: actor.userId,
+        actorType: actor.actorType,
+        actorRole: 'ADMIN',
+        sourceIp: ip,
+        action: 'user.setup_link',
+        entityType: 'app_user',
+        entityId: userId, // never the token
+      });
+      return { user: { id: userId, email: u.email, displayName: u.display_name }, ...link };
+    });
+  }
+
+  // ---------------------------------------------------------------- public: open a setup link
+
+  /** Who the link is for, so the page can say so before asking for a password. */
+  async inspectSetupLink(
+    token: string,
+    ip?: string,
+  ): Promise<{ email: string; displayName: string }> {
+    this.assertLocal();
+    this.throttle(ip);
+    const { rows } = await this.db.query<{ email: string; display_name: string; status: string }>(
+      `SELECT u.email, u.display_name, u.status
+         FROM password_setup s JOIN app_user u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND s.used_at IS NULL AND s.expires_at > now()`,
+      [sha256(token)],
+    );
+    const r = rows[0];
+    if (!r || r.status !== 'active') throw new BadRequestException(INVALID_LINK);
+    return { email: r.email, displayName: r.display_name };
+  }
+
+  /** Redeems the link: sets the password the holder chose, burns the link and signs them in. */
+  async completeSetup(token: string, newPassword: string, ip?: string): Promise<SessionResult> {
+    this.assertLocal();
+    this.throttle(ip);
+    const out = await this.db.withTx(async (tx) => {
+      const { rows } = await tx.query<{
+        id: string;
+        user_id: string;
+        email: string;
+        status: string;
+      }>(
+        `SELECT s.id, s.user_id, u.email, u.status
+           FROM password_setup s
+           JOIN app_user u ON u.id = s.user_id
+           JOIN local_credential c ON c.user_id = u.id
+          WHERE s.token_hash = $1 AND s.used_at IS NULL AND s.expires_at > now()
+          FOR UPDATE OF s, c`,
+        [sha256(token)],
+      );
+      const r = rows[0];
+      if (!r || r.status !== 'active') throw new BadRequestException(INVALID_LINK);
+      const problem = passwordProblem(newPassword, r.email);
+      if (problem) throw new BadRequestException(`New password ${problem}`);
+      const upd = await tx.query<{ session_version: number }>(
+        `UPDATE local_credential SET password_hash = $2, must_change = false,
+                password_changed_at = now(), session_version = session_version + 1,
+                failed_attempts = 0, locked_until = NULL
+          WHERE user_id = $1 RETURNING session_version`,
+        [r.user_id, await hashPassword(newPassword)],
+      );
+      await tx.query(`UPDATE password_setup SET used_at = now() WHERE id = $1`, [r.id]);
+      await this.audit.record(tx, {
+        actorId: r.user_id,
+        actorType: 'human',
+        sourceIp: ip,
+        action: 'auth.password_set_via_link',
+        entityType: 'app_user',
+        entityId: r.user_id,
+      });
+      return { email: r.email, sv: upd.rows[0]!.session_version };
+    });
+    return this.session(out.email, false, out.sv);
+  }
+
+  private throttle(ip?: string) {
+    if (ip && !ipLimiter.take(ip)) {
+      throw new HttpException(
+        'Too many attempts. Try again in a minute.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /** New one-time token for the user; any earlier unused link is withdrawn. Only the hash is kept. */
+  private async newSetupLink(tx: PoolClient, userId: string, by: string): Promise<SetupLink> {
+    const token = randomBytes(32).toString('base64url');
+    const expires = new Date(Date.now() + SETUP_LINK_HOURS * 3_600_000);
+    await tx.query(`DELETE FROM password_setup WHERE user_id = $1 AND used_at IS NULL`, [userId]);
+    await tx.query(
+      `INSERT INTO password_setup (id, user_id, token_hash, expires_at, created_by)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [newId(), userId, sha256(token), expires, by],
+    );
+    const base = this.env.APP_BASE_URL?.replace(/\/+$/, '');
+    return {
+      setupToken: token,
+      ...(base ? { setupLink: `${base}/#/set-password?token=${token}` } : {}),
+      expiresAt: expires.toISOString(),
+    };
   }
 
   async setStatus(actor: Principal, userId: string, status: 'active' | 'disabled', ip?: string) {
@@ -367,6 +500,7 @@ export class LocalAuthService {
     displayName: string,
     password: string,
     kind: 'welcome' | 'reset',
+    setup: SetupLink,
   ): Promise<CredentialsResult> {
     const link = this.env.APP_BASE_URL ?? '(ask your administrator for the address)';
     const text = [
@@ -381,6 +515,14 @@ export class LocalAuthService {
       `Password:  ${password}`,
       '',
       'This password is temporary. You will be asked to choose your own the first time you sign in.',
+      ...(setup.setupLink
+        ? [
+            '',
+            `Or choose your own password right away with this one-time link (valid ${SETUP_LINK_HOURS} hours):`,
+            setup.setupLink,
+          ]
+        : []),
+      '',
       'Do not forward this message. If you did not expect it, tell your administrator.',
     ].join('\n');
     const emailSent = await this.mail.send({
@@ -389,10 +531,7 @@ export class LocalAuthService {
         kind === 'welcome' ? 'Your CV Screening account' : 'Your CV Screening password was reset',
       text,
     });
-    return {
-      user: { id, email, displayName },
-      emailSent,
-      ...(emailSent ? {} : { temporaryPassword: password }),
-    };
+    // When the email did not go out, the admin copies the link instead of a password.
+    return { user: { id, email, displayName }, emailSent, ...setup };
   }
 }

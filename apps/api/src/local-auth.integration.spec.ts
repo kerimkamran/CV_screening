@@ -107,6 +107,9 @@ describeDb('Local accounts', () => {
     const body = r.json();
     expect(body.emailSent).toBe(true);
     expect(body.temporaryPassword).toBeUndefined();
+    // The same email also carries a one-time link to choose a password.
+    expect(body.setupLink).toBe(`https://cv.example.test/#/set-password?token=${body.setupToken}`);
+    expect(sent.at(-1)!.text).toContain(body.setupLink);
     recruiterId = body.user.id;
     const mail = sent.at(-1)!;
     expect(mail.to).toBe('ayla.recruiter@azerconnect.test');
@@ -146,15 +149,117 @@ describeDb('Local accounts', () => {
       401,
     );
 
-    mailWorks = false; // simulate an email outage: the admin gets the password once instead
+    mailWorks = false; // simulate an email outage: the admin copies a one-time link instead
     const reset = await post(`/admin/users/${recruiterId}/reset-password`, {}, adminToken);
     expect(reset.statusCode).toBe(200);
     expect(reset.json().emailSent).toBe(false);
-    const temp = reset.json().temporaryPassword as string;
-    const s = await login('ayla.recruiter@azerconnect.test', temp);
-    expect(s.status).toBe(200);
-    expect(s.mustChangePassword).toBe(true);
+    expect(reset.json().temporaryPassword).toBeUndefined(); // no password is ever handed out
+    const token = reset.json().setupToken as string;
+    const opened = await post('/auth/setup-password', {
+      token,
+      newPassword: 'Chosen-by-the-user-77',
+    });
+    expect(opened.statusCode).toBe(200);
+    expect((await login('ayla.recruiter@azerconnect.test', 'Chosen-by-the-user-77')).status).toBe(
+      200,
+    );
     mailWorks = true;
+  });
+
+  describe('invitation links', () => {
+    const issue = async (id = recruiterId) =>
+      (await post(`/admin/users/${id}/setup-link`, {}, adminToken)).json() as {
+        setupToken: string;
+        setupLink: string;
+        expiresAt: string;
+        user: { email: string };
+      };
+
+    it('an admin copies a link; opening it lets the user choose a password and signs them in', async () => {
+      const l = await issue();
+      expect(l.setupLink).toContain('/#/set-password?token=');
+      expect(l.user.email).toBe('ayla.recruiter@azerconnect.test');
+      const ttl = new Date(l.expiresAt).getTime() - Date.now();
+      expect(ttl).toBeGreaterThan(71 * 3_600_000);
+      expect(ttl).toBeLessThanOrEqual(72 * 3_600_000);
+
+      const who = await post('/auth/setup-link/check', { token: l.setupToken });
+      expect(who.json()).toEqual({
+        email: 'ayla.recruiter@azerconnect.test',
+        displayName: 'Ayla',
+      });
+      const weak = await post('/auth/setup-password', {
+        token: l.setupToken,
+        newPassword: 'short',
+      });
+      expect(weak.statusCode).toBe(400);
+      const ok = await post('/auth/setup-password', {
+        token: l.setupToken,
+        newPassword: 'Link-chosen-pass-31',
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json().mustChangePassword).toBe(false);
+      const me = (await get('/me', ok.json().token)).json();
+      expect(me.roles).toEqual(['TA_PARTNER']);
+      expect((await login('ayla.recruiter@azerconnect.test', 'Link-chosen-pass-31')).status).toBe(
+        200,
+      );
+    });
+
+    it('works once, and only the hash is stored', async () => {
+      const l = await issue();
+      expect(
+        (
+          await post('/auth/setup-password', {
+            token: l.setupToken,
+            newPassword: 'Second-pass-4242',
+          })
+        ).statusCode,
+      ).toBe(200);
+      const again = await post('/auth/setup-password', {
+        token: l.setupToken,
+        newPassword: 'Third-pass-5353x',
+      });
+      expect(again.statusCode).toBe(400);
+      expect((await post('/auth/setup-link/check', { token: l.setupToken })).statusCode).toBe(400);
+      const stored = await db.owner.query(`SELECT token_hash FROM password_setup`);
+      for (const r of stored.rows) expect(r.token_hash).not.toContain(l.setupToken);
+    });
+
+    it('a newer link withdraws the older one, and an expired link is refused', async () => {
+      const first = await issue();
+      const second = await issue();
+      expect((await post('/auth/setup-link/check', { token: first.setupToken })).statusCode).toBe(
+        400,
+      );
+      expect((await post('/auth/setup-link/check', { token: second.setupToken })).statusCode).toBe(
+        200,
+      );
+      await db.owner.query(`UPDATE password_setup SET expires_at = now() - interval '1 minute'`);
+      const late = await post('/auth/setup-password', {
+        token: second.setupToken,
+        newPassword: 'Too-late-pass-6464',
+      });
+      expect(late.statusCode).toBe(400);
+      expect(late.json().message).toMatch(/invalid or has expired/);
+    });
+
+    it('a made-up token, a disabled user and a non-admin are all refused', async () => {
+      expect((await post('/auth/setup-link/check', { token: 'x'.repeat(43) })).statusCode).toBe(
+        400,
+      );
+      const l = await issue();
+      await post(`/admin/users/${recruiterId}/status`, { status: 'disabled' }, adminToken);
+      expect((await post('/auth/setup-link/check', { token: l.setupToken })).statusCode).toBe(400);
+      expect(
+        (await post(`/admin/users/${recruiterId}/setup-link`, {}, adminToken)).statusCode,
+      ).toBe(409);
+      await post(`/admin/users/${recruiterId}/status`, { status: 'active' }, adminToken);
+      const asUser = await login('ayla.recruiter@azerconnect.test', 'Second-pass-4242');
+      expect(
+        (await post(`/admin/users/${recruiterId}/setup-link`, {}, asUser.token)).statusCode,
+      ).toBe(403);
+    });
   });
 
   it('unknown accounts and wrong passwords are indistinguishable', async () => {

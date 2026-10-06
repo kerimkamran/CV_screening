@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchReadiness, session } from './api';
-import { AiSettings } from './pages/Admin';
+import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown };
@@ -362,5 +362,89 @@ describe('admin AI models', () => {
     expect(order.findIndex((u) => u.endsWith('/models/M1/test'))).toBeLessThan(
       order.findIndex((u) => u.endsWith('/admin/ai/active')),
     );
+  });
+});
+
+describe('invitation links', () => {
+  const TOKEN = 'tok_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abc';
+  afterEach(() => {
+    window.location.hash = '';
+  });
+
+  it('opening a link shows who it is for, lets them choose a password and signs them in', async () => {
+    window.location.hash = `/set-password?token=${TOKEN}`;
+    const calls = mockFetch((url) => {
+      if (url.endsWith('/auth/setup-link/check'))
+        return { body: { email: 'ayla@x.az', displayName: 'Ayla' } };
+      if (url.endsWith('/auth/setup-password'))
+        return { body: { token: 's1', expiresIn: 3600, mustChangePassword: false } };
+      if (url.endsWith('/me'))
+        return {
+          body: { userId: 'u', displayName: 'Ayla', email: 'ayla@x.az', roles: ['TA_PARTNER'] },
+        };
+      return { body: [] };
+    });
+    render(<App check={up} />);
+    expect(await screen.findByText('ayla@x.az')).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/^New password/), 'A-long-chosen-pass-1');
+    await userEvent.type(screen.getByLabelText('Repeat new password'), 'different-pass-123');
+    await userEvent.click(screen.getByRole('button', { name: 'Save password and sign in' }));
+    expect(await screen.findByText('The passwords do not match')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('Repeat new password'));
+    await userEvent.type(screen.getByLabelText('Repeat new password'), 'A-long-chosen-pass-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Save password and sign in' }));
+    await waitFor(() => expect(session.get()).toBe('s1'));
+    const sent = calls.find((c) => c.url.endsWith('/auth/setup-password'))!;
+    expect(JSON.parse(String(sent.init!.body))).toEqual({
+      token: TOKEN,
+      newPassword: 'A-long-chosen-pass-1',
+    });
+  });
+
+  it('says so plainly when a link is invalid, used or expired', async () => {
+    window.location.hash = `/set-password?token=${TOKEN}`;
+    mockFetch(() => ({
+      status: 400,
+      body: {
+        message: 'This link is invalid or has expired. Ask your administrator for a new one.',
+      },
+    }));
+    render(<App check={up} />);
+    expect(await screen.findByText(/invalid or has expired/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
+  });
+
+  it('gives the admin a link to copy when the email could not be sent', async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (t: string) => void written.push(t) },
+    });
+    mockFetch((url, init) => {
+      if (url.endsWith('/admin/users') && init?.method === 'POST')
+        return {
+          status: 201,
+          body: {
+            user: { id: 'U', email: 'new@x.az', displayName: 'New' },
+            emailSent: false,
+            setupToken: TOKEN,
+            expiresAt: new Date(Date.now() + 72 * 3_600_000).toISOString(),
+          },
+        };
+      return { body: [] };
+    });
+    render(<Users meId="me" />);
+    await userEvent.type(screen.getByLabelText('Email'), 'new@x.az');
+    await userEvent.type(screen.getByLabelText('Name'), 'New');
+    await userEvent.click(screen.getByRole('button', { name: 'Create user' }));
+    expect(await screen.findByText(/Email could not be sent/)).toBeInTheDocument();
+    const field = screen.getByLabelText('Invitation link') as HTMLInputElement;
+    expect(field.value).toBe(`${window.location.origin}/#/set-password?token=${TOKEN}`);
+    // No password is ever shown.
+    expect(screen.queryByText(/temporary password/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(await screen.findByText('Link copied.')).toBeInTheDocument();
+    expect(written).toEqual([field.value]);
   });
 });

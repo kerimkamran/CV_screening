@@ -29,7 +29,7 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
    - **3. API key**: paste ONE key per company; it covers all of that company's models. Extra options appear only where a company needs them (OpenAI: optional "Europe" data region, valid only for a project created with EU data residency).
    - Press **Save company and model**, then **Test** and **Use this** on the model you want. **Use this** runs a test call first and switches only if it works. Switch to any other model or company whenever you like; each assessment records the company and model that produced it.
    - To add more models to a company that already has its key, pick the company again: the key shows as "on file" and you only tick models.
-3. **Admin → Users**: add recruiters. Each gets an email with the link and a temporary password and must choose their own at first sign-in.
+3. **Admin → Users**: add recruiters. Each gets an email with the sign-in address, a temporary password and a one-time invitation link. If email is not set up or fails, the page shows the **invitation link to copy**: send it by any channel (Teams, WhatsApp, in person). The person opens it, chooses their own password and is signed in. A link works once and expires after 72 hours. **Copy invite link** on any user makes a new one (for a first invitation or a forgotten password) and withdraws the previous unused link. No password is ever shown on screen.
 4. A recruiter creates a vacancy, extracts criteria, edits and freezes them, confirms the candidate notice, uploads CVs, reviews, decides, exports.
 
 ## Email
@@ -37,8 +37,8 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
 Render's free web services block outbound SMTP, so the default is **Resend** over HTTPS (works on every plan):
 create a Resend account, verify your sending domain (e.g. azerconnect.az) or use their test sender, create an API key, and set
 `RESEND_API_KEY` and `EMAIL_FROM` (`Azerconnect CV Screening <no-reply@azerconnect.az>`). For SMTP on a paid plan set
-`EMAIL_PROVIDER=smtp` and the `SMTP_*` variables. If email is not configured or fails, creating a user still works: the admin sees the
-temporary password once on screen and passes it on securely.
+`EMAIL_PROVIDER=smtp` and the `SMTP_*` variables. If email is not configured or fails, creating a user still works: the admin copies the one-time invitation link (shown once) and sends it themselves.
+The link is built from the address you are using, so open the admin pages on the service's real URL (not a preview address) when copying links. `APP_BASE_URL` only affects links inside emails.
 
 ## Operations
 
