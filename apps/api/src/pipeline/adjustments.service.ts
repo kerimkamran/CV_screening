@@ -6,6 +6,9 @@ import { bandFor, computeScore } from './score';
 
 export type Kind = 'mandatory' | 'preferred' | 'ignore';
 
+const kindName = (c: string): Kind =>
+  c === 'mandatory' ? 'mandatory' : c === 'preferred' ? 'preferred' : 'ignore';
+
 const kindOf = (c: RequirementClass): Kind =>
   c === 'mandatory' ? 'mandatory' : c === 'preferred' ? 'preferred' : 'ignore';
 const classOf = (k: Kind): RequirementClass =>
@@ -62,6 +65,29 @@ export class AdjustmentService {
       else if (r.requirement_id && r.to_kind) m.set(r.requirement_id, r.to_kind);
     }
     return m;
+  }
+
+  async view(vid: string) {
+    const [set, overlay, changes] = await Promise.all([
+      this.currentSet(vid),
+      this.overlay(vid),
+      this.history(vid),
+    ]);
+    const lastReset = changes.map((c) => c.reset).lastIndexOf(true);
+    return {
+      requirements: set
+        .filter((r) => r.classification !== 'disqualifier')
+        .map((r) => ({
+          id: r.id,
+          text: r.text,
+          original: kindName(r.classification),
+          current: overlay.get(r.id) ?? kindName(r.classification),
+        })),
+      knockouts: set.filter((r) => r.classification === 'disqualifier').map((r) => r.text),
+      changes,
+      /** Changes since the first scan, or since the last "back to original". */
+      changeCount: changes.slice(lastReset + 1).filter((c) => !c.reset).length,
+    };
   }
 
   async history(vid: string) {

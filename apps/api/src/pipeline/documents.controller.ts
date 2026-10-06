@@ -34,8 +34,9 @@ import {
   VacancyFileProblem,
 } from './documents';
 import { AdjustmentService } from './adjustments.service';
-import { ExportService, type CandidateRow } from './export.service';
-import type { Breakdown } from './score';
+import { CandidatesService } from './candidates.service';
+import { ReportService } from './report.service';
+import { ExportService } from './export.service';
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
 const MAX_FILES = 50;
@@ -58,6 +59,8 @@ export class DocumentsController {
     private readonly scope: VacancyScope,
     private readonly xlsx: ExportService,
     private readonly adj: AdjustmentService,
+    private readonly candidatesSvc: CandidatesService,
+    private readonly reports: ReportService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -229,7 +232,7 @@ export class DocumentsController {
   ) {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
-    const rows = await this.rows(vid);
+    const rows = await this.candidatesSvc.rows(vid);
     const filtered = band ? rows.filter((r) => r.band === band) : rows;
     const counts = {
       total: rows.length,
@@ -253,60 +256,7 @@ export class DocumentsController {
   async revealed(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
-    const { rows } = await this.db.query<{ screeningId: string; action: string }>(
-      `SELECT DISTINCT ON (a.entity_id) a.entity_id AS "screeningId", a.action
-         FROM audit_event a
-         JOIN screening sc ON sc.id = a.entity_id
-         JOIN cv_document d ON d.id = sc.document_id
-        WHERE a.actor_id = $1 AND d.vacancy_id = $2
-          AND a.action IN ('candidate.name_revealed', 'candidate.name_hidden')
-        ORDER BY a.entity_id, a.seq DESC`,
-      [p.userId, vid],
-    );
-    return {
-      screeningIds: rows
-        .filter((r) => r.action === 'candidate.name_revealed')
-        .map((r) => r.screeningId),
-    };
-  }
-
-  private async rows(vid: string): Promise<CandidateRow[]> {
-    const { rows } = await this.db.query<
-      Omit<CandidateRow, 'score'> & { score: number | null; breakdown: Breakdown | null }
-    >(
-      `WITH cur AS (
-         SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1)
-       SELECT sc.id AS "screeningId", d.id AS "documentId", d.filename, d.uploaded_at AS "uploadedAt",
-              d.parse_status AS "parseStatus", d.erased_at IS NOT NULL AS erased,
-              CASE WHEN sc.state = 'queued' AND sc.cancelled_at IS NOT NULL THEN 'stopped'
-                   ELSE COALESCE(sc.state::text, 'queued') END AS state, sc.candidate_name AS "candidateName", sc.band,
-              sc.score::float AS score, sc.breakdown, sc.knockout_triggered AS "knockoutTriggered",
-              sc.injection_suspected AS "injectionSuspected", sc.error,
-              (SELECT json_build_object('outcome', x.outcome, 'reason', x.reason, 'decidedAt', x.decided_at,
-                                        'decidedBy', u.display_name)
-                 FROM decision x JOIN app_user u ON u.id = x.decided_by
-                WHERE x.screening_id = sc.id ORDER BY x.decided_at DESC, x.id DESC LIMIT 1) AS decision
-         FROM cv_document d
-         LEFT JOIN screening sc ON sc.document_id = d.id AND sc.requirement_set_id = (SELECT id FROM cur)
-        WHERE d.vacancy_id = $1
-        ORDER BY sc.score DESC NULLS LAST, d.uploaded_at DESC`,
-      [vid],
-    );
-    // SCORE-03: a score is only ever serialised together with its breakdown.
-    const out: CandidateRow[] = rows.map(({ score, breakdown, ...r }) => ({
-      ...r,
-      score: score !== null && breakdown ? { value: score, breakdown } : null,
-    }));
-    // Spec 6.2.5: the recruiter's requirement changes re-rank without re-reading anyone.
-    await this.adj.apply(vid, out);
-    // Pseudonym number = upload order, the same rule the screen uses, so it never changes.
-    const byUpload = [...out].sort(
-      (a, b) =>
-        new Date(a.uploadedAt).toISOString().localeCompare(new Date(b.uploadedAt).toISOString()) ||
-        a.documentId.localeCompare(b.documentId),
-    );
-    byUpload.forEach((r, i) => (r.ordinal = i + 1));
-    return out;
+    return { screeningIds: await this.candidatesSvc.revealedBy(vid, p.userId) };
   }
 
   /**
@@ -487,6 +437,12 @@ export class DocumentsController {
           WHERE document_id = $1`,
         [did],
       );
+      // Shared reports must not keep what was erased (spec 6.5).
+      const vac = await tx.query<{ vacancy_id: string }>(
+        `SELECT vacancy_id FROM cv_document WHERE id = $1`,
+        [did],
+      );
+      await this.reports.scrubDocument(tx, vac.rows[0]!.vacancy_id, did);
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -507,7 +463,7 @@ export class DocumentsController {
   ) {
     const vid = parse(ulidSchema, id);
     const vac = await this.scope.assert(p, vid);
-    const rows = await this.rows(vid);
+    const rows = await this.candidatesSvc.rows(vid);
     const buf = await this.xlsx.build(vac.title, vid, rows, p);
     await this.db.withTx((tx) =>
       this.audit.record(tx, {

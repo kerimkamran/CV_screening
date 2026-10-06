@@ -210,7 +210,7 @@ export class LocalAuthService {
 
   async createUser(
     actor: Principal,
-    input: { email: string; displayName: string; role: Role },
+    input: { email: string; displayName: string; role: Role | 'NONE' },
     ip?: string,
   ): Promise<CredentialsResult> {
     this.assertLocal();
@@ -232,7 +232,7 @@ export class LocalAuthService {
         id,
         hash,
       ]);
-      await this.grant(tx, id, input.role, actor.userId);
+      if (input.role !== 'NONE') await this.grant(tx, id, input.role, actor.userId);
       await this.audit.record(tx, {
         actorId: actor.userId,
         actorType: actor.actorType,

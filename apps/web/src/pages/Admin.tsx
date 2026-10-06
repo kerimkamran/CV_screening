@@ -25,6 +25,7 @@ const ROLE_LABEL: Record<string, string> = {
   TA_LEAD: 'Recruiting lead',
   GOVERNANCE: 'Governance (read-only)',
   ADMIN: 'Administrator',
+  NONE: 'Report viewer only (no other access)',
 };
 
 interface Created {
@@ -211,7 +212,7 @@ export function Users({ meId }: { meId: string }) {
                     <td className="py-2 pr-3 font-medium">{u.displayName}</td>
                     <td className="pr-3">{u.email}</td>
                     <td className="pr-3">
-                      {u.roles.map((r) => ROLE_LABEL[r] ?? r).join(', ') || 'No access'}
+                      {u.roles.map((r) => ROLE_LABEL[r] ?? r).join(', ') || 'Report viewer only'}
                     </td>
                     <td className="pr-3">
                       {u.status === 'disabled'

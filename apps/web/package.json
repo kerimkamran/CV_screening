@@ -12,7 +12,8 @@
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "@cv/shared": "*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

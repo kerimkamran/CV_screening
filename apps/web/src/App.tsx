@@ -14,6 +14,7 @@ import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
 import { Home } from './pages/Home';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
+import { SharedList, SharedReport } from './pages/SharedReport';
 import { Vacancies } from './pages/Vacancies';
 import { Vacancy, type Tab } from './pages/Vacancy';
 import { useRoute } from './route';
@@ -126,6 +127,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         }}
       />
     );
+  else if (/^\/reports\/[0-9A-Z]{26}$/.test(route))
+    body = <SharedReport id={route.split('/')[2]!} key={route} />;
+  else if (route === '/reports') body = <SharedList />;
   else if (route.startsWith('/admin')) {
     body = isAdmin ? (
       <div className="space-y-4">
@@ -150,11 +154,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       <Notice kind="error">Administrators only.</Notice>
     );
   } else if (!isTa && !me.roles.length) {
-    body = (
-      <Notice kind="warn">
-        Your account has no access yet. Ask an administrator to assign you a role.
-      </Notice>
-    );
+    // An account with no role can open the reports shared with it, and nothing else (spec 6.5).
+    body = <SharedList />;
   } else if (!isTa && isAdmin) {
     body = (
       <Notice kind="info">
@@ -197,6 +198,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
                   </a>
                 </>
               )}
+              <a href="#/reports" className="hover:underline">
+                Shared with me
+              </a>
               {isAdmin && (
                 <a href="#/admin" className="hover:underline">
                   Admin

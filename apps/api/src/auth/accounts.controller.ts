@@ -10,7 +10,8 @@ import type { Principal } from './principal';
 const createSchema = z.object({
   email: z.string().trim().email().max(254),
   displayName: z.string().trim().min(1).max(120),
-  role: z.enum(ROLES).default('TA_PARTNER'),
+  /** `NONE`: a report viewer. No role, so nothing but shared reports can be opened (spec 6.5). */
+  role: z.enum([...ROLES, 'NONE']).default('TA_PARTNER'),
 });
 
 /** Admin-created accounts: credentials are emailed, or the admin copies a one-time setup link instead. */

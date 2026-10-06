@@ -14,6 +14,7 @@ import {
   unreadReason,
   type MatchBand,
 } from '../results-logic';
+import { ShareReport } from './ShareReport';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
 
 /**
@@ -198,6 +199,17 @@ export function Report({
           under Admin → AI models.
         </Notice>
       )}
+
+      <ShareReport
+        vacancyId={vacancyId}
+        blocked={
+          pending > 0
+            ? `A shared link is offered when the scan is done. ${counts.read} of ${counts.total} read so far.`
+            : scored.length === 0
+              ? 'No candidate has been scored yet, so there is nothing to share.'
+              : null
+        }
+      />
 
       <section aria-labelledby="rep-role" className="space-y-2">
         <h3 id="rep-role" className="text-lg font-semibold">

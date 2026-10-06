@@ -161,3 +161,22 @@ describe('vacancy Word file (Home screen)', () => {
     );
   });
 });
+
+import { redact } from './report.service';
+
+describe('redact (shared reports)', () => {
+  it('removes the candidate name, e-mail and phone from free text', () => {
+    expect(
+      redact(
+        'Alice Full led BGP. Write alice@example.com or +994 50 123 45 67. alice again.',
+        'Alice Full',
+      ),
+    ).toBe('[name] [name] led BGP. Write [e-mail] or [phone]. [name] again.');
+  });
+  it('keeps words that only contain part of a name and ignores very short name parts', () => {
+    expect(redact('Alicia met Al at Fullerton.', 'Alice Al Full')).toBe(
+      'Alicia met Al at Fullerton.',
+    );
+    expect(redact('No name known.', null)).toBe('No name known.');
+  });
+});

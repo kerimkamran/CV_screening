@@ -17,15 +17,12 @@ import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
-import { AdjustmentService, type Kind } from './adjustments.service';
+import { AdjustmentService } from './adjustments.service';
 
 const change = z.object({
   requirementId: ulidSchema,
   to: z.enum(['mandatory', 'preferred', 'ignore']),
 });
-
-const kindOf = (c: string): Kind =>
-  c === 'mandatory' ? 'mandatory' : c === 'preferred' ? 'preferred' : 'ignore';
 
 /** Design spec 6.2.5: edit requirements on the results screen, with a history and a way back. */
 @Roles('TA_PARTNER', 'TA_LEAD')
@@ -38,34 +35,11 @@ export class AdjustmentsController {
     private readonly adj: AdjustmentService,
   ) {}
 
-  private async view(vid: string) {
-    const [set, overlay, changes] = await Promise.all([
-      this.adj.currentSet(vid),
-      this.adj.overlay(vid),
-      this.adj.history(vid),
-    ]);
-    const lastReset = changes.map((c) => c.reset).lastIndexOf(true);
-    return {
-      requirements: set
-        .filter((r) => r.classification !== 'disqualifier')
-        .map((r) => ({
-          id: r.id,
-          text: r.text,
-          original: kindOf(r.classification),
-          current: overlay.get(r.id) ?? kindOf(r.classification),
-        })),
-      knockouts: set.filter((r) => r.classification === 'disqualifier').map((r) => r.text),
-      changes,
-      /** Changes since the first scan, or since the last "back to original". */
-      changeCount: changes.slice(lastReset + 1).filter((c) => !c.reset).length,
-    };
-  }
-
   @Get()
   async get(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
-    return this.view(vid);
+    return this.adj.view(vid);
   }
 
   @Post()
@@ -81,7 +55,7 @@ export class AdjustmentsController {
     await this.scope.assert(p, vid);
     if (p.actorType !== 'human')
       throw new BadRequestException('Only a person can change requirements');
-    const v = await this.view(vid);
+    const v = await this.adj.view(vid);
     const r = v.requirements.find((x) => x.id === c.requirementId);
     if (!r) throw new BadRequestException('That requirement is not part of the current scan');
     if (r.current !== c.to) {
@@ -103,7 +77,7 @@ export class AdjustmentsController {
         });
       });
     }
-    return this.view(vid);
+    return this.adj.view(vid);
   }
 
   /** Back to the original ranking. The history keeps every change and this reset. */
@@ -134,7 +108,7 @@ export class AdjustmentsController {
         });
       });
     }
-    return this.view(vid);
+    return this.adj.view(vid);
   }
 
   /**
