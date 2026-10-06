@@ -12,6 +12,7 @@ import {
 import { Appearance } from './Appearance';
 import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
+import { Home } from './pages/Home';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Vacancies } from './pages/Vacancies';
 import { Vacancy } from './pages/Vacancy';
@@ -166,6 +167,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       <Vacancy id={vm[1]!} key={vm[1]} />
     ) : sm ? (
       <Candidate id={sm[1]!} key={sm[1]} />
+    ) : isTa && route !== '/vacancies' ? (
+      <Home />
     ) : (
       <Vacancies canCreate={isTa} />
     );
@@ -181,9 +184,14 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           {me && !me.mustChangePassword && (
             <nav className="flex flex-wrap items-center gap-4 text-sm" aria-label="Main">
               {isTa && (
-                <a href="#/vacancies" className="hover:underline">
-                  Vacancies
-                </a>
+                <>
+                  <a href="#/" className="hover:underline">
+                    New screening
+                  </a>
+                  <a href="#/vacancies" className="hover:underline">
+                    Past scans
+                  </a>
+                </>
               )}
               {isAdmin && (
                 <a href="#/admin" className="hover:underline">

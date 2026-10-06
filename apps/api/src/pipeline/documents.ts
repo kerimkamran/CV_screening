@@ -75,3 +75,31 @@ export function pdfToText(buf: Buffer, timeoutMs = 20_000, maxBytes = 5_000_000)
     child.stdin.end(buf);
   });
 }
+
+/** Why a vacancy Word file cannot be used. The message is shown to the recruiter as is. */
+export class VacancyFileProblem extends Error {}
+
+/**
+ * Text of a vacancy (job description) Word file for the Home screen. Nothing is stored here: the
+ * recruiter reviews the text, and it is saved with the vacancy only when they start a screening.
+ */
+export async function readVacancyDocx(buf: Buffer, filename: string): Promise<string> {
+  const isCfb = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+  if (isCfb) {
+    // Both an old .doc and a password-protected .docx are OLE containers.
+    throw new VacancyFileProblem(
+      /\.doc$/i.test(filename)
+        ? 'Save it as .docx and try again'
+        : 'This file is locked with a password',
+    );
+  }
+  if (sniff(buf, filename) !== 'docx') throw new VacancyFileProblem('Only Word files (.docx) here');
+  let text: string;
+  try {
+    text = await extractText(buf, 'docx');
+  } catch {
+    throw new VacancyFileProblem("Couldn't find text in this file");
+  }
+  if (text.length < 20) throw new VacancyFileProblem("Couldn't find text in this file");
+  return text.slice(0, 40_000);
+}

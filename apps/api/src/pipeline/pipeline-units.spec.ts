@@ -2,7 +2,9 @@ import { evaluateKnockout, containsTerm } from './knockout';
 import { locateQuote, verifyEvidence } from './evidence';
 import { bandFor, computeScore } from './score';
 import { looksLikeInjection } from './injection';
-import { normalizeText, sniff } from './documents';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { normalizeText, readVacancyDocx, sniff } from './documents';
 import { parseJsonLoose, requirementInput } from './schemas';
 
 describe('knockout (KNOCK-01/05)', () => {
@@ -133,5 +135,29 @@ describe('documents and schemas', () => {
   it('extracts JSON from fenced model output', () => {
     expect(parseJsonLoose('```json\n{"a":1}\n```')).toEqual({ a: 1 });
     expect(() => parseJsonLoose('no json')).toThrow();
+  });
+});
+
+describe('vacancy Word file (Home screen)', () => {
+  const ole = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  it('reads the text of a real .docx', async () => {
+    const buf = readFileSync(join(__dirname, '../testing/fixtures/cv-dilara.docx'));
+    const text = await readVacancyDocx(buf, 'vacancy.docx');
+    expect(text.length).toBeGreaterThan(100);
+  });
+  it('says what is wrong, in one line, for each unusable file', async () => {
+    await expect(readVacancyDocx(ole, 'vacancy.docx')).rejects.toThrow(
+      'This file is locked with a password',
+    );
+    await expect(readVacancyDocx(ole, 'old.doc')).rejects.toThrow('Save it as .docx and try again');
+    await expect(readVacancyDocx(Buffer.from('%PDF-1.7 ...'), 'vacancy.docx')).rejects.toThrow(
+      'Only Word files (.docx) here',
+    );
+    await expect(readVacancyDocx(Buffer.from('plain'), 'vacancy.txt')).rejects.toThrow(
+      'Only Word files (.docx) here',
+    );
+    await expect(readVacancyDocx(Buffer.from([0x50, 0x4b, 3, 4, 0, 0]), 'v.docx')).rejects.toThrow(
+      "Couldn't find text in this file",
+    );
   });
 });

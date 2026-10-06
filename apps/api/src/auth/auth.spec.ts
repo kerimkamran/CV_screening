@@ -2,6 +2,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { createAdapter } from '../app.factory';
 import { AppModule } from '../app.module';
+import { DbService } from '../db/db.service';
 import { createTestIdp } from '../testing/idp';
 import { KEY_RESOLVER, toIdentity } from './token-verifier';
 import { USER_DIRECTORY } from './user-directory';
@@ -37,6 +38,9 @@ describe('OIDC bearer authentication (IAM-01, IAM-06)', () => {
       .useValue(idp.resolver)
       .overrideProvider(USER_DIRECTORY)
       .useValue(directory)
+      // /me also reads the user's saved page background; there is no database in this spec.
+      .overrideProvider(DbService)
+      .useValue({ query: async () => ({ rows: [] }) })
       .compile();
     app = mod.createNestApplication<NestFastifyApplication>(createAdapter('silent'));
     await app.init();

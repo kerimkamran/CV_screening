@@ -23,7 +23,16 @@ import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { Inject } from '@nestjs/common';
-import { extractText, MAX_TEXT_CHARS, MIN_READABLE_CHARS, MIME, sha256, sniff } from './documents';
+import {
+  extractText,
+  MAX_TEXT_CHARS,
+  MIN_READABLE_CHARS,
+  MIME,
+  readVacancyDocx,
+  sha256,
+  sniff,
+  VacancyFileProblem,
+} from './documents';
 import { ExportService, type CandidateRow } from './export.service';
 import type { Breakdown } from './score';
 
@@ -49,6 +58,31 @@ export class DocumentsController {
     private readonly xlsx: ExportService,
     @Inject(ENV) private readonly env: Env,
   ) {}
+
+  /**
+   * Home screen: read the text of a vacancy Word file (one per request). Nothing is stored; the
+   * recruiter reviews the text first. One line, one next step, as in the design spec.
+   */
+  @Post('vacancies/read-document')
+  @HttpCode(200)
+  async readVacancyFile(@Req() req: FastifyRequest) {
+    if (!req.isMultipart()) throw new BadRequestException('Expected multipart/form-data');
+    const limit = this.env.MAX_UPLOAD_MB * 1024 * 1024;
+    for await (const part of req.parts({ limits: { fileSize: limit, files: 1 } })) {
+      if (part.type !== 'file') continue;
+      const filename = (part.filename || 'vacancy.docx').slice(0, 200);
+      const buf = await part.toBuffer();
+      if (part.file.truncated) throw new BadRequestException('That file is over the size limit');
+      try {
+        const text = await readVacancyDocx(buf, filename);
+        return { filename, text, words: text.split(/\s+/).filter(Boolean).length };
+      } catch (e) {
+        if (e instanceof VacancyFileProblem) throw new BadRequestException(e.message);
+        throw e;
+      }
+    }
+    throw new BadRequestException('No file received');
+  }
 
   /** DOC-01..04: bulk upload. Per-file outcomes; one bad file never fails the batch. */
   @Post('vacancies/:id/documents')

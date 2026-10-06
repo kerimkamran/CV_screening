@@ -29,6 +29,10 @@ const up = async () => ({ state: 'up' as const });
 beforeEach(() => session.set(null));
 afterEach(() => vi.unstubAllGlobals());
 
+beforeEach(() => {
+  window.location.hash = '';
+});
+
 describe('sign-in and gates', () => {
   it('shows the sign-in form when signed out, with the AI notice and service status in the footer', async () => {
     render(<App check={up} />);
@@ -66,6 +70,8 @@ describe('sign-in and gates', () => {
     await userEvent.type(await screen.findByLabelText('Email'), 'a@x.az');
     await userEvent.type(screen.getByLabelText('Password'), 'secret-secret');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('Who fits this role?')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('link', { name: 'Past scans' }));
     expect(await screen.findByText('Backend Engineer')).toBeInTheDocument();
     expect(screen.getByText(/3 CVs/)).toBeInTheDocument();
     // The token is sent only in the Authorization header, never in a URL.
@@ -504,5 +510,137 @@ describe('page background', () => {
     await userEvent.click(screen.getByLabelText('Match my device'));
     await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
     expect(saved).toEqual([{ background: 'sky' }, { background: null }]);
+  });
+});
+
+describe('Home: resumes and role', () => {
+  const recruiter = { userId: 'u', displayName: 'Ayla', email: 'a@x.az', roles: ['TA_PARTNER'] };
+  const JD =
+    'We need a network engineer with strong routing, BGP and Kubernetes experience. SQL is a plus.';
+  const req = (text: string, classification: string) => ({
+    text,
+    classification,
+    weight: classification === 'mandatory' ? 10 : 5,
+    rule: null,
+  });
+  afterEach(() => localStorage.clear());
+
+  it('reads the requirements into chips, lets the recruiter flip one, and starts the screening', async () => {
+    session.set('t');
+    const calls = mockFetch((url, init) => {
+      const m = init?.method ?? 'GET';
+      if (url.endsWith('/me')) return { body: recruiter };
+      if (url.endsWith('/vacancies') && m === 'POST') return { body: { id: 'VAC1' } };
+      if (url.endsWith('/criteria/extract'))
+        return {
+          body: {
+            versions: [],
+            current: {
+              id: 's',
+              version: 1,
+              frozen: false,
+              requirements: [
+                req('Routing and BGP', 'mandatory'),
+                req('Kubernetes', 'mandatory'),
+                req('SQL', 'preferred'),
+                req('Based in Baku', 'informational'),
+              ],
+            },
+          },
+        };
+      if (url.endsWith('/criteria') && m === 'PUT') return { body: {} };
+      if (url.endsWith('/criteria/freeze')) return { body: {} };
+      if (url.endsWith('/notice-confirm')) return { body: { confirmed: true } };
+      if (url.endsWith('/documents')) return { body: { results: [] } };
+      return { body: [] };
+    });
+    render(<App check={up} />);
+
+    await userEvent.type(await screen.findByLabelText('Position'), 'Network Engineer');
+    await userEvent.type(screen.getByLabelText(/^Requirements/), JD);
+    const pdf = new File(['%PDF-1.7 cv'], 'cv_aysel.pdf', { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText('Choose resume files'), pdf);
+    expect(screen.getByText('1 resume added')).toBeInTheDocument();
+    expect(screen.getByText(/1 resume · 0 key skills/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Read requirements' }));
+    const bgp = await screen.findByRole('button', { name: /^Routing and BGP, must-have/ });
+    expect(screen.getByRole('button', { name: /^SQL, nice-to-have/ })).toBeInTheDocument();
+    expect(screen.getByText(/1 other requirement kept as text/)).toBeInTheDocument();
+    expect(screen.getByText(/1 resume · 3 key skills/)).toBeInTheDocument();
+
+    await userEvent.click(bgp); // must-have becomes nice-to-have
+    expect(
+      screen.getByRole('button', { name: /^Routing and BGP, nice-to-have/ }),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Add another skill'), 'Python{Enter}');
+    expect(screen.getByRole('button', { name: /^Python, must-have/ })).toBeInTheDocument();
+
+    // Without the candidate notice the button explains what is missing and sends nothing.
+    await userEvent.click(screen.getByRole('button', { name: /Find the best fit/ }));
+    expect(await screen.findByText('Confirm the candidate notice.')).toBeInTheDocument();
+    expect(calls.some((c) => c.url.endsWith('/criteria/freeze'))).toBe(false);
+
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: /Find the best fit/ }));
+    await waitFor(() => expect(window.location.hash).toBe('#/vacancies/VAC1'));
+    const sent = calls
+      .filter((c) => !c.url.endsWith('/me'))
+      .map((c) => c.url.replace(/^.*\/api/, ''));
+    expect(sent.slice(-4)).toEqual([
+      '/vacancies/VAC1/criteria',
+      '/vacancies/VAC1/criteria/freeze',
+      '/vacancies/VAC1/notice-confirm',
+      '/vacancies/VAC1/documents',
+    ]);
+    const put = calls.find((c) => c.url.endsWith('/criteria') && c.init?.method === 'PUT')!;
+    const body = JSON.parse(String(put.init!.body)).requirements as {
+      text: string;
+      classification: string;
+    }[];
+    expect(body.find((r) => r.text === 'Routing and BGP')!.classification).toBe('preferred');
+    expect(body.find((r) => r.text === 'Python')!.classification).toBe('mandatory');
+    const created = calls.find((c) => c.url.endsWith('/vacancies') && c.init?.method === 'POST')!;
+    expect(JSON.parse(String(created.init!.body)).title).toBe('Network Engineer');
+  });
+
+  it('says what is missing instead of failing silently, and refuses files it cannot read', async () => {
+    session.set('t');
+    mockFetch((url) => (url.endsWith('/me') ? { body: recruiter } : { body: [] }));
+    render(<App check={up} />);
+    await userEvent.click(await screen.findByRole('button', { name: /Find the best fit/ }));
+    expect(await screen.findAllByText('Add at least one resume.')).not.toHaveLength(0);
+    expect(screen.getAllByText('Add the position title.').length).toBeGreaterThan(0);
+
+    await userEvent.upload(
+      screen.getByLabelText('Choose resume files'),
+      new File(['x'], 'photo.png', { type: 'image/png' }),
+      { applyAccept: false },
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('photo.png: only PDF, DOCX and TXT');
+    expect(screen.queryByText(/resume added|resumes added/)).not.toBeInTheDocument();
+  });
+
+  it('reads a Word file into the requirements box, and shows one clear line when it cannot', async () => {
+    session.set('t');
+    let fail = false;
+    mockFetch((url) => {
+      if (url.endsWith('/me')) return { body: recruiter };
+      if (url.endsWith('/vacancies/read-document'))
+        return fail
+          ? { status: 400, body: { message: 'This file is locked with a password' } }
+          : { body: { filename: 'vacancy.docx', text: 'Needs Python and SQL daily.', words: 5 } };
+      return { body: [] };
+    });
+    render(<App check={up} />);
+    const word = new File(['PK'], 'vacancy.docx');
+    await userEvent.upload(await screen.findByLabelText('Attach a Word file'), word);
+    expect(await screen.findByText('Read vacancy.docx · 5 words')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Requirements/)).toHaveValue('Needs Python and SQL daily.');
+
+    fail = true;
+    await userEvent.upload(screen.getByLabelText('Attach a Word file'), word);
+    expect(await screen.findByText('This file is locked with a password')).toBeInTheDocument();
   });
 });

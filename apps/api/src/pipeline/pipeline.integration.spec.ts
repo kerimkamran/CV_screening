@@ -309,6 +309,31 @@ describeDb('Screening pipeline', () => {
     ).rejects.toThrow(/frozen/);
   });
 
+  it('reads a vacancy Word file for the Home screen without storing it; says why when it cannot', async () => {
+    const before = await db.owner.query('SELECT count(*)::int AS n FROM job_description_version');
+    const ok = await rec().upload('/vacancies/read-document', [
+      {
+        name: 'vacancy.docx',
+        type: 'application/octet-stream',
+        data: readFileSync(join(FIX, 'cv-dilara.docx')),
+      },
+    ]);
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().filename).toBe('vacancy.docx');
+    expect(ok.json().words).toBeGreaterThan(20);
+    const bad = await rec().upload('/vacancies/read-document', [
+      {
+        name: 'vacancy.pdf',
+        type: 'application/pdf',
+        data: readFileSync(join(FIX, 'cv-dilara.pdf')),
+      },
+    ]);
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().message).toBe('Only Word files (.docx) here');
+    const after = await db.owner.query('SELECT count(*)::int AS n FROM job_description_version');
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
   it('ingests PDF, DOCX and TXT; rejects bad types; dedupes by content', async () => {
     const files = [
       {
