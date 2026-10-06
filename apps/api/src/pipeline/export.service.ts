@@ -18,6 +18,9 @@ export interface CandidateRow {
   injectionSuspected: boolean | null;
   error: string | null;
   decision: { outcome: string; reason: string; decidedAt: string; decidedBy: string } | null;
+  /** Set when the recruiter's requirement changes were applied to this score (spec 6.2.5). */
+  adjusted?: boolean;
+  originalScore?: number | null;
 }
 type Row = CandidateRow;
 

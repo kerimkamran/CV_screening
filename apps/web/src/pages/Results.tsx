@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, type CandidateRow } from '../api';
+import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
 import {
   BAND_LABEL,
+  bandMoves,
   isPending,
   layoutStars,
   linkStars,
   matchBand,
   orderCandidates,
   pseudonyms,
-  skillChips,
   STAR_COLOUR,
   STAR_SIZE,
   type MatchBand,
 } from '../results-logic';
 import { btnSecondary, errMsg, Notice } from '../ui';
+import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
+import { CandidateCard, type Detail } from './CandidateCard';
+import { RequirementsDrawer } from './RequirementsDrawer';
 
 /**
  * Results (design spec 6.2): a plain band for each candidate, why, and the proof behind each skill,
@@ -33,26 +36,10 @@ interface Listing {
   aiActive: boolean;
   candidates: CandidateRow[];
 }
-interface Span {
-  quote: string;
-}
-interface Detail {
-  summary: string | null;
-  assessments: {
-    requirementId: string;
-    text: string;
-    status: string | null;
-    rationale: string | null;
-    evidence: Span[] | null;
-  }[];
-}
-
 const PAGE = 20;
 const MAP_TOP = 12;
 const MAP_MAX = 79;
 const LABELS_ON_MAP = 5;
-const KIND_LABEL = { found: 'Found', partly: 'Partly found', missing: 'Not found' } as const;
-const KIND_MARK = { found: '✓', partly: '~', missing: '✗' } as const;
 
 export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: () => void }) {
   const [data, setData] = useState<Listing | null>(null);
@@ -67,9 +54,20 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [details, setDetails] = useState<Record<string, Detail | 'loading' | 'error'>>({});
   const [proof, setProof] = useState<{ doc: string; req: string } | null>(null);
 
+  const [adj, setAdj] = useState<Adjustments | null>(null);
+  const [drawer, setDrawer] = useState(false);
+  const [adjNote, setAdjNote] = useState('');
+  const [adjError, setAdjError] = useState('');
+  const [adjBusy, setAdjBusy] = useState(false);
+
   const load = useCallback(async () => {
     try {
-      setData(await api.get<Listing>(`/vacancies/${vacancyId}/candidates`));
+      const [l, a] = await Promise.all([
+        api.get<Listing>(`/vacancies/${vacancyId}/candidates`),
+        api.get<Adjustments>(`/vacancies/${vacancyId}/adjustments`).catch(() => null),
+      ]);
+      setData(l);
+      setAdj(a && Array.isArray(a.requirements) ? a : null);
       setError('');
     } catch (e) {
       setError(errMsg(e));
@@ -164,6 +162,50 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       return n;
     });
 
+  const marked = (o: string) => ordered.filter((r) => r.decision?.outcome === o).length;
+  const entries = shortlistEntries(ordered, nameOf);
+  const [copied, setCopied] = useState('');
+  async function copyShortlist() {
+    try {
+      await navigator.clipboard.writeText(shortlistText(entries));
+      setCopied('Copied.');
+    } catch {
+      setCopied('Your browser did not allow copying. Use the CSV instead.');
+    }
+  }
+  function downloadCsv() {
+    const url = URL.createObjectURL(new Blob([shortlistCsv(entries)], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'shortlist.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  async function adjust(path: string, body?: object) {
+    const before = new Map(bandOf);
+    setAdjBusy(true);
+    setAdjError('');
+    try {
+      await api.post(`/vacancies/${vacancyId}/adjustments${path}`, body);
+      const l = await api.get<Listing>(`/vacancies/${vacancyId}/candidates`);
+      const a = await api.get<Adjustments>(`/vacancies/${vacancyId}/adjustments`);
+      setData(l);
+      setAdj(a);
+      const nowBand = new Map(
+        l.candidates.filter((r) => !r.erased).map((r) => [r.documentId, matchBand(r)]),
+      );
+      setAdjNote(
+        path === '/reset' ? 'Back to the original ranking.' : bandMoves(before, nowBand).line,
+      );
+    } catch (e) {
+      setAdjError(errMsg(e));
+    } finally {
+      setAdjBusy(false);
+    }
+  }
+  const missedByOne = scored.filter((r) => r.score?.breakdown.mandatoryGaps === 1);
+
   const mapRows = scored.slice(0, mapAll ? MAP_MAX : MAP_TOP);
   const stars = layoutStars(mapRows.map((r) => r.documentId));
   const links = linkStars(mapRows.length);
@@ -198,11 +240,41 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           <h2 className="text-2xl font-bold tracking-tight">Your constellation</h2>
           <p className="text-ink-2">Select a star. Brighter means a better fit.</p>
         </div>
+        {adj && adj.requirements.length > 0 && (
+          <button
+            className={btnSecondary}
+            aria-haspopup="dialog"
+            aria-expanded={drawer}
+            onClick={() => setDrawer(true)}
+          >
+            Requirements{adj.changeCount > 0 ? ` (${adj.changeCount} changed)` : ''}
+          </button>
+        )}
         <p className="text-sm text-ink-3" aria-live="polite">
           {data.counts.total} {data.counts.total === 1 ? 'resume' : 'resumes'} in this scan
           {data.counts.failed > 0 && ` · ${data.counts.failed} failed (see Table)`}
         </p>
       </div>
+
+      {drawer && adj && (
+        <RequirementsDrawer
+          data={adj}
+          note={adjNote}
+          error={adjError}
+          busy={adjBusy}
+          onChange={(requirementId, to: Kind) => void adjust('', { requirementId, to })}
+          onReset={() => void adjust('/reset')}
+          onClose={() => setDrawer(false)}
+        />
+      )}
+      {adj && adj.changeCount > 0 && (
+        <Notice kind="info">
+          The ranking uses your requirement changes ({adj.changeCount}).{' '}
+          <button className="underline" disabled={adjBusy} onClick={() => void adjust('/reset')}>
+            Back to original
+          </button>
+        </Notice>
+      )}
 
       {pending > 0 && (
         <div role="status" aria-live="polite" className="space-y-1">
@@ -284,6 +356,31 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         )}
         <span className="text-ink-3">Names are hidden on screen, not removed from the file.</span>
       </div>
+
+      {marked('shortlist') + marked('hold') + marked('reject') > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-edge p-3 text-sm"
+          aria-label="My marks"
+          role="group"
+        >
+          <span className="font-medium">My marks</span>
+          <span>
+            {marked('shortlist')} shortlisted · {marked('hold')} maybe · {marked('reject')} not now
+          </span>
+          <span className="text-ink-3">They never change the match or the order.</span>
+          {entries.length > 0 && (
+            <>
+              <button className={btnSecondary} onClick={() => void copyShortlist()}>
+                Copy shortlist
+              </button>
+              <button className={btnSecondary} onClick={downloadCsv}>
+                Download CSV
+              </button>
+              <span role="status">{copied}</span>
+            </>
+          )}
+        </div>
+      )}
 
       {scored.length > 0 && (
         <section aria-label="Star map">
@@ -405,6 +502,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
             onReveal={() => void reveal([r])}
             onHide={() => hide(r.documentId)}
+            onMarked={() => void load()}
           />
         ))}
         {ranked.length > shown && (
@@ -432,9 +530,34 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
                   onReveal={() => void reveal([r])}
                   onHide={() => hide(r.documentId)}
+                  onMarked={() => void load()}
                 />
               ))}
             </div>
+          </details>
+        )}
+        {missedByOne.length > 0 && (
+          <details className="rounded-lg border border-line bg-card p-3">
+            <summary className="cursor-pointer font-medium">
+              Missed by one must-have ({missedByOne.length})
+            </summary>
+            <ul className="mt-2 divide-y divide-line text-sm">
+              {missedByOne.map((r) => {
+                const gap = r.score!.breakdown.items.find(
+                  (i) =>
+                    i.classification === 'mandatory' &&
+                    (i.status === 'not_found' || i.status === 'not_met'),
+                );
+                return (
+                  <li key={r.documentId} className="flex flex-wrap justify-between gap-2 py-2">
+                    <span>
+                      {nameOf(r)} · {BAND_LABEL[bandOf.get(r.documentId)!]}
+                    </span>
+                    <span className="text-ink-3">Not found: {gap?.text}</span>
+                  </li>
+                );
+              })}
+            </ul>
           </details>
         )}
         {human.length > 0 && (
@@ -479,138 +602,5 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         )}
       </section>
     </div>
-  );
-}
-
-function CandidateCard(props: {
-  r: CandidateRow;
-  band: MatchBand;
-  name: string;
-  isRevealed: boolean;
-  selected: boolean;
-  detail: Detail | 'loading' | 'error' | undefined;
-  proof: string | null;
-  onSelect: () => void;
-  onProof: (req: string | null) => void;
-  onReveal: () => void;
-  onHide: () => void;
-}) {
-  const { r, band, name, selected, detail } = props;
-  const chips = skillChips(r.score?.breakdown);
-  const d = typeof detail === 'object' ? detail : null;
-  const open = d?.assessments.find((a) => a.requirementId === props.proof) ?? null;
-  const openChip = chips.find((c) => c.requirementId === props.proof);
-  return (
-    <article
-      id={`card-${r.documentId}`}
-      className={`rounded-lg border bg-card p-3 ${selected ? 'border-accent bg-sel' : 'border-line'}`}
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          aria-expanded={selected}
-          onClick={props.onSelect}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded text-left focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-        >
-          <span
-            aria-hidden="true"
-            title={r.score ? `Score ${r.score.value}` : undefined}
-            className="inline-block h-10 w-10 shrink-0 rounded-full border-[1.5px] border-edge"
-            style={{ background: STAR_COLOUR[band] }}
-          />
-          <span className="min-w-0">
-            <span className="block truncate font-semibold">{name}</span>
-            <span className="block text-sm text-ink-2">{BAND_LABEL[band]}</span>
-          </span>
-        </button>
-        {props.isRevealed ? (
-          <button className="text-sm text-link hover:underline" onClick={props.onHide}>
-            Hide name
-          </button>
-        ) : (
-          <button className="text-sm text-link hover:underline" onClick={props.onReveal}>
-            Reveal name
-          </button>
-        )}
-      </div>
-
-      {selected && (
-        <div className="mt-3 space-y-3 border-t border-line pt-3">
-          {r.score && (
-            <p className="text-sm text-ink-3">
-              Score {r.score.value} of 100. A sorting aid, not a decision.
-            </p>
-          )}
-          {chips.length > 0 && (
-            <ul className="flex flex-wrap gap-2" aria-label="Requirements">
-              {chips.map((c) => (
-                <li key={c.requirementId}>
-                  <button
-                    type="button"
-                    aria-pressed={props.proof === c.requirementId}
-                    aria-label={`${c.text}: ${KIND_LABEL[c.kind]}. Show the proof`}
-                    onClick={() =>
-                      props.onProof(props.proof === c.requirementId ? null : c.requirementId)
-                    }
-                    className={`rounded-full border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
-                      c.kind === 'found'
-                        ? 'border-ok-line bg-ok text-ok-ink'
-                        : c.kind === 'partly'
-                          ? 'border-warn-line bg-warn text-warn-ink'
-                          : 'border-edge bg-card text-ink-2'
-                    }`}
-                  >
-                    <span aria-hidden="true">{KIND_MARK[c.kind]} </span>
-                    {c.text}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {detail === 'loading' && <p className="text-sm text-ink-3">Loading the reasons…</p>}
-          {detail === 'error' && (
-            <p className="text-sm text-warn-text">The reasons could not be loaded.</p>
-          )}
-          {d?.summary && (
-            <p className="text-sm">
-              <span className="font-medium">Why </span>
-              {d.summary}
-            </p>
-          )}
-          {props.proof && openChip && (
-            <div
-              role="region"
-              aria-label={`Proof for ${openChip.text}`}
-              className="rounded-md border border-line bg-card p-3 text-sm"
-            >
-              <p className="font-medium">
-                {openChip.text}: {KIND_LABEL[openChip.kind]}
-              </p>
-              {open?.evidence && open.evidence.length > 0 ? (
-                open.evidence.map((e, i) => (
-                  <blockquote key={i} className="mt-2 border-l-4 border-accent pl-3 text-ink-2">
-                    {e.quote}
-                  </blockquote>
-                ))
-              ) : (
-                <p className="mt-1 text-ink-2">
-                  {openChip.kind === 'missing'
-                    ? `Not found in this CV. Searched for: ${openChip.text}.`
-                    : 'No quote was kept for this requirement.'}
-                </p>
-              )}
-              {open?.rationale && <p className="mt-2 text-ink-3">{open.rationale}</p>}
-            </div>
-          )}
-          <p className="text-sm">
-            {r.screeningId && (
-              <a className="text-link hover:underline" href={`#/screenings/${r.screeningId}`}>
-                Open the full review and record a decision
-              </a>
-            )}
-          </p>
-        </div>
-      )}
-    </article>
   );
 }

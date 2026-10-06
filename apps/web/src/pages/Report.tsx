@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, type CandidateRow, type Criteria, type Me } from '../api';
+import { api, type Adjustments, type CandidateRow, type Criteria, type Me } from '../api';
 import {
   BAND_LABEL,
   isPending,
+  KIND_NAME,
   matchBand,
   mustHaveTally,
   orderCandidates,
@@ -54,6 +55,7 @@ export function Report({
 }) {
   const [data, setData] = useState<Listing | null>(null);
   const [criteria, setCriteria] = useState<Criteria | null>(null);
+  const [adj, setAdj] = useState<Adjustments | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -62,12 +64,14 @@ export function Report({
 
   const load = useCallback(async () => {
     try {
-      const [l, c] = await Promise.all([
+      const [l, c, a] = await Promise.all([
         api.get<Listing>(`/vacancies/${vacancyId}/candidates`),
         api.get<Criteria>(`/vacancies/${vacancyId}/criteria`),
+        api.get<Adjustments>(`/vacancies/${vacancyId}/adjustments`).catch(() => null),
       ]);
       setData(l);
       setCriteria(c);
+      setAdj(a && Array.isArray(a.requirements) ? a : null);
       setError('');
     } catch (e) {
       setError(errMsg(e));
@@ -131,8 +135,23 @@ export function Report({
   }
 
   const reqs = criteria.current?.requirements ?? [];
-  const must = reqs.filter((r) => r.classification === 'mandatory');
-  const nice = reqs.filter((r) => r.classification === 'preferred');
+  // The requirements actually used: the recruiter's changes (spec 6.2.5) when there are any.
+  const used = adj
+    ? adj.requirements.map((r) => ({ id: r.id, text: r.text, kind: r.current }))
+    : reqs.map((r) => ({
+        id: r.id,
+        text: r.text,
+        kind:
+          r.classification === 'mandatory'
+            ? 'mandatory'
+            : r.classification === 'preferred'
+              ? 'preferred'
+              : 'ignore',
+      }));
+  const must = used.filter((r) => r.kind === 'mandatory');
+  const nice = used.filter((r) => r.kind === 'preferred');
+  const ignored = adj ? used.filter((r) => r.kind === 'ignore') : [];
+  const adjChanges = adj?.changes ?? [];
   const frozen = criteria.versions.filter((v) => v.frozenAt).sort((a, b) => a.version - b.version);
   const changes = frozen.slice(1);
   const bandCount = (b: MatchBand) =>
@@ -203,6 +222,11 @@ export function Report({
             </ul>
           </div>
         </div>
+        {ignored.length > 0 && (
+          <p className="text-sm text-ink-3">
+            Not counted: {ignored.map((r) => r.text).join(', ')}.
+          </p>
+        )}
         {changes.length > 0 && (
           <p className="text-sm text-ink-3">
             Requirements changed during this scan: version {changes[changes.length - 1]!.version}{' '}
@@ -326,7 +350,7 @@ export function Report({
         )}
       </section>
 
-      {(changes.length > 0 || decided.length > 0) && (
+      {(changes.length > 0 || adjChanges.length > 0 || decided.length > 0) && (
         <section aria-labelledby="rep-changes" className="space-y-2">
           <h3 id="rep-changes" className="text-lg font-semibold">
             Changes and decisions
@@ -337,9 +361,22 @@ export function Report({
                 Requirements version {c.version} frozen on {when(c.frozenAt)}.
               </li>
             ))}
+            {adjChanges.map((c) => (
+              <li key={c.id}>
+                {c.reset
+                  ? 'Requirements set back to the original'
+                  : `${c.requirement}: ${KIND_NAME[c.from!].toLowerCase()} to ${KIND_NAME[c.to!].toLowerCase()}`}
+                , by {c.by} on {when(c.at)}.
+              </li>
+            ))}
+            {adjChanges.length > 0 && (
+              <li className="list-none text-ink-3">
+                The original ranking is available in the app.
+              </li>
+            )}
             {decided.map((r) => (
               <li key={r.documentId}>
-                {names.get(r.documentId)}:{' '}
+                Recruiter decision, separate from the AI match. {names.get(r.documentId)}:{' '}
                 {OUTCOME[r.decision!.outcome]?.[0] ?? r.decision!.outcome} by{' '}
                 {r.decision!.decidedBy} on {when(r.decision!.decidedAt)}
                 {r.decision!.reason ? ` (${r.decision!.reason})` : ''}.

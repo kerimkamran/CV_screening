@@ -782,6 +782,56 @@ describe('Results: bands, names hidden, proof', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
     await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
   });
+
+  it('has no mark pre-selected; a note is needed; "Not now" also needs the evidence check; the band does not change', async () => {
+    const calls = setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    const card = (await screen.findAllByRole('article'))[0]!;
+    const group = within(card).getByRole('group', { name: 'Choose a mark' });
+    for (const b of within(group).getAllByRole('button'))
+      expect(b).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(within(group).getByRole('button', { name: /Not now/ }));
+    const save = within(card).getByRole('button', { name: 'Save my mark' });
+    expect(save).toBeDisabled();
+    await userEvent.type(within(card).getByLabelText(/One line/), 'Needs more network depth');
+    expect(save).toBeDisabled(); // still needs the evidence check
+    await userEvent.click(within(card).getByRole('checkbox'));
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith('/screenings/S2/decision'))).toBe(true),
+    );
+    const post = calls.find((c) => c.url.endsWith('/screenings/S2/decision'))!;
+    expect(JSON.parse(String(post.init!.body))).toEqual({
+      outcome: 'reject',
+      reason: 'Needs more network depth',
+      evidenceReviewed: true,
+    });
+  });
+
+  it('shows my marks apart from the match and exports only the shortlisted, by pseudonym', async () => {
+    setup();
+    rows[1] = {
+      ...rows[1]!,
+      decision: {
+        outcome: 'shortlist',
+        reason: 'Strong routing story',
+        decidedAt: '2026-10-02T09:00:00Z',
+        decidedBy: 'Ayla',
+      },
+    } as never;
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(await screen.findByText(/1 shortlisted · 0 maybe · 0 not now/)).toBeInTheDocument();
+    expect(screen.getByText(/They never change the match or the order/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Copy shortlist' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const text = String((writeText.mock.calls as unknown[][])[0]![0]);
+    expect(text).toMatch(/^1\. Candidate 02 \(Good/);
+    expect(text).not.toMatch(/Real Name/);
+    rows[1] = { ...(rows[1] as object), decision: null } as never;
+  });
 });
 
 describe('Report: evaluation report (spec 6.5)', () => {
@@ -1056,5 +1106,138 @@ describe('Results: stopping and continuing a scan (spec 6.3)', () => {
     setup([doc(1, 'completed', 80), doc(2, 'manual')], { manual: 1 });
     render(<Results vacancyId="V" onTable={() => undefined} />);
     expect(await screen.findByText('2 read, 1 scored, 1 need a human look')).toBeInTheDocument();
+  });
+});
+
+describe('Requirements drawer (spec 6.2.5)', () => {
+  const cand = (n: number, score: number, gaps = 0) => ({
+    screeningId: `S${n}`,
+    documentId: `D${n}`,
+    filename: `f${n}.pdf`,
+    uploadedAt: `2026-10-01T10:00:0${n}Z`,
+    parseStatus: 'parsed',
+    erased: false,
+    state: 'completed',
+    candidateName: `Real ${n}`,
+    band: 'possible_match',
+    score: {
+      value: score,
+      breakdown: {
+        formula: 'f',
+        earned: 1,
+        possible: 2,
+        mandatoryGaps: gaps,
+        items: [
+          {
+            requirementId: 'R1',
+            text: 'Routing',
+            classification: 'mandatory',
+            weight: 10,
+            status: 'met',
+            points: 1,
+            earned: 10,
+          },
+          {
+            requirementId: 'R2',
+            text: 'Kubernetes',
+            classification: 'mandatory',
+            weight: 10,
+            status: gaps ? 'not_found' : 'met',
+            points: 1,
+            earned: 0,
+          },
+        ],
+      },
+    },
+    knockoutTriggered: false,
+    injectionSuspected: false,
+    error: null,
+    decision: null,
+  });
+
+  function setup() {
+    session.set('t');
+    let changed = 0;
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/adjustments') && init?.method === 'POST') {
+        changed = 1;
+        return { body: {} };
+      }
+      if (url.endsWith('/adjustments/reset')) {
+        changed = 0;
+        return { body: {} };
+      }
+      if (url.endsWith('/adjustments'))
+        return {
+          body: {
+            requirements: [
+              { id: 'R1', text: 'Routing', original: 'mandatory', current: 'mandatory' },
+              {
+                id: 'R2',
+                text: 'Kubernetes',
+                original: 'mandatory',
+                current: changed ? 'ignore' : 'mandatory',
+              },
+            ],
+            knockouts: ['Driving licence'],
+            changes: changed
+              ? [
+                  {
+                    id: 'A1',
+                    requirementId: 'R2',
+                    requirement: 'Kubernetes',
+                    from: 'mandatory',
+                    to: 'ignore',
+                    reset: false,
+                    by: 'Ayla',
+                    at: '2026-10-02T09:00:00Z',
+                  },
+                ]
+              : [],
+            changeCount: changed,
+          },
+        };
+      if (url.endsWith('/vacancies/V/candidates'))
+        return {
+          body: {
+            counts: { total: 2, queued: 0, failed: 0, manual: 0, undecided: 2 },
+            aiActive: true,
+            candidates: changed ? [cand(2, 90), cand(1, 85)] : [cand(1, 85, 1), cand(2, 60, 1)],
+          },
+        };
+      if (url.includes('/screenings/')) return { body: { summary: null, assessments: [] } };
+      return { body: {} };
+    });
+    return calls;
+  }
+
+  it('opens closed, shows three states per requirement, re-ranks on a change, and goes back to the original', async () => {
+    const calls = setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(screen.queryByRole('dialog', { name: 'Requirements' })).toBeNull();
+    expect(await screen.findByText(/Missed by one must-have \(2\)/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Requirements' }));
+    const dialog = screen.getByRole('dialog', { name: 'Requirements' });
+    expect(within(dialog).getByText('No changes since the first scan.')).toBeInTheDocument();
+    const kube = within(dialog).getByRole('group', { name: /Kubernetes/ });
+    expect(within(kube).getAllByRole('radio')).toHaveLength(3);
+    await userEvent.click(within(kube).getByRole('radio', { name: 'Ignore' }));
+    const post = await waitFor(() => {
+      const c = calls.find((x) => x.url.endsWith('/adjustments') && x.init?.method === 'POST');
+      expect(c).toBeTruthy();
+      return c!;
+    });
+    expect(JSON.parse(String(post.init!.body))).toEqual({ requirementId: 'R2', to: 'ignore' });
+    expect(await within(dialog).findByText('1 change since the first scan.')).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/Kubernetes: must-have to ignore · Ayla/),
+    ).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/candidate.* changed band|No candidate changed band/),
+    ).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Back to original' }));
+    expect(await within(dialog).findByText('No changes since the first scan.')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Requirements' })).toBeNull();
   });
 });

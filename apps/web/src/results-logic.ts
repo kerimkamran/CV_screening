@@ -191,3 +191,31 @@ export function mustHaveTally(b: Breakdown | undefined): { found: number; total:
   const m = (b?.items ?? []).filter((i) => i.classification === 'mandatory');
   return { found: m.filter((i) => i.status === 'met').length, total: m.length };
 }
+
+export const KIND_NAME = {
+  mandatory: 'Must-have',
+  preferred: 'Nice-to-have',
+  ignore: 'Ignore',
+} as const;
+
+/** One plain line for what a change did to the bands, e.g. "2 candidates moved: 1 from Strong to Good…". */
+export function bandMoves(
+  before: Map<string, MatchBand>,
+  after: Map<string, MatchBand>,
+): { moved: number; line: string } {
+  const moves = new Map<string, number>();
+  for (const [id, a] of after) {
+    const b = before.get(id);
+    if (b && b !== a) {
+      const k = `${BAND_LABEL[b]} to ${BAND_LABEL[a]}`;
+      moves.set(k, (moves.get(k) ?? 0) + 1);
+    }
+  }
+  const moved = [...moves.values()].reduce((x, y) => x + y, 0);
+  if (moved === 0) return { moved, line: 'No candidate changed band. The order may have changed.' };
+  const parts = [...moves].map(([k, n]) => `${n} from ${k}`);
+  return {
+    moved,
+    line: `${moved} ${moved === 1 ? 'candidate' : 'candidates'} changed band: ${parts.join(', ')}.`,
+  };
+}

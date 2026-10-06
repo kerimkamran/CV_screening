@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CandidateRow } from './api';
 import {
+  bandMoves,
   hash01,
   layoutStars,
   linkStars,
@@ -180,5 +181,25 @@ describe('evaluation report logic (spec 6.5)', () => {
     } as never;
     expect(mustHaveTally(b)).toEqual({ found: 1, total: 2 });
     expect(mustHaveTally(undefined)).toEqual({ found: 0, total: 0 });
+  });
+});
+
+describe('bandMoves', () => {
+  it('says plainly what moved', () => {
+    const before = new Map([
+      ['a', 'strong'],
+      ['b', 'good'],
+      ['c', 'good'],
+    ] as const);
+    const after = new Map([
+      ['a', 'good'],
+      ['b', 'good'],
+      ['c', 'partial'],
+    ] as const);
+    expect(bandMoves(before, after)).toEqual({
+      moved: 2,
+      line: '2 candidates changed band: 1 from Strong to Good, 1 from Good to Partial.',
+    });
+    expect(bandMoves(before, before).moved).toBe(0);
   });
 });

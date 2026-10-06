@@ -103,8 +103,8 @@ export function BandBadge({ band }: { band: string | null }) {
 
 export const OUTCOME: Record<string, [string, string]> = {
   shortlist: ['Shortlisted', 'bg-ok text-ok-ink'],
-  hold: ['On hold', 'bg-warn text-warn-ink'],
-  reject: ['Rejected', 'bg-err text-err-ink'],
+  hold: ['Maybe', 'bg-warn text-warn-ink'],
+  reject: ['Not now', 'bg-err text-err-ink'],
 };
 
 export function when(iso: string | null | undefined) {

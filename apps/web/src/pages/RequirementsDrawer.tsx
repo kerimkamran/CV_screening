@@ -1,0 +1,125 @@
+import { useEffect, useRef } from 'react';
+import type { Adjustments, Kind } from '../api';
+import { KIND_NAME } from '../results-logic';
+import { btnSecondary, Notice, when } from '../ui';
+
+/**
+ * Requirements drawer (design spec 6.2.5). Three states for each requirement. A change re-ranks
+ * the list in place without re-reading any resume; "Back to original" restores the first ranking
+ * in one tap, and the history keeps who changed what and when so nobody can quietly tune the list
+ * toward a favourite.
+ */
+export function RequirementsDrawer(props: {
+  data: Adjustments;
+  note: string;
+  error: string;
+  busy: boolean;
+  onChange: (requirementId: string, to: Kind) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const { data } = props;
+  const ref = useRef<HTMLElement>(null);
+  const { onClose } = props;
+  useEffect(() => {
+    ref.current?.focus();
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [onClose]);
+
+  return (
+    <aside
+      ref={ref}
+      tabIndex={-1}
+      role="dialog"
+      aria-label="Requirements"
+      className="fixed inset-y-0 right-0 z-30 w-full max-w-md overflow-y-auto border-l border-line bg-card p-5 shadow-xl focus:outline-none"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Requirements</h2>
+          <p className="text-sm text-ink-2" role="status">
+            {data.changeCount === 0
+              ? 'No changes since the first scan.'
+              : `${data.changeCount} ${data.changeCount === 1 ? 'change' : 'changes'} since the first scan.`}
+          </p>
+        </div>
+        <button className={btnSecondary} onClick={props.onClose}>
+          Close
+        </button>
+      </div>
+      <p className="mt-2 text-sm text-ink-3">
+        Change what counts and the list re-ranks. No resume is read again. A missing must-have
+        lowers the match; it never hides anyone.
+      </p>
+
+      {props.error && <Notice kind="error">{props.error}</Notice>}
+      {props.note && (
+        <p className="mt-2 rounded-md border border-line bg-sel p-2 text-sm" role="status">
+          {props.note}
+        </p>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {data.requirements.map((r) => (
+          <fieldset key={r.id} className="rounded-md border border-line p-3" disabled={props.busy}>
+            <legend className="px-1 text-sm font-medium">
+              {r.text}
+              {r.current !== r.original && (
+                <span className="ml-2 text-xs font-normal text-ink-3">
+                  changed (was {KIND_NAME[r.original].toLowerCase()})
+                </span>
+              )}
+            </legend>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {(['mandatory', 'preferred', 'ignore'] as Kind[]).map((k) => (
+                <label key={k} className="inline-flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name={`req-${r.id}`}
+                    checked={r.current === k}
+                    onChange={() => props.onChange(r.id, k)}
+                  />
+                  {KIND_NAME[k]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+      </div>
+      {data.knockouts.length > 0 && (
+        <p className="mt-3 text-sm text-ink-3">
+          Knockout rules ({data.knockouts.length}) are not changed here. They only send a CV to a
+          human look.
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className={btnSecondary}
+          disabled={data.changeCount === 0 || props.busy}
+          onClick={props.onReset}
+        >
+          Back to original
+        </button>
+      </div>
+
+      {data.changes.length > 0 && (
+        <section aria-label="History of changes" className="mt-5">
+          <h3 className="text-sm font-semibold">History</h3>
+          <ul className="mt-1 space-y-1 text-sm text-ink-2">
+            {data.changes.map((c) => (
+              <li key={c.id}>
+                {c.reset
+                  ? 'Back to original'
+                  : `${c.requirement}: ${KIND_NAME[c.from!].toLowerCase()} to ${KIND_NAME[c.to!].toLowerCase()}`}{' '}
+                · {c.by} · {when(c.at)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </aside>
+  );
+}

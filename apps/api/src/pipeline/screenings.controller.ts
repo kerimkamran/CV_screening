@@ -19,6 +19,8 @@ import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
+import { AdjustmentService } from './adjustments.service';
+import { bandFor } from './score';
 
 const decisionSchema = z.object({
   outcome: z.enum(DECISION_OUTCOMES),
@@ -34,6 +36,7 @@ export class ScreeningsController {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly scope: VacancyScope,
+    private readonly adj: AdjustmentService,
   ) {}
 
   /**
@@ -111,10 +114,26 @@ export class ScreeningsController {
         [sid],
       )
     ).rows;
-    const { score, breakdown, ...rest } = s;
+    let { score, breakdown } = s;
+    const { score: _s, breakdown: _b, ...rest } = s;
+    void _s;
+    void _b;
+    // Spec 6.2.5: show the same adjusted score as the list, never a different one.
+    const overlay = await this.adj.overlay(vacancyId);
+    let adjusted = false;
+    if (overlay.size && s.state === 'completed') {
+      const re = (await this.adj.rescore([sid], overlay)).get(sid);
+      if (re) {
+        adjusted = true;
+        score = re.score;
+        breakdown = re.score === null ? null : re.breakdown;
+        if (rest.band !== 'needs_review') rest.band = bandFor(re.score, false);
+      }
+    }
     return {
       ...rest,
       vacancyId,
+      adjusted,
       // SCORE-03: no score without its breakdown.
       score: score !== null && breakdown ? { value: score, breakdown } : null,
       assessments,

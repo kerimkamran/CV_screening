@@ -33,6 +33,7 @@ import {
   sniff,
   VacancyFileProblem,
 } from './documents';
+import { AdjustmentService } from './adjustments.service';
 import { ExportService, type CandidateRow } from './export.service';
 import type { Breakdown } from './score';
 
@@ -56,6 +57,7 @@ export class DocumentsController {
     private readonly audit: AuditService,
     private readonly scope: VacancyScope,
     private readonly xlsx: ExportService,
+    private readonly adj: AdjustmentService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -265,10 +267,13 @@ export class DocumentsController {
       [vid],
     );
     // SCORE-03: a score is only ever serialised together with its breakdown.
-    return rows.map(({ score, breakdown, ...r }) => ({
+    const out: CandidateRow[] = rows.map(({ score, breakdown, ...r }) => ({
       ...r,
       score: score !== null && breakdown ? { value: score, breakdown } : null,
     }));
+    // Spec 6.2.5: the recruiter's requirement changes re-rank without re-reading anyone.
+    await this.adj.apply(vid, out);
+    return out;
   }
 
   /**

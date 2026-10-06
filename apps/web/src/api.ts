@@ -174,6 +174,25 @@ export interface CandidateRow {
   injectionSuspected: boolean | null;
   error: string | null;
   decision: Decision | null;
+  /** The recruiter's requirement changes were applied to this score (spec 6.2.5). */
+  adjusted?: boolean;
+  originalScore?: number | null;
+}
+export type Kind = 'mandatory' | 'preferred' | 'ignore';
+export interface Adjustments {
+  requirements: { id: string; text: string; original: Kind; current: Kind }[];
+  knockouts: string[];
+  changes: {
+    id: string;
+    requirementId: string | null;
+    requirement: string | null;
+    from: Kind | null;
+    to: Kind | null;
+    reset: boolean;
+    by: string;
+    at: string;
+  }[];
+  changeCount: number;
 }
 export interface AdminUser {
   id: string;
