@@ -51,7 +51,21 @@ export class VacancyController {
       : `WHERE EXISTS (SELECT 1 FROM vacancy_access a
                         WHERE a.vacancy_id = v.id AND a.user_id = $1 AND a.revoked_at IS NULL)`;
     const { rows } = await this.db.query(
-      `${VacancyController.SELECT} ${scoped} ORDER BY v.created_at DESC`,
+      `SELECT x.*,
+              (SELECT count(*)::int FROM screening sc JOIN cv_document d ON d.id = sc.document_id
+                WHERE d.vacancy_id = x.id AND d.erased_at IS NULL AND sc.state = 'completed'
+                  AND sc.requirement_set_id = cur.id) AS "scoredCount",
+              (SELECT count(*)::int FROM screening sc JOIN cv_document d ON d.id = sc.document_id
+                WHERE d.vacancy_id = x.id AND d.erased_at IS NULL AND sc.state IN ('queued','processing')
+                  AND sc.cancelled_at IS NULL AND sc.requirement_set_id = cur.id) AS "pendingCount",
+              (SELECT count(*)::int FROM screening sc JOIN cv_document d ON d.id = sc.document_id
+                WHERE d.vacancy_id = x.id AND d.erased_at IS NULL AND sc.state = 'queued'
+                  AND sc.cancelled_at IS NOT NULL AND sc.requirement_set_id = cur.id) AS "stoppedCount",
+              (SELECT version FROM requirement_set WHERE id = cur.id) AS "criteriaVersion"
+         FROM (${VacancyController.SELECT} ${scoped}) x
+         LEFT JOIN LATERAL (SELECT id FROM requirement_set rs WHERE rs.vacancy_id = x.id
+                             AND rs.frozen_at IS NOT NULL ORDER BY rs.version DESC LIMIT 1) cur ON true
+        ORDER BY x."createdAt" DESC`,
       scoped ? [p.userId] : [],
     );
     return rows;

@@ -17,28 +17,54 @@ export class MeController {
   @AnyAuthenticated()
   @Get('me')
   async me(@CurrentPrincipal() principal: Principal) {
-    const { rows } = await this.db.query<{ background: Background }>(
-      `SELECT background FROM user_preference WHERE user_id = $1`,
+    const { rows } = await this.db.query<{ background: Background | null; focus: boolean }>(
+      `SELECT background, focus_on_skills AS focus FROM user_preference WHERE user_id = $1`,
       [principal.userId],
     );
-    return { ...principal, background: rows[0]?.background ?? null };
+    return {
+      ...principal,
+      background: rows[0]?.background ?? null,
+      focusOnSkills: rows[0]?.focus ?? false,
+    };
   }
 
-  /** Stores the person's background choice; `null` clears it so the page follows the device. */
+  /**
+   * Stores the person's display choices. `background: null` clears it so the page follows the
+   * device; `focusOnSkills` is the recruiter's own switch (design spec 6.2.6). Send either or both.
+   */
   @AnyAuthenticated()
   @Put('me/preferences')
   @HttpCode(200)
   async preferences(@Body() body: unknown, @CurrentPrincipal() principal: Principal) {
-    const { background } = parse(z.object({ background: z.enum(BACKGROUNDS).nullable() }), body);
-    if (background === null) {
-      await this.db.query(`DELETE FROM user_preference WHERE user_id = $1`, [principal.userId]);
-    } else {
-      await this.db.query(
-        `INSERT INTO user_preference (user_id, background) VALUES ($1, $2)
-         ON CONFLICT (user_id) DO UPDATE SET background = EXCLUDED.background, updated_at = now()`,
-        [principal.userId, background],
-      );
-    }
-    return { background };
+    const b = parse(
+      z
+        .object({
+          background: z.enum(BACKGROUNDS).nullable().optional(),
+          focusOnSkills: z.boolean().optional(),
+        })
+        .refine(
+          (x) => x.background !== undefined || x.focusOnSkills !== undefined,
+          'nothing to save',
+        ),
+      body,
+    );
+    await this.db.query(
+      `INSERT INTO user_preference (user_id, background, focus_on_skills)
+       VALUES ($1, $2, COALESCE($4, false))
+       ON CONFLICT (user_id) DO UPDATE SET
+         background = CASE WHEN $3 THEN EXCLUDED.background ELSE user_preference.background END,
+         focus_on_skills = COALESCE($4, user_preference.focus_on_skills),
+         updated_at = now()`,
+      [principal.userId, b.background ?? null, b.background !== undefined, b.focusOnSkills ?? null],
+    );
+    await this.db.query(
+      `DELETE FROM user_preference WHERE user_id = $1 AND background IS NULL AND focus_on_skills = false`,
+      [principal.userId],
+    );
+    const { rows } = await this.db.query<{ background: Background | null; focus: boolean }>(
+      `SELECT background, focus_on_skills AS focus FROM user_preference WHERE user_id = $1`,
+      [principal.userId],
+    );
+    return { background: rows[0]?.background ?? null, focusOnSkills: rows[0]?.focus ?? false };
   }
 }

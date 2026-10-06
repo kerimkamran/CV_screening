@@ -115,6 +115,8 @@ export interface Me {
   mustChangePassword?: boolean;
   /** Chosen page background; null or absent means follow the device. */
   background?: 'white' | 'grey' | 'sky' | 'dark' | null;
+  /** The recruiter's own "Focus on skills" switch (spec 6.2.6). */
+  focusOnSkills?: boolean;
 }
 export interface Session {
   token: string;
@@ -174,6 +176,8 @@ export interface CandidateRow {
   injectionSuspected: boolean | null;
   error: string | null;
   decision: Decision | null;
+  /** 1-based upload order; the pseudonym "Candidate NN" is built from it. */
+  ordinal?: number;
   /** The recruiter's requirement changes were applied to this score (spec 6.2.5). */
   adjusted?: boolean;
   originalScore?: number | null;

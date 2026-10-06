@@ -130,15 +130,54 @@ export class ScreeningsController {
         if (rest.band !== 'needs_review') rest.band = bandFor(re.score, false);
       }
     }
+    const docs = (
+      await this.db.query<{ id: string; at: Date }>(
+        `SELECT id, uploaded_at AS at FROM cv_document WHERE vacancy_id = $1`,
+        [vacancyId],
+      )
+    ).rows
+      .map((r) => ({ id: r.id, at: new Date(r.at).toISOString() }))
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
     return {
       ...rest,
       vacancyId,
+      ordinal: docs.findIndex((r) => r.id === s.documentId) + 1,
+      documentCount: docs.length,
       adjusted,
       // SCORE-03: no score without its breakdown.
       score: score !== null && breakdown ? { value: score, breakdown } : null,
       assessments,
       decisions,
     };
+  }
+
+  /** Hiding a name again is recorded too, so the run history says who showed whom and when. */
+  @Post('hide-names')
+  @HttpCode(200)
+  async hideNames(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const { screeningIds } = parse(
+      z.object({ screeningIds: z.array(ulidSchema).min(1).max(500) }),
+      body,
+    );
+    const ids = [...new Set(screeningIds)];
+    for (const sid of ids) await this.scope.assertScreening(p, sid);
+    await this.db.withTx(async (tx) => {
+      for (const sid of ids) {
+        await this.audit.record(tx, {
+          actorId: p.userId,
+          actorType: p.actorType,
+          sourceIp: req.ip,
+          action: 'candidate.name_hidden',
+          entityType: 'screening',
+          entityId: sid,
+        });
+      }
+    });
+    return { hidden: ids.length };
   }
 
   /**

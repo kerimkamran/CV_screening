@@ -6,6 +6,8 @@ import {
   type Criteria,
   type Requirement,
 } from '../api';
+import { useFocus } from '../focus';
+import { pseudonyms } from '../results-logic';
 import { Report } from './Report';
 import { Results } from './Results';
 import {
@@ -29,7 +31,7 @@ interface V {
   createdAt: string;
 }
 
-type Tab = 'results' | 'report' | 'candidates' | 'criteria';
+export type Tab = 'results' | 'report' | 'candidates' | 'criteria';
 
 const TAB_LABEL: Record<Tab, string> = {
   results: 'Results',
@@ -38,9 +40,9 @@ const TAB_LABEL: Record<Tab, string> = {
   criteria: 'Criteria',
 };
 
-export function Vacancy({ id }: { id: string }) {
+export function Vacancy({ id, initialTab = 'results' }: { id: string; initialTab?: Tab }) {
   const [v, setV] = useState<V | null>(null);
-  const [tab, setTab] = useState<Tab>('results');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState('');
   const reload = useCallback(
     () => api.get<V>(`/vacancies/${id}`).then(setV, (e) => setError(errMsg(e))),
@@ -456,6 +458,15 @@ function CandidatesTab({
     }
   }, [id]);
   useEffect(() => void load(), [load]);
+  // Names stay hidden here too (spec 6.2.6); a name this recruiter showed in Results is shown.
+  const focusOn = useFocus();
+  const [shown, setShown] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    api.get<{ screeningIds: string[] }>(`/vacancies/${id}/revealed`).then(
+      (x) => setShown(new Set(Array.isArray(x?.screeningIds) ? x.screeningIds : [])),
+      () => undefined,
+    );
+  }, [id]);
   // Poll while work is outstanding.
   const pending = data?.counts.queued ?? 0;
   useEffect(() => {
@@ -489,6 +500,7 @@ function CandidatesTab({
     }
   };
 
+  const pseudo = pseudonyms(data?.candidates ?? []);
   const rows = (data?.candidates ?? []).filter(
     (c) => !band || c.band === band || (band === 'undecided' && !c.decision),
   );
@@ -652,12 +664,16 @@ function CandidatesTab({
                           className="font-medium text-link hover:underline"
                           href={`#/screenings/${c.screeningId}`}
                         >
-                          {c.candidateName || c.filename}
+                          {c.screeningId && shown.has(c.screeningId)
+                            ? c.candidateName || pseudo.get(c.documentId)
+                            : pseudo.get(c.documentId)}
                         </a>
                       ) : (
-                        <span>{c.erased ? 'Erased' : c.filename}</span>
+                        <span>{c.erased ? 'Erased' : pseudo.get(c.documentId)}</span>
                       )}
-                      {c.candidateName && <div className="text-xs text-ink-3">{c.filename}</div>}
+                      {!c.erased && c.screeningId && shown.has(c.screeningId) && !focusOn && (
+                        <div className="text-xs text-ink-3">{c.filename}</div>
+                      )}
                     </td>
                     <td className="pr-3">{c.score ? c.score.value : '—'}</td>
                     <td className="pr-3">

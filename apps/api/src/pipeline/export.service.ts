@@ -19,6 +19,8 @@ export interface CandidateRow {
   error: string | null;
   decision: { outcome: string; reason: string; decidedAt: string; decidedBy: string } | null;
   /** Set when the recruiter's requirement changes were applied to this score (spec 6.2.5). */
+  /** 1-based upload order within the vacancy; the pseudonym "Candidate NN" is built from it. */
+  ordinal?: number;
   adjusted?: boolean;
   originalScore?: number | null;
 }

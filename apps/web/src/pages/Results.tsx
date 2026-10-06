@@ -14,6 +14,7 @@ import {
   type MatchBand,
 } from '../results-logic';
 import { btnSecondary, errMsg, Notice } from '../ui';
+import { setFocus, useFocus } from '../focus';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
 import { RequirementsDrawer } from './RequirementsDrawer';
@@ -46,7 +47,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const focusOn = useFocus();
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [revealedLoaded, setRevealedLoaded] = useState(false);
   const [confirmAll, setConfirmAll] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [mapAll, setMapAll] = useState(false);
@@ -82,6 +85,25 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }, [pending, load]);
 
   const all = useMemo(() => data?.candidates ?? [], [data]);
+  // Names this recruiter has already shown in this run come back from the audit trail.
+  useEffect(() => {
+    if (!data || revealedLoaded) return;
+    setRevealedLoaded(true);
+    api.get<{ screeningIds: string[] }>(`/vacancies/${vacancyId}/revealed`).then(
+      (x) => {
+        if (!Array.isArray(x?.screeningIds)) return;
+        const bySid = new Map(data.candidates.map((r) => [r.screeningId, r.documentId]));
+        setRevealed(
+          (s) =>
+            new Set([
+              ...s,
+              ...x.screeningIds.map((id) => bySid.get(id)).filter((d): d is string => !!d),
+            ]),
+        );
+      },
+      () => undefined,
+    );
+  }, [data, revealedLoaded, vacancyId]);
   const names = useMemo(() => pseudonyms(all), [all]);
   const ordered = useMemo(() => orderCandidates(all.filter((r) => !r.erased)), [all]);
   const bandOf = useMemo(
@@ -155,12 +177,22 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       setError(errMsg(e));
     }
   }
-  const hide = (id: string) =>
+  async function hide(r: CandidateRow) {
     setRevealed((s) => {
       const n = new Set(s);
-      n.delete(id);
+      n.delete(r.documentId);
       return n;
     });
+    if (r.screeningId) {
+      await api
+        .post('/screenings/hide-names', { screeningIds: [r.screeningId] })
+        .catch((e) => setError(errMsg(e)));
+    }
+  }
+  async function setFocusPref(next: boolean) {
+    setFocus(next);
+    await api.put('/me/preferences', { focusOnSkills: next }).catch(() => undefined);
+  }
 
   const marked = (o: string) => ordered.filter((r) => r.decision?.outcome === o).length;
   const entries = shortlistEntries(ordered, nameOf);
@@ -339,7 +371,14 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        {!confirmAll ? (
+        {focusOn ? (
+          <span>
+            <strong>Focus on skills is on.</strong> Names stay hidden unless you reveal one.{' '}
+            <button className="text-link underline" onClick={() => void setFocusPref(false)}>
+              Turn off
+            </button>
+          </span>
+        ) : !confirmAll ? (
           <button className={btnSecondary} onClick={() => setConfirmAll(true)}>
             Reveal all names
           </button>
@@ -355,6 +394,14 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           </div>
         )}
         <span className="text-ink-3">Names are hidden on screen, not removed from the file.</span>
+        {!focusOn && (
+          <span className="text-ink-3">
+            Want a first look about skills only?{' '}
+            <button className="text-link underline" onClick={() => void setFocusPref(true)}>
+              Try Focus on skills
+            </button>
+          </span>
+        )}
       </div>
 
       {marked('shortlist') + marked('hold') + marked('reject') > 0 && (
@@ -501,7 +548,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             onSelect={() => select(r.documentId)}
             onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
             onReveal={() => void reveal([r])}
-            onHide={() => hide(r.documentId)}
+            onHide={() => void hide(r)}
             onMarked={() => void load()}
           />
         ))}
@@ -529,7 +576,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   onSelect={() => select(r.documentId)}
                   onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
                   onReveal={() => void reveal([r])}
-                  onHide={() => hide(r.documentId)}
+                  onHide={() => void hide(r)}
                   onMarked={() => void load()}
                 />
               ))}

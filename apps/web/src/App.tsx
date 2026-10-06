@@ -15,8 +15,9 @@ import { Candidate } from './pages/Candidate';
 import { Home } from './pages/Home';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Vacancies } from './pages/Vacancies';
-import { Vacancy } from './pages/Vacancy';
+import { Vacancy, type Tab } from './pages/Vacancy';
 import { useRoute } from './route';
+import { setFocus } from './focus';
 import { applyBackground, isBackground } from './theme';
 import { Notice } from './ui';
 
@@ -49,6 +50,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       const m = await api.get<Me>('/me');
       setMe(m);
       applyBackground(isBackground(m.background) ? m.background : null);
+      setFocus(m.focusOnSkills === true);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status === 401) session.set(null);
     } finally {
@@ -161,10 +163,12 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       </Notice>
     );
   } else {
-    const vm = /^\/vacancies\/([0-9A-Z]{26})$/.exec(route);
+    const vm = /^\/vacancies\/([0-9A-Z]{26})(?:\/(results|report|candidates|criteria))?$/.exec(
+      route,
+    );
     const sm = /^\/screenings\/([0-9A-Z]{26})$/.exec(route);
     body = vm ? (
-      <Vacancy id={vm[1]!} key={vm[1]} />
+      <Vacancy id={vm[1]!} key={vm[1]} initialTab={(vm[2] as Tab | undefined) ?? 'results'} />
     ) : sm ? (
       <Candidate id={sm[1]!} key={sm[1]} />
     ) : isTa && route !== '/vacancies' ? (
@@ -201,6 +205,11 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
               <Appearance
                 value={isBackground(me.background) ? me.background : null}
                 onChange={(background) => setMe((m) => (m ? { ...m, background } : m))}
+                focusOnSkills={me.focusOnSkills === true}
+                onFocusChange={(focusOnSkills) => {
+                  setFocus(focusOnSkills);
+                  setMe((m) => (m ? { ...m, focusOnSkills } : m));
+                }}
               />
               <a href="#/password" className="hover:underline">
                 Password

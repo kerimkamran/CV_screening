@@ -12,9 +12,13 @@ import {
 export function Appearance({
   value,
   onChange,
+  focusOnSkills = false,
+  onFocusChange,
 }: {
   value: Background | null;
   onChange: (b: Background | null) => void;
+  focusOnSkills?: boolean;
+  onFocusChange?: (on: boolean) => void;
 }) {
   const [failed, setFailed] = useState(false);
 
@@ -23,6 +27,16 @@ export function Appearance({
     applyBackground(next);
     try {
       await api.put('/me/preferences', { background: next });
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }
+
+  async function chooseFocus(next: boolean) {
+    onFocusChange?.(next);
+    try {
+      await api.put('/me/preferences', { focusOnSkills: next });
       setFailed(false);
     } catch {
       setFailed(true);
@@ -71,6 +85,26 @@ export function Appearance({
             </label>
           ))}
         </div>
+        {onFocusChange && (
+          <div className="mt-3 border-t border-line pt-3">
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                role="switch"
+                className="mt-1"
+                checked={focusOnSkills}
+                onChange={(e) => void chooseFocus(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Focus on skills</span>
+                <span className="block text-xs text-ink-3">
+                  Hides file names and "Reveal all names" so the first look is only about skills.
+                  Hidden on screen, not a guarantee.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
         {failed && (
           <p role="alert" className="mt-2 text-xs text-warn-text">
             Could not save your choice. It applies on this device only for now.

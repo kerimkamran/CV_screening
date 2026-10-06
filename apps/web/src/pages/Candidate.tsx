@@ -1,19 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type Breakdown, type Classification, type Decision, type ReqStatus } from '../api';
-import {
-  BandBadge,
-  btnDanger,
-  btnPrimary,
-  btnSecondary,
-  Card,
-  errMsg,
-  Field,
-  input,
-  Notice,
-  OUTCOME,
-  StatusBadge,
-  when,
-} from '../ui';
+import { useFocus } from '../focus';
+import { BAND_LABEL, matchBand, STAR_COLOUR } from '../results-logic';
+import { MarkControls } from './CandidateCard';
+import { btnSecondary, Card, errMsg, Notice, OUTCOME, StatusBadge, when } from '../ui';
 
 interface Span {
   start: number;
@@ -56,6 +46,9 @@ interface Detail {
   error: string | null;
   criteriaVersion: number;
   documentId: string;
+  ordinal: number;
+  documentCount: number;
+  adjusted?: boolean;
   filename: string;
   uploadedAt: string;
   parseStatus: string;
@@ -69,7 +62,10 @@ interface Detail {
 export function Candidate({ id }: { id: string }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState('');
-  const [focus, setFocus] = useState<Span | null>(null);
+  const [focus, setFocusSpan] = useState<Span | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [showText, setShowText] = useState(false);
+  const focusOn = useFocus();
   const load = useCallback(async () => {
     try {
       setD(await api.get<Detail>(`/screenings/${id}`));
@@ -78,40 +74,91 @@ export function Candidate({ id }: { id: string }) {
     }
   }, [id]);
   useEffect(() => void load(), [load]);
+  // A name the recruiter already showed in this run stays shown.
+  const vacancyId = d?.vacancyId;
+  useEffect(() => {
+    if (!vacancyId) return;
+    api.get<{ screeningIds: string[] }>(`/vacancies/${vacancyId}/revealed`).then(
+      (x) => setRevealed(Array.isArray(x?.screeningIds) && x.screeningIds.includes(id)),
+      () => undefined,
+    );
+  }, [vacancyId, id]);
 
   if (error) return <Notice kind="error">{error}</Notice>;
   if (!d) return <p className="text-sm text-ink-3">Loading…</p>;
 
+  const pseudonym = `Candidate ${String(d.ordinal).padStart(Math.max(2, String(d.documentCount).length), '0')}`;
+  const band = matchBand({
+    state: d.state as never,
+    score: d.score ? { value: d.score.value, breakdown: d.score.breakdown } : null,
+    band: d.band as never,
+  });
+  const ext = /\.[A-Za-z0-9]{1,5}$/.exec(d.filename)?.[0] ?? '';
+
+  async function reveal() {
+    try {
+      await api.post('/screenings/reveal-names', { screeningIds: [d!.id] });
+      setRevealed(true);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }
+  async function hide() {
+    setRevealed(false);
+    await api.post('/screenings/hide-names', { screeningIds: [d!.id] }).catch(() => undefined);
+  }
+
   return (
     <div className="space-y-4">
       <a href={`#/vacancies/${d.vacancyId}`} className="text-sm text-link hover:underline">
-        ← Back to candidates
+        ← Back to results
       </a>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{d.candidateName || d.filename}</h1>
-          <p className="text-sm text-ink-3">
-            {d.candidateEmail && <>{d.candidateEmail} · </>}
-            {d.filename} · uploaded {when(d.uploadedAt)}
+          <h1 className="text-xl font-semibold">
+            {revealed ? d.candidateName || d.filename : pseudonym}
+          </h1>
+          <p className="text-sm text-ink-2">
+            <span
+              aria-hidden="true"
+              className="mr-2 inline-block h-3 w-3 rounded-full border border-edge align-middle"
+              style={{ background: STAR_COLOUR[band] }}
+            />
+            {BAND_LABEL[band]}
+            {d.adjusted && ' · uses your requirement changes'}
           </p>
-          <p className="text-xs text-ink-3">
-            Name and email were extracted by the AI and may be wrong.
-          </p>
+          {revealed ? (
+            <p className="text-sm text-ink-3">
+              {!focusOn && d.candidateEmail && <>{d.candidateEmail} · </>}
+              {!focusOn && <>{d.filename} · </>}uploaded {when(d.uploadedAt)}
+              <br />
+              <span className="text-xs">
+                Name and email were extracted by the AI and may be wrong.
+              </span>
+              <br />
+              <button className="text-link underline" onClick={() => void hide()}>
+                Hide name
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-ink-3">
+              The name is hidden to keep the first look about skills.{' '}
+              <button className="text-link underline" onClick={() => void reveal()}>
+                Reveal name
+              </button>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {d.score ? (
-            <div className="text-right">
-              <div className="text-3xl font-semibold tabular-nums">{d.score.value}</div>
-              <div className="text-xs text-ink-3">score / 100</div>
-            </div>
-          ) : null}
-          <BandBadge band={d.band} />
           {!d.erased && (
             <button
               className={btnSecondary}
               onClick={() =>
                 api
-                  .download(`/documents/${d.documentId}/file`, d.filename)
+                  .download(
+                    `/documents/${d.documentId}/file`,
+                    revealed ? d.filename : `${pseudonym}${ext}`,
+                  )
                   .catch((e) => setError(errMsg(e)))
               }
             >
@@ -189,8 +236,8 @@ export function Candidate({ id }: { id: string }) {
                   {a.evidence?.map((e, i) => (
                     <button
                       key={i}
-                      onClick={() => setFocus(e)}
-                      className="mt-1 block w-full rounded border border-yellow-300 bg-yellow-50 px-2 py-1 text-left text-sm italic hover:bg-yellow-100"
+                      onClick={() => setFocusSpan(e)}
+                      className="mt-1 block w-full rounded border border-warn-line bg-warn text-warn-ink px-2 py-1 text-left text-sm italic hover:bg-hover"
                     >
                       “{e.quote}”
                     </button>
@@ -206,7 +253,7 @@ export function Candidate({ id }: { id: string }) {
             </div>
           </Card>
           {d.score && (
-            <Card title="How the score was calculated">
+            <Card title={`How the score was calculated (${d.score.value} of 100, a sorting aid)`}>
               <p className="mb-2 text-xs text-ink-3">{d.score.breakdown.formula}</p>
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Score breakdown</caption>
@@ -247,7 +294,18 @@ export function Candidate({ id }: { id: string }) {
 
         <div className="space-y-4">
           <DecisionPanel d={d} onSaved={load} />
-          {d.text && (
+          {d.text && focusOn && !showText && (
+            <Card title="CV text">
+              <p className="text-sm text-ink-2">
+                Focus on skills is on. The full text can carry names and personal details, so it
+                waits behind a click. The proof for each requirement is shown on the left.
+              </p>
+              <button className={`${btnSecondary} mt-2`} onClick={() => setShowText(true)}>
+                Show the CV text
+              </button>
+            </Card>
+          )}
+          {d.text && (!focusOn || showText) && (
             <CvText
               text={d.text}
               spans={d.assessments.flatMap((a) => a.evidence ?? [])}
@@ -305,7 +363,11 @@ function CvText({
             <mark
               key={i}
               ref={focus && focus.start === p.mark.start ? focusRef : undefined}
-              className={focus && focus.start === p.mark.start ? 'bg-orange-300' : 'bg-yellow-200'}
+              className={
+                focus && focus.start === p.mark.start
+                  ? 'bg-accent text-on-accent'
+                  : 'bg-warn text-warn-ink'
+              }
             >
               {p.t}
             </mark>
@@ -319,103 +381,20 @@ function CvText({
 }
 
 function DecisionPanel({ d, onSaved }: { d: Detail; onSaved: () => void }) {
-  const [outcome, setOutcome] = useState<'shortlist' | 'hold' | 'reject'>('hold');
-  const [reason, setReason] = useState('');
-  const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const locked = d.erased || d.state === 'queued' || d.state === 'processing';
+  const current = d.decisions[0] ?? null;
+  const canMark = !locked && d.state !== 'failed';
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await api.post(`/screenings/${d.id}/decision`, {
-        outcome,
-        reason,
-        evidenceReviewed: reviewed,
-      });
-      setReason('');
-      setReviewed(false);
-      onSaved();
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const current = d.decisions[0];
   return (
-    <Card title="Your decision">
+    <Card title="My mark">
       <p className="mb-3 text-xs text-ink-3">
-        The score and ranking are a recommendation. Only you decide, and your decision and reason
-        are recorded under your name.
+        The match and the order are a recommendation. Only you decide, and your mark and note are
+        recorded under your name. A mark never changes the match.
       </p>
-      {current && (
-        <p className="mb-3 text-sm">
-          Current:{' '}
-          <span
-            className={`rounded px-1.5 py-0.5 text-xs font-medium ${OUTCOME[current.outcome]![1]}`}
-          >
-            {OUTCOME[current.outcome]![0]}
-          </span>{' '}
-          by {current.decidedBy}, {when(current.decidedAt)}
-        </p>
-      )}
-      <form onSubmit={submit} className="space-y-3">
-        <fieldset className="flex flex-wrap gap-4 text-sm" disabled={locked}>
-          <legend className="sr-only">Outcome</legend>
-          {(['shortlist', 'hold', 'reject'] as const).map((o) => (
-            <label key={o} className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="outcome"
-                checked={outcome === o}
-                onChange={() => setOutcome(o)}
-              />
-              {o === 'shortlist' ? 'Shortlist' : o === 'hold' ? 'Hold' : 'Reject'}
-            </label>
-          ))}
-        </fieldset>
-        <Field
-          label="Reason (required, at least 10 characters)"
-          hint="Write what you based this on. Do not include sensitive personal details."
-        >
-          <textarea
-            className={`${input} h-20`}
-            required
-            minLength={10}
-            disabled={locked}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-        </Field>
-        {outcome === 'reject' && (
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={reviewed}
-              onChange={(e) => setReviewed(e.target.checked)}
-            />
-            <span>
-              I have read the CV and the evidence myself; this decision is not based on the score
-              alone.
-            </span>
-          </label>
-        )}
-        {error && <Notice kind="error">{error}</Notice>}
-        <button
-          className={outcome === 'reject' ? btnDanger : btnPrimary}
-          disabled={busy || locked || (outcome === 'reject' && !reviewed)}
-        >
-          Record decision
-        </button>
-      </form>
-      {d.decisions.length > 1 && (
-        <details className="mt-4 text-sm">
+      {canMark && <MarkControls current={current} screeningId={d.id} onMarked={onSaved} />}
+      {d.decisions.length > 0 && (
+        <details className="mt-4 text-sm" open={d.decisions.length === 1}>
           <summary className="cursor-pointer text-ink-2">History ({d.decisions.length})</summary>
           <ul className="mt-2 space-y-2">
             {d.decisions.map((x) => (
@@ -427,11 +406,9 @@ function DecisionPanel({ d, onSaved }: { d: Detail; onSaved: () => void }) {
           </ul>
         </details>
       )}
-      {d.decisions.length === 1 && current && (
-        <p className="mt-3 text-sm text-ink-2">Reason: {current.reason}</p>
-      )}
+      {error && <Notice kind="error">{error}</Notice>}
       {!d.erased && (
-        <div className="mt-4 border-t pt-3">
+        <div className="mt-4 border-t border-line pt-3">
           <button
             className={btnSecondary}
             onClick={() => {

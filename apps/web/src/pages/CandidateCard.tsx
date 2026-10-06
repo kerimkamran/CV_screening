@@ -150,7 +150,11 @@ export function CandidateCard(props: {
             </div>
           )}
           {r.screeningId && band !== 'human' && (
-            <MarkControls r={r} screeningId={r.screeningId} onMarked={props.onMarked} />
+            <MarkControls
+              current={r.decision}
+              screeningId={r.screeningId}
+              onMarked={props.onMarked}
+            />
           )}
           <p className="text-sm">
             {r.screeningId && (
@@ -170,12 +174,12 @@ export function CandidateCard(props: {
  * or re-ranks anyone, and needs a short note of the recruiter's own. "Not now" also asks them to
  * confirm they looked at the evidence, as every negative decision does.
  */
-function MarkControls({
-  r,
+export function MarkControls({
+  current,
   screeningId,
   onMarked,
 }: {
-  r: CandidateRow;
+  current: { outcome: string; reason: string } | null;
   screeningId: string;
   onMarked: () => void;
 }) {
@@ -211,9 +215,9 @@ function MarkControls({
   return (
     <fieldset className="rounded-md border border-dashed border-edge p-3">
       <legend className="px-1 text-sm font-medium">My mark (separate from the AI match)</legend>
-      {r.decision && (
+      {current && (
         <p className="mb-2 text-sm text-ink-2">
-          Now: <strong>{markLabel(r.decision.outcome)}</strong>. {r.decision.reason}
+          Now: <strong>{markLabel(current.outcome)}</strong>. {current.reason}
         </p>
       )}
       <div role="group" aria-label="Choose a mark" className="flex flex-wrap gap-2">

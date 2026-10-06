@@ -244,6 +244,32 @@ export class DocumentsController {
     return { counts, aiActive: Boolean(ai), candidates: filtered };
   }
 
+  /**
+   * Which names this recruiter has shown in this run (spec 6.2.6). Derived from the audit trail:
+   * the latest of "revealed" / "hidden again" per candidate, so it follows the person across
+   * devices and nothing extra is stored.
+   */
+  @Get('vacancies/:id/revealed')
+  async revealed(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
+    const vid = parse(ulidSchema, id);
+    await this.scope.assert(p, vid);
+    const { rows } = await this.db.query<{ screeningId: string; action: string }>(
+      `SELECT DISTINCT ON (a.entity_id) a.entity_id AS "screeningId", a.action
+         FROM audit_event a
+         JOIN screening sc ON sc.id = a.entity_id
+         JOIN cv_document d ON d.id = sc.document_id
+        WHERE a.actor_id = $1 AND d.vacancy_id = $2
+          AND a.action IN ('candidate.name_revealed', 'candidate.name_hidden')
+        ORDER BY a.entity_id, a.seq DESC`,
+      [p.userId, vid],
+    );
+    return {
+      screeningIds: rows
+        .filter((r) => r.action === 'candidate.name_revealed')
+        .map((r) => r.screeningId),
+    };
+  }
+
   private async rows(vid: string): Promise<CandidateRow[]> {
     const { rows } = await this.db.query<
       Omit<CandidateRow, 'score'> & { score: number | null; breakdown: Breakdown | null }
@@ -273,6 +299,13 @@ export class DocumentsController {
     }));
     // Spec 6.2.5: the recruiter's requirement changes re-rank without re-reading anyone.
     await this.adj.apply(vid, out);
+    // Pseudonym number = upload order, the same rule the screen uses, so it never changes.
+    const byUpload = [...out].sort(
+      (a, b) =>
+        new Date(a.uploadedAt).toISOString().localeCompare(new Date(b.uploadedAt).toISOString()) ||
+        a.documentId.localeCompare(b.documentId),
+    );
+    byUpload.forEach((r, i) => (r.ordinal = i + 1));
     return out;
   }
 

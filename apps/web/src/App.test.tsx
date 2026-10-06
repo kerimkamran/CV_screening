@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchReadiness, session } from './api';
 import { AiSettings, Users } from './pages/Admin';
+import { setFocus } from './focus';
 import { Candidate } from './pages/Candidate';
 import { Report } from './pages/Report';
 import { Results } from './pages/Results';
@@ -63,6 +64,9 @@ describe('sign-in and gates', () => {
               location: 'Baku',
               createdAt: new Date().toISOString(),
               documentCount: 3,
+              scoredCount: 2,
+              pendingCount: 1,
+              criteriaVersion: 2,
             },
           ],
         };
@@ -75,7 +79,11 @@ describe('sign-in and gates', () => {
     expect(await screen.findByText('Who fits this role?')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: 'Past scans' }));
     expect(await screen.findByText('Backend Engineer')).toBeInTheDocument();
-    expect(screen.getByText(/3 CVs/)).toBeInTheDocument();
+    expect(screen.getByText(/3 resumes · 2 scored · 1 still being read/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change requirements and re-run' })).toHaveAttribute(
+      'href',
+      '#/vacancies/V/criteria',
+    );
     // The token is sent only in the Authorization header, never in a URL.
     const authed = calls.filter((c) => c.url.endsWith('/me'));
     expect((authed[0]!.init!.headers as Record<string, string>).authorization).toBe('Bearer t1');
@@ -141,6 +149,8 @@ describe('candidate review', () => {
     error: null,
     criteriaVersion: 1,
     documentId: 'D',
+    ordinal: 7,
+    documentCount: 12,
     filename: 'cv.txt',
     uploadedAt: new Date().toISOString(),
     parseStatus: 'parsed',
@@ -165,7 +175,9 @@ describe('candidate review', () => {
 
   it('highlights verified evidence in the CV text and labels AI output', async () => {
     session.set('tok');
-    mockFetch(() => ({ body: detail }));
+    mockFetch((url) =>
+      url.endsWith('/revealed') ? { body: { screeningIds: [] } } : { body: detail },
+    );
     render(<Candidate id="S" />);
     expect(await screen.findByText('AI summary')).toBeInTheDocument();
     const marks = document.querySelectorAll('mark');
@@ -173,20 +185,63 @@ describe('candidate review', () => {
     expect(marks[0]!.textContent).toBe('payment systems in Java');
   });
 
-  it('will not submit a rejection until the reviewer attests they read the evidence', async () => {
+  it('shows the pseudonym and a plain band first; the name and file name wait for Reveal', async () => {
     session.set('tok');
-    const calls = mockFetch((url, init) =>
-      init?.method === 'POST' ? { status: 201, body: { id: 'x' } } : { body: detail },
-    );
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/revealed')) return { body: { screeningIds: [] } };
+      if (url.endsWith('/reveal-names') && init?.method === 'POST')
+        return { body: { revealed: 1 } };
+      if (url.endsWith('/hide-names')) return { body: { hidden: 1 } };
+      return { body: detail };
+    });
     render(<Candidate id="S" />);
-    await userEvent.click(await screen.findByLabelText('Reject'));
+    expect(await screen.findByRole('heading', { name: 'Candidate 07' })).toBeInTheDocument();
+    expect(screen.getByText('Partial')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Dilara|cv\.txt/);
+    await userEvent.click(screen.getByRole('button', { name: 'Reveal name' }));
+    expect(await screen.findByRole('heading', { name: 'Dilara' })).toBeInTheDocument();
+    expect(calls.some((c) => c.url.endsWith('/reveal-names'))).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide name' }));
+    expect(await screen.findByRole('heading', { name: 'Candidate 07' })).toBeInTheDocument();
+    expect(calls.some((c) => c.url.endsWith('/hide-names'))).toBe(true);
+  });
+
+  it('keeps a name already shown in this run, and Focus on skills hides the file name and the CV text until asked', async () => {
+    session.set('tok');
+    mockFetch((url) =>
+      url.endsWith('/revealed') ? { body: { screeningIds: ['S'] } } : { body: detail },
+    );
+    setFocus(true);
+    try {
+      render(<Candidate id="S" />);
+      expect(await screen.findByRole('heading', { name: 'Dilara' })).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/cv\.txt/);
+      expect(document.querySelectorAll('mark')).toHaveLength(0);
+      await userEvent.click(screen.getByRole('button', { name: 'Show the CV text' }));
+      expect(document.querySelectorAll('mark')).toHaveLength(1);
+    } finally {
+      setFocus(false);
+    }
+  });
+
+  it('records a "Not now" mark only with a note and the evidence check; nothing is pre-selected', async () => {
+    session.set('tok');
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/revealed')) return { body: { screeningIds: [] } };
+      return init?.method === 'POST' ? { status: 201, body: { id: 'x' } } : { body: detail };
+    });
+    render(<Candidate id="S" />);
+    const group = await screen.findByRole('group', { name: 'Choose a mark' });
+    for (const b of within(group).getAllByRole('button'))
+      expect(b).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(within(group).getByRole('button', { name: /Not now/ }));
     await userEvent.type(
-      screen.getByLabelText(/Reason/),
+      screen.getByLabelText(/One line/),
       'Missing the licence and the required experience',
     );
-    const submit = screen.getByRole('button', { name: 'Record decision' });
+    const submit = screen.getByRole('button', { name: 'Save my mark' });
     expect(submit).toBeDisabled();
-    await userEvent.click(screen.getByLabelText(/I have read the CV and the evidence myself/));
+    await userEvent.click(screen.getByRole('checkbox'));
     expect(submit).toBeEnabled();
     await userEvent.click(submit);
     await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
@@ -787,7 +842,7 @@ describe('Results: bands, names hidden, proof', () => {
     const calls = setup();
     render(<Results vacancyId="V" onTable={() => undefined} />);
     const card = (await screen.findAllByRole('article'))[0]!;
-    const group = within(card).getByRole('group', { name: 'Choose a mark' });
+    const group = await within(card).findByRole('group', { name: 'Choose a mark' });
     for (const b of within(group).getAllByRole('button'))
       expect(b).toHaveAttribute('aria-pressed', 'false');
     await userEvent.click(within(group).getByRole('button', { name: /Not now/ }));
@@ -807,6 +862,33 @@ describe('Results: bands, names hidden, proof', () => {
       reason: 'Needs more network depth',
       evidenceReviewed: true,
     });
+  });
+
+  it('shows names this recruiter already revealed in the run, and Focus on skills offers no "Reveal all"', async () => {
+    session.set('t');
+    mockFetch((url) => {
+      if (url.endsWith('/vacancies/V/revealed')) return { body: { screeningIds: ['S2'] } };
+      if (url.endsWith('/vacancies/V/candidates'))
+        return {
+          body: {
+            counts: { total: 4, queued: 0, failed: 0, manual: 1, undecided: 4 },
+            aiActive: true,
+            candidates: rows,
+          },
+        };
+      if (url.includes('/screenings/')) return { body: { summary: null, assessments: [] } };
+      return { body: {} };
+    });
+    setFocus(true);
+    try {
+      render(<Results vacancyId="V" onTable={() => undefined} />);
+      await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
+      expect(document.body.textContent).not.toMatch(/Real Name 1|Real Name 3/);
+      expect(screen.queryByRole('button', { name: 'Reveal all names' })).toBeNull();
+      expect(screen.getByText(/Focus on skills is on/)).toBeInTheDocument();
+    } finally {
+      setFocus(false);
+    }
   });
 
   it('shows my marks apart from the match and exports only the shortlisted, by pseudonym', async () => {
