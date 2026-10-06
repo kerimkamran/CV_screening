@@ -492,6 +492,28 @@ describeDb('Screening pipeline', () => {
     expect(actors.rows).toEqual([{ actor_kind: 'human' }]);
   });
 
+  it('records who revealed which candidate name, only within their own vacancies', async () => {
+    const list = (await rec().get(`/vacancies/${vid}/candidates`)).json();
+    const ids = list.candidates.slice(0, 2).map((c: { screeningId: string }) => c.screeningId);
+    const r = await rec().post('/screenings/reveal-names', { screeningIds: [...ids, ids[0]] });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().revealed).toBe(2); // duplicates are counted once
+    const rows = await db.owner.query(
+      `SELECT entity_id, actor_id FROM audit_event WHERE action = 'candidate.name_revealed'`,
+    );
+    expect(rows.rows.map((x: { entity_id: string }) => x.entity_id).sort()).toEqual(
+      [...ids].sort(),
+    );
+    expect(new Set(rows.rows.map((x: { actor_id: string }) => x.actor_id)).size).toBe(1);
+    // Someone without access to the vacancy cannot reveal (and nothing is recorded for them).
+    expect(
+      (await as(other).post('/screenings/reveal-names', { screeningIds: ids })).statusCode,
+    ).toBe(404);
+    expect((await rec().post('/screenings/reveal-names', { screeningIds: [] })).statusCode).toBe(
+      400,
+    );
+  });
+
   it('scope: another recruiter sees nothing of this vacancy; admin has no candidate access', async () => {
     for (const url of [
       `/vacancies/${vid}`,

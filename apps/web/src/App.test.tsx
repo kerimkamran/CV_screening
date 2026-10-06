@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchReadiness, session } from './api';
 import { AiSettings, Users } from './pages/Admin';
 import { Candidate } from './pages/Candidate';
+import { Results } from './pages/Results';
 
 type Handler = (url: string, init?: RequestInit) => { status?: number; body: unknown };
 function mockFetch(handler: Handler) {
@@ -642,5 +643,142 @@ describe('Home: resumes and role', () => {
     fail = true;
     await userEvent.upload(screen.getByLabelText('Attach a Word file'), word);
     expect(await screen.findByText('This file is locked with a password')).toBeInTheDocument();
+  });
+});
+
+describe('Results: bands, names hidden, proof', () => {
+  const item = (id: string, text: string, classification: string, status: string) => ({
+    requirementId: id,
+    text,
+    classification,
+    weight: classification === 'mandatory' ? 10 : 5,
+    status,
+    points: 1,
+    earned: 0,
+  });
+  const cand = (n: number, score: number | null, extra: Record<string, unknown> = {}) => ({
+    screeningId: `S${n}`,
+    documentId: `D${n}`,
+    filename: `cv_person${n}.pdf`,
+    uploadedAt: `2026-10-01T10:00:0${n}Z`,
+    parseStatus: 'parsed',
+    erased: false,
+    state: score === null ? 'manual' : 'completed',
+    candidateName: `Real Name ${n}`,
+    band: score === null ? 'needs_review' : 'possible_match',
+    score:
+      score === null
+        ? null
+        : {
+            value: score,
+            breakdown: {
+              formula: 'f',
+              earned: 1,
+              possible: 2,
+              mandatoryGaps: 1,
+              items: [
+                item('R1', 'Routing', 'mandatory', 'met'),
+                item('R2', 'Kubernetes', 'mandatory', 'not_found'),
+              ],
+            },
+          },
+    knockoutTriggered: false,
+    injectionSuspected: false,
+    error: null,
+    decision: null,
+    ...extra,
+  });
+  const rows = [cand(1, 62), cand(2, 74), cand(3, 31), cand(4, null)];
+
+  function setup() {
+    session.set('t');
+    return mockFetch((url) => {
+      if (url.endsWith('/vacancies/V/candidates'))
+        return {
+          body: {
+            counts: { total: 4, queued: 0, failed: 0, manual: 1, undecided: 4 },
+            aiActive: true,
+            candidates: rows,
+          },
+        };
+      if (url.includes('/screenings/S2'))
+        return {
+          body: {
+            summary: 'Six years on carrier routing; no Kubernetes in this CV.',
+            assessments: [
+              {
+                requirementId: 'R1',
+                text: 'Routing',
+                status: 'met',
+                rationale: 'Led BGP rollout',
+                evidence: [{ quote: 'Designed the BGP peering for two carriers' }],
+              },
+              {
+                requirementId: 'R2',
+                text: 'Kubernetes',
+                status: 'not_found',
+                rationale: null,
+                evidence: [],
+              },
+            ],
+          },
+        };
+      if (url.endsWith('/reveal-names')) return { body: { revealed: 1 } };
+      return { body: {} };
+    });
+  }
+
+  it('shows plain bands with names hidden, and never prints a file name or a headline number', async () => {
+    setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    expect(await screen.findByText('Your constellation')).toBeInTheDocument();
+    expect(screen.getByText(/No strong match in this batch/)).toBeInTheDocument();
+    // Candidate 02 (74) is Good and ranks first; the 31 is Limited, inside a collapsed group.
+    const cards = screen.getAllByRole('article');
+    expect(cards[0]).toHaveTextContent('Candidate 02');
+    expect(cards[0]).toHaveTextContent('Good');
+    expect(screen.getByText(/Limited \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Needs a human look \(1\)/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/cv_person|Real Name/);
+    expect(await screen.findByText(/Score 74 of 100/)).toBeInTheDocument(); // selected card only
+    expect(cards[1]).not.toHaveTextContent(/Score \d/);
+  });
+
+  it('opens the exact CV quote behind a skill, and says what was searched when it is missing', async () => {
+    setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Routing: Found/ }));
+    expect(
+      await screen.findByText('Designed the BGP peering for two carriers'),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^Kubernetes: Not found/ }));
+    expect(
+      await screen.findByText(/Not found in this CV\. Searched for: Kubernetes/),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/no Kubernetes in this CV/)).toBeInTheDocument();
+  });
+
+  it('reveals one name on request, recorded on the server, and can hide it again', async () => {
+    const calls = setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    const card = (await screen.findAllByRole('article'))[0]!;
+    await userEvent.click(within(card).getByRole('button', { name: 'Reveal name' }));
+    await waitFor(() => expect(card).toHaveTextContent('Real Name 2'));
+    const post = calls.find((c) => c.url.endsWith('/reveal-names'))!;
+    expect(JSON.parse(String(post.init!.body))).toEqual({ screeningIds: ['S2'] });
+    await userEvent.click(within(card).getByRole('button', { name: 'Hide name' }));
+    expect(card).not.toHaveTextContent('Real Name 2');
+  });
+
+  it('asks before revealing every name', async () => {
+    const calls = setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Reveal all names' }));
+    expect(
+      screen.getByText('Names are hidden to keep the first look about skills. Show all?'),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.url.endsWith('/reveal-names'))).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
+    await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
   });
 });

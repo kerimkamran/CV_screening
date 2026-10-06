@@ -6,6 +6,7 @@ import {
   type Criteria,
   type Requirement,
 } from '../api';
+import { Results } from './Results';
 import {
   BandBadge,
   btnPrimary,
@@ -26,11 +27,11 @@ interface V {
   candidateNoticeConfirmedAt: string | null;
 }
 
-type Tab = 'candidates' | 'criteria';
+type Tab = 'results' | 'candidates' | 'criteria';
 
 export function Vacancy({ id }: { id: string }) {
   const [v, setV] = useState<V | null>(null);
-  const [tab, setTab] = useState<Tab>('candidates');
+  const [tab, setTab] = useState<Tab>('results');
   const [error, setError] = useState('');
   const reload = useCallback(
     () => api.get<V>(`/vacancies/${id}`).then(setV, (e) => setError(errMsg(e))),
@@ -44,7 +45,7 @@ export function Vacancy({ id }: { id: string }) {
     <div className="space-y-4">
       <div>
         <a href="#/vacancies" className="text-sm text-link hover:underline">
-          ← Vacancies
+          ← Past scans
         </a>
         <h1 className="text-xl font-semibold">{v.title}</h1>
         <p className="text-sm text-ink-3">
@@ -52,7 +53,7 @@ export function Vacancy({ id }: { id: string }) {
         </p>
       </div>
       <div role="tablist" className="flex gap-1 border-b">
-        {(['candidates', 'criteria'] as Tab[]).map((t) => (
+        {(['results', 'candidates', 'criteria'] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
@@ -60,12 +61,14 @@ export function Vacancy({ id }: { id: string }) {
             onClick={() => setTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
-            {t === 'candidates' ? 'Candidates' : 'Criteria'}
+            {t === 'results' ? 'Results' : t === 'candidates' ? 'Table' : 'Criteria'}
           </button>
         ))}
       </div>
       {tab === 'criteria' ? (
         <CriteriaTab id={id} />
+      ) : tab === 'results' ? (
+        <Results vacancyId={id} onTable={() => setTab('candidates')} />
       ) : (
         <CandidatesTab id={id} vacancy={v} onNotice={reload} />
       )}

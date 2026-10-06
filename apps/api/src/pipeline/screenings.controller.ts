@@ -36,6 +36,39 @@ export class ScreeningsController {
     private readonly scope: VacancyScope,
   ) {}
 
+  /**
+   * Design spec 6.2.6: names are hidden on screen by default. Showing one is a recruiter's action
+   * and is recorded: who revealed whom, and when. The name itself is never part of the score.
+   */
+  @Post('reveal-names')
+  @HttpCode(200)
+  async revealNames(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const { screeningIds } = parse(
+      z.object({ screeningIds: z.array(ulidSchema).min(1).max(500) }),
+      body,
+    );
+    if (p.actorType !== 'human') throw new BadRequestException('Only a person can reveal names');
+    const ids = [...new Set(screeningIds)];
+    for (const sid of ids) await this.scope.assertScreening(p, sid);
+    await this.db.withTx(async (tx) => {
+      for (const sid of ids) {
+        await this.audit.record(tx, {
+          actorId: p.userId,
+          actorType: 'human',
+          sourceIp: req.ip,
+          action: 'candidate.name_revealed',
+          entityType: 'screening',
+          entityId: sid,
+        });
+      }
+    });
+    return { revealed: ids.length };
+  }
+
   /** WORK-02..04: everything the reviewer needs — and the evidence behind every number. */
   @Get(':id')
   async one(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
