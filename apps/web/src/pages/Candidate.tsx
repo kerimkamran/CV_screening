@@ -3,6 +3,8 @@ import { api, type Breakdown, type Classification, type Decision, type ReqStatus
 import { useFocus } from '../focus';
 import { BAND_LABEL, matchBand, STAR_COLOUR } from '../results-logic';
 import { MarkControls } from './CandidateCard';
+import { AssistantPanel } from './AssistantPanel';
+import { setAssistantOpen, useAssistantConfig } from '../assistant';
 import { btnSecondary, Card, errMsg, Notice, OUTCOME, StatusBadge, when } from '../ui';
 
 interface Span {
@@ -66,6 +68,7 @@ export function Candidate({ id }: { id: string }) {
   const [revealed, setRevealed] = useState(false);
   const [showText, setShowText] = useState(false);
   const focusOn = useFocus();
+  const assistant = useAssistantConfig();
   const load = useCallback(async () => {
     try {
       setD(await api.get<Detail>(`/screenings/${id}`));
@@ -113,6 +116,16 @@ export function Candidate({ id }: { id: string }) {
       <a href={`#/vacancies/${d.vacancyId}`} className="text-sm text-link hover:underline">
         ← Back to results
       </a>
+      {assistant && !d.erased && band !== 'human' && (
+        <AssistantPanel
+          config={assistant}
+          target={{ screeningId: d.id, label: pseudonym, band }}
+          others={[]}
+          onEditRequirement={() => {
+            window.location.hash = `/vacancies/${d.vacancyId}`;
+          }}
+        />
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">
@@ -150,6 +163,11 @@ export function Candidate({ id }: { id: string }) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {assistant && !d.erased && band !== 'human' && (
+            <button className={btnSecondary} onClick={() => setAssistantOpen(true)}>
+              Ask {assistant.name} about this candidate
+            </button>
+          )}
           {!d.erased && (
             <button
               className={btnSecondary}

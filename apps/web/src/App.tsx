@@ -10,7 +10,8 @@ import {
   type Session,
 } from './api';
 import { Appearance } from './Appearance';
-import { AiSettings, Users } from './pages/Admin';
+import { AiSettings, AssistantSettings, Users } from './pages/Admin';
+import { rememberUser } from './assistant';
 import { Candidate } from './pages/Candidate';
 import { Home } from './pages/Home';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
@@ -50,6 +51,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     try {
       const m = await api.get<Me>('/me');
       setMe(m);
+      rememberUser(m.userId);
       applyBackground(isBackground(m.background) ? m.background : null);
       setFocus(m.focusOnSkills === true);
     } catch (e) {
@@ -147,8 +149,20 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           >
             AI models
           </a>
+          <a
+            className={`rounded px-3 py-1.5 ${route === '/admin/assistant' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
+            href="#/admin/assistant"
+          >
+            Assistant
+          </a>
         </nav>
-        {route === '/admin/ai' ? <AiSettings /> : <Users meId={me.userId} />}
+        {route === '/admin/ai' ? (
+          <AiSettings />
+        ) : route === '/admin/assistant' ? (
+          <AssistantSettings />
+        ) : (
+          <Users meId={me.userId} />
+        )}
       </div>
     ) : (
       <Notice kind="error">Administrators only.</Notice>

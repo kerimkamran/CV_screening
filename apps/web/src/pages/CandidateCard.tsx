@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, type CandidateRow } from '../api';
 import { MARKS, markLabel, type MarkKey } from '../shortlist';
-import { btnPrimary, errMsg, Notice } from '../ui';
+import { btnPrimary, btnSecondary, errMsg, Notice } from '../ui';
 import { BAND_LABEL, skillChips, STAR_COLOUR, type MatchBand } from '../results-logic';
 
 export interface Span {
@@ -34,11 +34,14 @@ export function CandidateCard(props: {
   onReveal: () => void;
   onHide: () => void;
   onMarked: () => void;
+  /** The assistant's name when it is on; the button is drawn only then. */
+  assistantName?: string;
+  onAsk?: () => void;
 }) {
   const { r, band, name, selected, detail } = props;
   const chips = skillChips(r.score?.breakdown);
   const d = typeof detail === 'object' ? detail : null;
-  const open = d?.assessments.find((a) => a.requirementId === props.proof) ?? null;
+  const open = d?.assessments?.find((a) => a.requirementId === props.proof) ?? null;
   const openChip = chips.find((c) => c.requirementId === props.proof);
   return (
     <article
@@ -155,6 +158,11 @@ export function CandidateCard(props: {
               screeningId={r.screeningId}
               onMarked={props.onMarked}
             />
+          )}
+          {props.assistantName && props.onAsk && r.screeningId && band !== 'human' && (
+            <button type="button" className={btnSecondary} onClick={props.onAsk}>
+              Ask {props.assistantName} about this candidate
+            </button>
           )}
           <p className="text-sm">
             {r.screeningId && (

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ENV, loadEnv } from './config/env';
 import { AiModule } from './ai/ai.module';
+import { AssistantModule } from './assistant/assistant.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
@@ -24,6 +25,7 @@ class ConfigModule {}
     AiModule,
     VacancyModule,
     PipelineModule,
+    AssistantModule,
   ],
   controllers: [HealthController],
 })

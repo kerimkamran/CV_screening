@@ -17,16 +17,22 @@ export function RequirementsDrawer(props: {
   onChange: (requirementId: string, to: Kind) => void;
   onReset: () => void;
   onClose: () => void;
+  /** A requirement to point at when the drawer is opened from the assistant. */
+  focusId?: string | null;
 }) {
   const { data } = props;
   const ref = useRef<HTMLElement>(null);
-  const { onClose } = props;
+  const { onClose, focusId } = props;
   useEffect(() => {
-    ref.current?.focus();
+    const target = focusId ? document.getElementById(`req-row-${focusId}`) : null;
+    if (target) {
+      target.scrollIntoView?.({ block: 'center' });
+      target.querySelector<HTMLInputElement>('input:checked')?.focus();
+    } else ref.current?.focus();
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
-  }, [onClose]);
+  }, [onClose, focusId]);
 
   return (
     <aside
@@ -63,7 +69,12 @@ export function RequirementsDrawer(props: {
 
       <div className="mt-4 space-y-3">
         {data.requirements.map((r) => (
-          <fieldset key={r.id} className="rounded-md border border-line p-3" disabled={props.busy}>
+          <fieldset
+            key={r.id}
+            id={`req-row-${r.id}`}
+            className={`rounded-md border p-3 ${props.focusId === r.id ? 'border-accent bg-sel' : 'border-line'}`}
+            disabled={props.busy}
+          >
             <legend className="px-1 text-sm font-medium">
               {r.text}
               {r.current !== r.original && (

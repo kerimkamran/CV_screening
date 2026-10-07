@@ -130,3 +130,25 @@ export function bandMoves(
     line: `${moved} ${moved === 1 ? 'candidate' : 'candidates'} changed band: ${parts.join(', ')}.`,
   };
 }
+
+/**
+ * Keyboard movement between stars (design spec 7.1): arrows follow the rank order, Home and End
+ * jump to the first and last. Returns the index to focus, or null when the key is not one of these.
+ */
+export function nextStar(key: string, index: number, count: number): number | null {
+  if (count <= 0) return null;
+  switch (key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+      return Math.min(count - 1, index + 1);
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      return Math.max(0, index - 1);
+    case 'Home':
+      return 0;
+    case 'End':
+      return count - 1;
+    default:
+      return null;
+  }
+}

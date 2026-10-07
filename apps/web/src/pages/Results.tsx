@@ -7,6 +7,7 @@ import {
   layoutStars,
   linkStars,
   matchBand,
+  nextStar,
   orderCandidates,
   pseudonyms,
   STAR_COLOUR,
@@ -18,6 +19,8 @@ import { setFocus, useFocus } from '../focus';
 import { useIntake } from '../intake';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
+import { useAssistantConfig, useAssistantOpen, setAssistantOpen } from '../assistant';
+import { AssistantPanel } from './AssistantPanel';
 import { RequirementsDrawer } from './RequirementsDrawer';
 
 /**
@@ -67,6 +70,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [adjNote, setAdjNote] = useState('');
   const [adjError, setAdjError] = useState('');
   const [adjBusy, setAdjBusy] = useState(false);
+  const [drawerFocus, setDrawerFocus] = useState<string | null>(null);
+  const assistant = useAssistantConfig();
+  const assistantOpen = useAssistantOpen();
 
   const load = useCallback(async () => {
     try {
@@ -257,6 +263,47 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       setAdjBusy(false);
     }
   }
+  /** From the assistant: show what making a requirement nice-to-have would do, then open the drawer. */
+  async function openEdit(requirementId: string, text: string) {
+    setAdjError('');
+    setDrawerFocus(requirementId);
+    setDrawer(true);
+    setAdjNote('Checking what this would change…');
+    try {
+      const r = await api.post<{ scores: Record<string, number | null> }>(
+        `/vacancies/${vacancyId}/adjustments/preview`,
+        { requirementId, to: 'preferred' },
+      );
+      const after = new Map<string, MatchBand>();
+      for (const row of all) {
+        const v = r.scores[row.documentId];
+        if (row.erased || v == null || !row.score) continue;
+        after.set(row.documentId, matchBand({ ...row, score: { ...row.score, value: v } }));
+      }
+      setAdjNote(
+        `What if “${text}” were nice-to-have: ${bandMoves(bandOf, after).line} Nothing changes until you choose it below.`,
+      );
+    } catch (e) {
+      setAdjNote('');
+      setAdjError(errMsg(e));
+    }
+  }
+  const selectedRow = selected ? rowById.get(selected) : undefined;
+  const target =
+    selectedRow?.screeningId && bandOf.get(selectedRow.documentId) && bandOf.get(selectedRow.documentId) !== 'human'
+      ? {
+          screeningId: selectedRow.screeningId,
+          label: names.get(selectedRow.documentId)!,
+          band: bandOf.get(selectedRow.documentId)!,
+        }
+      : null;
+  const compareChoices = scored
+    .filter((r) => r.screeningId && r.documentId !== selected)
+    .map((r) => ({ screeningId: r.screeningId!, label: names.get(r.documentId)! }));
+  const askAbout = (documentId: string) => {
+    setSelected(documentId);
+    setAssistantOpen(true);
+  };
   const missedByOne = scored.filter((r) => r.score?.breakdown.mandatoryGaps === 1);
 
   const mapRows = scored.slice(0, mapAll ? MAP_MAX : MAP_TOP);
@@ -279,7 +326,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 ${assistantOpen && assistant ? 'xl:pr-[26rem]' : ''}`}>
       {error && <Notice kind="error">{error}</Notice>}
       {!data.aiActive && (
         <Notice kind="warn">
@@ -317,7 +364,19 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           busy={adjBusy}
           onChange={(requirementId, to: Kind) => void adjust('', { requirementId, to })}
           onReset={() => void adjust('/reset')}
-          onClose={() => setDrawer(false)}
+          focusId={drawerFocus}
+          onClose={() => {
+            setDrawer(false);
+            setDrawerFocus(null);
+          }}
+        />
+      )}
+      {assistant && (
+        <AssistantPanel
+          config={assistant}
+          target={target}
+          others={compareChoices}
+          onEditRequirement={(id, t) => void openEdit(id, t)}
         />
       )}
       {adj && adj.changeCount > 0 && (
@@ -486,7 +545,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       )}
 
       {scored.length > 0 && (
-        <section aria-label="Star map">
+        <section aria-label="Star map" aria-describedby="star-summary">
           <button className={`${btnSecondary} lg:hidden`} onClick={() => setMapOpen((o) => !o)}>
             {mapOpen ? 'Hide star map' : 'Show star map'}
           </button>
@@ -496,6 +555,17 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               className="relative h-[360px] overflow-hidden rounded-3xl"
               data-scanning={pending > 0 ? 'true' : 'false'}
               style={{ background: '#0C1A3D' }}
+              onKeyDown={(e) => {
+                const stars = Array.from(
+                  e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-star]'),
+                );
+                const at = stars.indexOf(document.activeElement as HTMLButtonElement);
+                const to = at < 0 ? null : nextStar(e.key, at, stars.length);
+                if (to !== null) {
+                  e.preventDefault();
+                  stars[to]?.focus();
+                }
+              }}
             >
               {pending > 0 && <div aria-hidden="true" className="sky-sweep" />}
               <svg
@@ -538,6 +608,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   >
                     <button
                       type="button"
+                      data-star=""
                       aria-label={`${nameOf(r)}, ${BAND_LABEL[band]}`}
                       aria-pressed={on}
                       title={`Score ${r.score!.value}`}
@@ -571,6 +642,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                 );
               })}
             </div>
+            <p id="star-summary" className="sr-only">
+              Star map, a picture of the ranked list below. {mapRows.length} stars, best first:{' '}
+              {mapRows
+                .slice(0, 5)
+                .map((r) => `${nameOf(r)}, ${BAND_LABEL[bandOf.get(r.documentId)!]}`)
+                .join('; ')}
+              {mapRows.length > 5 ? '; and more' : ''}. Use the arrow keys to move between stars and
+              Enter to select one.
+            </p>
             <p className="mt-2 text-sm text-ink-3">
               {scored.length > mapRows.length ? (
                 <>
@@ -606,6 +686,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             onReveal={() => void reveal([r])}
             onHide={() => void hide(r)}
             onMarked={() => void load()}
+            assistantName={assistant?.name}
+            onAsk={() => askAbout(r.documentId)}
           />
         ))}
         {ranked.length > shown && (
@@ -634,6 +716,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   onReveal={() => void reveal([r])}
                   onHide={() => void hide(r)}
                   onMarked={() => void load()}
+                  assistantName={assistant?.name}
+                  onAsk={() => askAbout(r.documentId)}
                 />
               ))}
             </div>

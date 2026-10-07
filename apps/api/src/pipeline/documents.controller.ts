@@ -17,6 +17,7 @@ import { newId } from '@cv/shared';
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/multipart';
+import { eraseAssistantForDocument } from '../assistant/assistant-erase';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -573,6 +574,7 @@ export class DocumentsController {
         [did],
       );
       await this.reports.scrubDocument(tx, vac.rows[0]!.vacancy_id, did);
+      await eraseAssistantForDocument(tx, did);
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
