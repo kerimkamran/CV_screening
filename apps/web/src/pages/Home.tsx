@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Criteria, type Requirement } from '../api';
 import { go } from '../route';
+import { tr, useT } from '../i18n';
 import { filesFromDrop, isZip, startIntake } from '../intake';
 import { Sky } from '../Sky';
 import { btnPrimary, btnSecondary, Card, errMsg, Field, input, Notice } from '../ui';
@@ -50,8 +51,9 @@ function loadDraft(): Draft {
   }
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+/** `one` and `many` are English templates with {n}, e.g. '{n} word' and '{n} words'. */
+const plural = (n: number, one: string, many: string) => tr(n === 1 ? one : many, { n });
+const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const okFile = (f: File) => /\.(pdf|docx|txt|zip)$/i.test(f.name);
 /** Operating-system litter inside a dropped folder: never worth a line. */
 const litter = (f: File) => /^(\.|~\$|Thumbs\.db$|desktop\.ini$)/i.test(f.name);
@@ -60,6 +62,7 @@ const label = (f: File) =>
 const fileKey = (f: File) => `${label(f)}:${f.size}`;
 
 export function Home() {
+  const t = useT();
   const [draft] = useState(loadDraft);
   const [files, setFiles] = useState<File[]>([]);
   const [skipped, setSkipped] = useState<{ name: string; reason: string }[]>([]);
@@ -67,12 +70,12 @@ export function Home() {
   const [showSkipped, setShowSkipped] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [link, setLink] = useState('');
-  const [linkRead, setLinkRead] = useState('');
+  const [linkRead, setLinkRead] = useState<{ host: string; words: number } | null>(null);
   const [linkProblem, setLinkProblem] = useState('');
   const [title, setTitle] = useState(draft.title);
   const [experience, setExperience] = useState<Experience>(draft.experience);
   const [text, setText] = useState(draft.text);
-  const [wordFile, setWordFile] = useState('');
+  const [wordFile, setWordFile] = useState<{ name: string; words: number } | null>(null);
   const [wordProblem, setWordProblem] = useState('');
   const [vacancyId, setVacancyId] = useState('');
   const [reqs, setReqs] = useState<Requirement[]>([]);
@@ -140,8 +143,8 @@ export function Home() {
         '/vacancies/read-document',
         [file],
       );
-      setWordFile(`${r.filename} · ${plural(r.words, 'word', 'words')}`);
-      setText((t) => (t.trim() ? `${t.trim()}\n\n${r.text}` : r.text));
+      setWordFile({ name: r.filename, words: r.words });
+      setText((cur) => (cur.trim() ? `${cur.trim()}\n\n${r.text}` : r.text));
     } catch (e) {
       setWordProblem(errMsg(e));
     } finally {
@@ -159,8 +162,8 @@ export function Home() {
         '/vacancies/read-link',
         { url: link.trim() },
       );
-      setLinkRead(`${r.host} · ${plural(r.words, 'word', 'words')}`);
-      setText((t) => (t.trim() ? `${t.trim()}\n\n${r.text}` : r.text));
+      setLinkRead({ host: r.host, words: r.words });
+      setText((cur) => (cur.trim() ? `${cur.trim()}\n\n${r.text}` : r.text));
       setLinkOpen(false);
       setLink('');
     } catch (e) {
@@ -212,11 +215,14 @@ export function Home() {
     );
   const drop = (i: number) => setReqs((rs) => rs.filter((_, j) => j !== i));
   function addSkill() {
-    const t = newSkill.trim();
-    if (t.length < 3) return;
-    if (!reqs.some((r) => r.text.toLowerCase() === t.toLowerCase())) {
-      setReqs((rs) => [...rs, { text: t, classification: 'mandatory', weight: 10, rule: null }]);
-      setManual((m) => new Set(m).add(t.toLowerCase()));
+    const skill = newSkill.trim();
+    if (skill.length < 3) return;
+    if (!reqs.some((r) => r.text.toLowerCase() === skill.toLowerCase())) {
+      setReqs((rs) => [
+        ...rs,
+        { text: skill, classification: 'mandatory', weight: 10, rule: null },
+      ]);
+      setManual((m) => new Set(m).add(skill.toLowerCase()));
     }
     setNewSkill('');
   }
@@ -258,23 +264,23 @@ export function Home() {
 
   const skillCount = chips.length;
   const needs: string[] = [];
-  if (!files.length) needs.push('Add at least one resume.');
-  if (!roleOk) needs.push('Add the position title.');
-  else if (!hasRead) needs.push('Describe the role, then choose "Read requirements".');
-  else if (!chips.length) needs.push('Add at least one skill.');
-  if (!notice) needs.push('Confirm the candidate notice.');
+  if (!files.length) needs.push(t('Add at least one resume.'));
+  if (!roleOk) needs.push(t('Add the position title.'));
+  else if (!hasRead) needs.push(t('Describe the role, then choose "Read requirements".'));
+  else if (!chips.length) needs.push(t('Add at least one skill.'));
+  if (!notice) needs.push(t('Confirm the candidate notice.'));
 
   return (
     <div className="space-y-6">
       <Sky>
-        <h1 className="text-2xl font-bold tracking-tight">Who fits this role?</h1>
-        <p className="mt-1 text-[#B9C8F2]">Add resumes, then describe the role.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('Who fits this role?')}</h1>
+        <p className="mt-1 text-[#B9C8F2]">{t('Add resumes, then describe the role.')}</p>
       </Sky>
 
       {error && <Notice kind="error">{error}</Notice>}
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Card title="Resumes">
+        <Card title={t('Resumes')}>
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -288,9 +294,9 @@ export function Home() {
             }}
             className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
           >
-            <p className="font-medium">Drop resumes here</p>
+            <p className="font-medium">{t('Drop resumes here')}</p>
             <p className="text-sm text-ink-3">
-              PDF, DOCX or TXT files, a whole folder, or a ZIP of resumes
+              {t('PDF, DOCX or TXT files, a whole folder, or a ZIP of resumes')}
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               <button
@@ -298,14 +304,14 @@ export function Home() {
                 className={btnSecondary}
                 onClick={() => fileRef.current?.click()}
               >
-                Choose files
+                {t('Choose files')}
               </button>
               <button
                 type="button"
                 className={btnSecondary}
                 onClick={() => folderRef.current?.click()}
               >
-                Choose a folder
+                {t('Choose a folder')}
               </button>
             </div>
             <input
@@ -314,7 +320,7 @@ export function Home() {
               multiple
               // @ts-expect-error webkitdirectory is not in the DOM typings
               webkitdirectory=""
-              aria-label="Choose a folder of resumes"
+              aria-label={t('Choose a folder of resumes')}
               className="sr-only"
               onChange={(e) => {
                 addFiles(Array.from(e.target.files ?? []));
@@ -326,7 +332,7 @@ export function Home() {
               type="file"
               multiple
               accept=".pdf,.docx,.txt,.zip"
-              aria-label="Choose resume files"
+              aria-label={t('Choose resume files')}
               className="sr-only"
               onChange={(e) => {
                 addFiles(Array.from(e.target.files ?? []));
@@ -336,25 +342,25 @@ export function Home() {
           </div>
           {skipped.length > 0 && skipped.length <= 3 && (
             <p role="alert" className="mt-2 text-sm text-warn-text">
-              {skipped.map((x) => `${x.name}: ${x.reason}`).join(' ')}
+              {skipped.map((x) => `${x.name}: ${t(x.reason)}`).join(' ')}
             </p>
           )}
           {skipped.length > 3 && (
             <div className="mt-2 text-sm text-warn-text" role="status">
-              {skipped.length} skipped,{' '}
+              {t('{n} skipped,', { n: skipped.length })}{' '}
               <button
                 type="button"
                 className="underline"
                 aria-expanded={showSkipped}
                 onClick={() => setShowSkipped((v) => !v)}
               >
-                {showSkipped ? 'hide which' : 'see which'}
+                {showSkipped ? t('hide which') : t('see which')}
               </button>
               {showSkipped && (
                 <ul className="mt-1 max-h-40 list-disc overflow-auto pl-5">
                   {skipped.map((x, i) => (
                     <li key={i}>
-                      {x.name}: {x.reason}
+                      {x.name}: {t(x.reason)}
                     </li>
                   ))}
                 </ul>
@@ -364,8 +370,8 @@ export function Home() {
           {files.length > 0 ? (
             <div className="mt-3">
               <p className="text-sm font-medium" role="status">
-                {plural(files.length, 'resume', 'resumes')} added
-                {files.some(isZip) && ' (a ZIP is unpacked when you start)'}
+                {plural(files.length, '{n} resume added', '{n} resumes added')}
+                {files.some(isZip) && ' ' + t('(a ZIP is unpacked when you start)')}
                 {files.length > COLLAPSE_ABOVE && (
                   <>
                     {' · '}
@@ -375,7 +381,7 @@ export function Home() {
                       aria-expanded={showList}
                       onClick={() => setShowList((v) => !v)}
                     >
-                      {showList ? 'Hide the list' : 'Show the list'}
+                      {showList ? t('Hide the list') : t('Show the list')}
                     </button>
                   </>
                 )}
@@ -388,10 +394,10 @@ export function Home() {
                       <button
                         type="button"
                         className="shrink-0 text-link hover:underline"
-                        aria-label={`Remove ${label(f)}`}
+                        aria-label={t('Remove {name}', { name: label(f) })}
                         onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
                       >
-                        Remove
+                        {t('Remove')}
                       </button>
                     </li>
                   ))}
@@ -399,26 +405,30 @@ export function Home() {
               )}
             </div>
           ) : (
-            showErrors && <p className="mt-2 text-sm text-err-ink">Add at least one resume.</p>
+            showErrors && (
+              <p className="mt-2 text-sm text-err-ink">{t('Add at least one resume.')}</p>
+            )
           )}
         </Card>
 
-        <Card title="The role">
+        <Card title={t('The role')}>
           <div className="space-y-4">
-            <Field label="Position">
+            <Field label={t('Position')}>
               <input
                 className={input}
-                placeholder="e.g. Network Engineer"
+                placeholder={t('e.g. Network Engineer')}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
               {showErrors && !roleOk && (
-                <span className="mt-1 block text-sm text-err-ink">Add the position title.</span>
+                <span className="mt-1 block text-sm text-err-ink">
+                  {t('Add the position title.')}
+                </span>
               )}
             </Field>
 
-            <div role="group" aria-label="Experience" className="text-sm">
-              <span className="mb-1 block font-medium text-ink-2">Experience</span>
+            <div role="group" aria-label={t('Experience')} className="text-sm">
+              <span className="mb-1 block font-medium text-ink-2">{t('Experience')}</span>
               <div className="flex flex-wrap gap-2">
                 {EXPERIENCE.map(([k, label]) => (
                   <button
@@ -428,15 +438,15 @@ export function Home() {
                     onClick={() => setExperience(k)}
                     className={`rounded-full border px-3 py-1 ${experience === k ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-card text-ink'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
             </div>
 
             <Field
-              label="Requirements"
-              hint="Paste the vacancy or type what you need. Azerbaijani, English or both."
+              label={t('Requirements')}
+              hint={t('Paste the vacancy or type what you need. Azerbaijani, English or both.')}
             >
               <textarea
                 className={`${input} h-40`}
@@ -445,7 +455,7 @@ export function Home() {
               />
               {showErrors && text.trim().length < MIN_TEXT && (
                 <span className="mt-1 block text-sm text-err-ink">
-                  Write or paste at least a few lines about the role.
+                  {t('Write or paste at least a few lines about the role.')}
                 </span>
               )}
             </Field>
@@ -457,17 +467,23 @@ export function Home() {
                 disabled={busy !== ''}
                 onClick={() => wordRef.current?.click()}
               >
-                {busy === 'word' ? 'Reading the file…' : 'Attach a Word file'}
+                {busy === 'word' ? t('Reading the file…') : t('Attach a Word file')}
               </button>
               <input
                 ref={wordRef}
                 type="file"
                 accept=".docx"
-                aria-label="Attach a Word file"
+                aria-label={t('Attach a Word file')}
                 className="sr-only"
                 onChange={(e) => void attachWord(e.target.files?.[0])}
               />
-              {wordFile && <span className="text-ink-3">Read {wordFile}</span>}
+              {wordFile && (
+                <span className="text-ink-3">
+                  {t('Read {file}', {
+                    file: `${wordFile.name} · ${plural(wordFile.words, '{n} word', '{n} words')}`,
+                  })}
+                </span>
+              )}
               <span aria-hidden="true" className="text-ink-3">
                 ·
               </span>
@@ -478,16 +494,22 @@ export function Home() {
                 disabled={busy !== ''}
                 onClick={() => setLinkOpen((v) => !v)}
               >
-                Add a vacancy link
+                {t('Add a vacancy link')}
               </button>
-              {linkRead && <span className="text-ink-3">Read from {linkRead}</span>}
+              {linkRead && (
+                <span className="text-ink-3">
+                  {t('Read from {source}', {
+                    source: `${linkRead.host} · ${plural(linkRead.words, '{n} word', '{n} words')}`,
+                  })}
+                </span>
+              )}
             </div>
             {linkOpen && (
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-0 flex-1">
                   <Field
-                    label="Vacancy link"
-                    hint="A public page. If it cannot be read, paste the text."
+                    label={t('Vacancy link')}
+                    hint={t('A public page. If it cannot be read, paste the text.')}
                   >
                     <input
                       className={input}
@@ -511,7 +533,7 @@ export function Home() {
                   disabled={busy !== '' || !link.trim()}
                   onClick={() => void readLink()}
                 >
-                  {busy === 'link' ? 'Reading the page…' : 'Read the page'}
+                  {busy === 'link' ? t('Reading the page…') : t('Read the page')}
                 </button>
               </div>
             )}
@@ -534,22 +556,26 @@ export function Home() {
                 onClick={() => void readRequirements()}
               >
                 {busy === 'read'
-                  ? 'Reading…'
+                  ? t('Reading…')
                   : hasRead
-                    ? 'Read requirements again'
-                    : 'Read requirements'}
+                    ? t('Read requirements again')
+                    : t('Read requirements')}
               </button>
               {text.trim() && (
-                <span className="text-sm text-ink-3">{plural(words(text), 'word', 'words')}</span>
+                <span className="text-sm text-ink-3">
+                  {plural(words(text), '{n} word', '{n} words')}
+                </span>
               )}
               {textChanged && (
-                <span className="text-sm text-warn-text">The text changed since it was read.</span>
+                <span className="text-sm text-warn-text">
+                  {t('The text changed since it was read.')}
+                </span>
               )}
             </div>
 
             {hasRead && (
-              <div aria-label="Skills" role="group" className="space-y-2">
-                <p className="text-sm font-medium text-ink-2">Skills the AI understood</p>
+              <div aria-label={t('Skills')} role="group" className="space-y-2">
+                <p className="text-sm font-medium text-ink-2">{t('Skills the AI understood')}</p>
                 <ul className="flex flex-wrap gap-2">
                   {chips.map((r) => {
                     const i = reqs.indexOf(r);
@@ -559,7 +585,15 @@ export function Home() {
                         <button
                           type="button"
                           onClick={() => flip(i)}
-                          aria-label={`${r.text}, ${must ? 'must-have. Press to change to nice-to-have' : 'nice-to-have. Press to change to must-have'}`}
+                          aria-label={
+                            must
+                              ? t('{skill}, must-have. Press to change to nice-to-have', {
+                                  skill: r.text,
+                                })
+                              : t('{skill}, nice-to-have. Press to change to must-have', {
+                                  skill: r.text,
+                                })
+                          }
                           className={`inline-flex items-center gap-1.5 rounded-l-full border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${must ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-card text-ink'}`}
                         >
                           <span aria-hidden="true">{must ? '●' : '○'}</span>
@@ -568,7 +602,7 @@ export function Home() {
                         <button
                           type="button"
                           onClick={() => drop(i)}
-                          aria-label={`Remove ${r.text}`}
+                          aria-label={t('Remove {name}', { name: r.text })}
                           className="rounded-r-full border border-l-0 border-edge bg-card px-2 py-1 text-sm text-ink-2 hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
                         >
                           ×
@@ -580,8 +614,8 @@ export function Home() {
                 <div className="flex gap-2">
                   <input
                     className={input}
-                    aria-label="Add another skill"
-                    placeholder="Add another skill"
+                    aria-label={t('Add another skill')}
+                    placeholder={t('Add another skill')}
                     value={newSkill}
                     onChange={(e) => setNewSkill(e.target.value)}
                     onKeyDown={(e) => {
@@ -592,28 +626,35 @@ export function Home() {
                     }}
                   />
                   <button type="button" className={btnSecondary} onClick={addSkill}>
-                    Add
+                    {t('Add')}
                   </button>
                 </div>
                 <p className="text-sm text-ink-3">
-                  Press a skill to switch between must-have (●) and nice-to-have (○). A missing
-                  must-have lowers the match. It never hides anyone.
+                  {t(
+                    'Press a skill to switch between must-have (●) and nice-to-have (○). A missing must-have lowers the match. It never hides anyone.',
+                  )}
                 </p>
                 {showErrors && chips.length === 0 && (
-                  <p className="text-sm text-err-ink">Add at least one skill.</p>
+                  <p className="text-sm text-err-ink">{t('Add at least one skill.')}</p>
                 )}
                 {others.length > 0 && (
                   <details className="text-sm">
                     <summary className="cursor-pointer text-ink-2">
-                      {plural(others.length, 'other requirement', 'other requirements')} kept as
-                      text
+                      {plural(
+                        others.length,
+                        '{n} other requirement kept as text',
+                        '{n} other requirements kept as text',
+                      )}
                     </summary>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-ink-2">
                       {others.map((r, i) => (
                         <li key={i}>
                           {r.text}
                           {r.classification === 'disqualifier' &&
-                            ' (a knockout rule: a match sends the resume to human review, nobody is rejected automatically)'}
+                            ' ' +
+                              t(
+                                '(a knockout rule: a match sends the resume to human review, nobody is rejected automatically)',
+                              )}
                         </li>
                       ))}
                     </ul>
@@ -625,13 +666,14 @@ export function Home() {
         </Card>
       </div>
 
-      <Card title="Before you start: candidate notice">
+      <Card title={t('Before you start: candidate notice')}>
         <p className="mb-2 text-sm text-ink-2">
-          Candidates must be told that AI assists the screening of their application. Share this
-          text, for example in the job advert, then confirm below.
+          {t(
+            'Candidates must be told that AI assists the screening of their application. Share this text, for example in the job advert, then confirm below.',
+          )}
         </p>
         <blockquote className="mb-3 rounded border-l-4 border-accent bg-sel p-3 text-sm text-ink">
-          {NOTICE_TEXT}
+          {t(NOTICE_TEXT)}
         </blockquote>
         <label className="flex items-start gap-2 text-sm">
           <input
@@ -641,8 +683,9 @@ export function Home() {
             onChange={(e) => setNotice(e.target.checked)}
           />
           <span>
-            I confirm that the candidates for this vacancy have been informed that AI is used to
-            assist the screening of their applications, and how to request human review.
+            {t(
+              'I confirm that the candidates for this vacancy have been informed that AI is used to assist the screening of their applications, and how to request human review.',
+            )}
           </span>
         </label>
       </Card>
@@ -655,12 +698,14 @@ export function Home() {
           aria-disabled={!ready}
           onClick={() => void findBestFit()}
         >
-          {busy === 'run' ? 'Starting…' : 'Find the best fit →'}
+          {busy === 'run' ? t('Starting…') : t('Find the best fit →')}
         </button>
         <p className="text-sm text-ink-3">
-          {plural(files.length, 'resume', 'resumes')} ·{' '}
-          {plural(skillCount, 'key skill', 'key skills')} · Resumes are read by the AI provider your
-          administrator has chosen.
+          {plural(files.length, '{n} resume', '{n} resumes')}
+          {' · '}
+          {plural(skillCount, '{n} key skill', '{n} key skills')}
+          {' · '}
+          {t('Resumes are read by the AI provider your administrator has chosen.')}
         </p>
         {showErrors && !ready && busy === '' && needs.length > 0 && (
           <ul className="text-sm text-err-ink" role="status">

@@ -6,6 +6,7 @@ import type { Principal } from '../auth/principal';
 import { DbService, type Queryable } from '../db/db.service';
 import { CandidatesService } from '../pipeline/candidates.service';
 import { redact } from '../pipeline/report.service';
+import { localiseAnswer } from './assistant-az';
 import { eraseAssistantForDocument } from './assistant-erase';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import {
@@ -41,7 +42,12 @@ export interface Settings {
   enabled: boolean;
   name: string;
   modelRowId: string | null;
-  features: { challenge: boolean; compare: boolean; interview: boolean; challengeRecruiter: boolean };
+  features: {
+    challenge: boolean;
+    compare: boolean;
+    interview: boolean;
+    challengeRecruiter: boolean;
+  };
   unavailableMessage: string;
   regionAllowed: string;
   dataTerms: 'unknown' | 'no_retention' | 'retained_no_training' | 'retained_may_train';
@@ -81,7 +87,6 @@ export interface StoredMessage {
   content: unknown;
   at: string;
 }
-
 
 /** The assistant: settings, evidence packages, the model call and everything checked around it. */
 @Injectable()
@@ -164,7 +169,12 @@ export class AssistantService {
       )
     ).rows[0];
     if (!t) return { thread: null as null | { id: string; messages: StoredMessage[] } };
-    const { rows } = await this.db.query<{ id: string; role: 'user' | 'assistant'; content: unknown; at: Date }>(
+    const { rows } = await this.db.query<{
+      id: string;
+      role: 'user' | 'assistant';
+      content: unknown;
+      at: Date;
+    }>(
       `SELECT id, role, content, created_at AS at FROM assistant_message
         WHERE thread_id = $1 ORDER BY created_at, id`,
       [t.id],
@@ -225,10 +235,9 @@ export class AssistantService {
     const { rows } = await this.db.query<{
       requirement_id: string;
       evidence: { quote?: string }[] | null;
-    }>(
-      `SELECT requirement_id, evidence FROM requirement_assessment WHERE screening_id = $1`,
-      [screeningId],
-    );
+    }>(`SELECT requirement_id, evidence FROM requirement_assessment WHERE screening_id = $1`, [
+      screeningId,
+    ]);
     const m = new Map<string, string[]>();
     for (const r of rows) {
       m.set(
@@ -276,7 +285,8 @@ export class AssistantService {
     const { vacancyId } = await this.scope.assertScreening(p, screeningId);
     if (input.intent === 'challenge' && !s.features.challenge) throw new FeatureOff('Challenge');
     if (input.intent === 'compare' && !s.features.compare) throw new FeatureOff('Compare');
-    if (input.intent === 'interview' && !s.features.interview) throw new FeatureOff('Interview questions');
+    if (input.intent === 'interview' && !s.features.interview)
+      throw new FeatureOff('Interview questions');
 
     const main = await this.build(vacancyId, screeningId, input.intent === 'compare' ? 'A.' : '');
     // The question as asked, with the person's name taken out: a reveal on screen is never fed back.
@@ -313,7 +323,9 @@ export class AssistantService {
       } else {
         const packages: BuiltPackage[] = [main.built];
         if (input.intent === 'compare') {
-          const others = [...new Set(input.compareWith ?? [])].filter((x) => x !== screeningId).slice(0, 2);
+          const others = [...new Set(input.compareWith ?? [])]
+            .filter((x) => x !== screeningId)
+            .slice(0, 2);
           const letters = ['B.', 'C.'];
           for (const [i, sid] of others.entries()) {
             const w = await this.scope.assertScreening(p, sid);
@@ -354,6 +366,7 @@ export class AssistantService {
         }
       }
     }
+    answer = localiseAnswer(answer, input.language);
     if (input.intent === 'ask' && answer.flags.length === 0) flagsExtra.push('free_question');
     const flags = [...answer.flags, ...flagsExtra];
 
@@ -375,7 +388,12 @@ export class AssistantService {
       await tx.query(
         `INSERT INTO assistant_message (id, thread_id, role, content, label)
          VALUES ($1,$2,'user',$3,$4)`,
-        [userId, thread.id, JSON.stringify({ text, intent: input.intent, read: read ?? null }), main.label],
+        [
+          userId,
+          thread.id,
+          JSON.stringify({ text, intent: input.intent, read: read ?? null }),
+          main.label,
+        ],
       );
       const aid = newId();
       await tx.query(
@@ -418,7 +436,10 @@ export class AssistantService {
   }
 
   private async history(userId: string, screeningId: string) {
-    const { rows } = await this.db.query<{ role: 'user' | 'assistant'; content: { text?: string; headline?: string } }>(
+    const { rows } = await this.db.query<{
+      role: 'user' | 'assistant';
+      content: { text?: string; headline?: string };
+    }>(
       `SELECT m.role, m.content FROM assistant_message m
          JOIN assistant_thread t ON t.id = m.thread_id
         WHERE t.screening_id = $1 AND t.user_id = $2 AND t.deleted_at IS NULL
@@ -427,7 +448,10 @@ export class AssistantService {
     );
     return rows
       .reverse()
-      .map((r) => ({ role: r.role, text: (r.role === 'user' ? r.content.text : r.content.headline) ?? '' }))
+      .map((r) => ({
+        role: r.role,
+        text: (r.role === 'user' ? r.content.text : r.content.headline) ?? '',
+      }))
       .filter((h) => h.text);
   }
 
@@ -456,4 +480,3 @@ export class AssistantService {
     };
   }
 }
-

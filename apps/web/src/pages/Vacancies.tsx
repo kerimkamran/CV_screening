@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { go } from '../route';
+import { useT } from '../i18n';
 import { btnPrimary, Card, errMsg, Field, input, Notice, when } from '../ui';
 
 interface V {
@@ -17,6 +18,7 @@ interface V {
 }
 
 export function Vacancies({ canCreate }: { canCreate: boolean }) {
+  const t = useT();
   const [list, setList] = useState<V[] | null>(null);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
@@ -29,15 +31,16 @@ export function Vacancies({ canCreate }: { canCreate: boolean }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Past scans</h1>
+          <h1 className="text-xl font-semibold">{t('Past scans')}</h1>
           <p className="text-sm text-ink-3">
-            Every scan is kept. Open one to see its results again, or change the requirements and
-            read the same resumes against them.
+            {t(
+              'Every scan is kept. Open one to see its results again, or change the requirements and read the same resumes against them.',
+            )}
           </p>
         </div>
         {canCreate && (
           <button className={btnPrimary} onClick={() => setCreating((c) => !c)}>
-            {creating ? 'Cancel' : 'New vacancy'}
+            {creating ? t('Cancel') : t('New vacancy')}
           </button>
         )}
       </div>
@@ -45,13 +48,13 @@ export function Vacancies({ canCreate }: { canCreate: boolean }) {
       {error && <Notice kind="error">{error}</Notice>}
       {list && list.length === 0 && !creating && (
         <Notice kind="info">
-          No vacancies yet.{' '}
+          {t('No vacancies yet.')}{' '}
           {canCreate
-            ? 'Create one to get started.'
-            : 'Ask a recruiting lead to give you access to one.'}
+            ? t('Create one to get started.')
+            : t('Ask a recruiting lead to give you access to one.')}
         </Notice>
       )}
-      <ul className="grid gap-3 sm:grid-cols-2" aria-label="Past scans">
+      <ul className="grid gap-3 sm:grid-cols-2" aria-label={t('Past scans')}>
         {list?.map((v) => (
           <li
             key={v.id}
@@ -65,24 +68,31 @@ export function Vacancies({ canCreate }: { canCreate: boolean }) {
             </div>
             <div className="mt-2 text-sm text-ink-2">
               {v.documentCount === 0
-                ? 'No resumes yet'
-                : `${v.documentCount} ${v.documentCount === 1 ? 'resume' : 'resumes'} · ${v.scoredCount ?? 0} scored`}
-              {!!v.pendingCount && ` · ${v.pendingCount} still being read`}
-              {!!v.stoppedCount && ` · stopped with ${v.stoppedCount} not read`}
+                ? t('No resumes yet')
+                : v.documentCount === 1
+                  ? t('{n} resume · {scored} scored', { n: 1, scored: v.scoredCount ?? 0 })
+                  : t('{n} resumes · {scored} scored', {
+                      n: v.documentCount,
+                      scored: v.scoredCount ?? 0,
+                    })}
+              {!!v.pendingCount && ' · ' + t('{n} still being read', { n: v.pendingCount })}
+              {!!v.stoppedCount && ' · ' + t('stopped with {n} not read', { n: v.stoppedCount })}
             </div>
             <div className="mt-1 text-xs text-ink-3">
-              {v.criteriaVersion ? `Requirements version ${v.criteriaVersion} · ` : ''}started{' '}
-              {when(v.createdAt)}
+              {v.criteriaVersion
+                ? t('Requirements version {n}', { n: v.criteriaVersion }) + ' · '
+                : ''}
+              {t('started {date}', { date: when(v.createdAt) })}
             </div>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <a className="text-link hover:underline" href={`#/vacancies/${v.id}`}>
-                Open results
+                {t('Open results')}
               </a>
               <a className="text-link hover:underline" href={`#/vacancies/${v.id}/report`}>
-                Report
+                {t('Report')}
               </a>
               <a className="text-link hover:underline" href={`#/vacancies/${v.id}/criteria`}>
-                Change requirements and re-run
+                {t('Change requirements and re-run')}
               </a>
             </div>
           </li>
@@ -93,6 +103,7 @@ export function Vacancies({ canCreate }: { canCreate: boolean }) {
 }
 
 function NewVacancy() {
+  const t = useT();
   const [f, setF] = useState({ title: '', department: '', location: '', jdText: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,10 +127,10 @@ function NewVacancy() {
   }
 
   return (
-    <Card title="New vacancy">
+    <Card title={t('New vacancy')}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Title">
+          <Field label={t('Title')}>
             <input
               className={input}
               required
@@ -128,14 +139,14 @@ function NewVacancy() {
               onChange={(e) => setF({ ...f, title: e.target.value })}
             />
           </Field>
-          <Field label="Department">
+          <Field label={t('Department')}>
             <input
               className={input}
               value={f.department}
               onChange={(e) => setF({ ...f, department: e.target.value })}
             />
           </Field>
-          <Field label="Location">
+          <Field label={t('Location')}>
             <input
               className={input}
               value={f.location}
@@ -144,8 +155,10 @@ function NewVacancy() {
           </Field>
         </div>
         <Field
-          label="Job description"
-          hint="Paste the full text. The AI will propose screening criteria from it, which you review and edit."
+          label={t('Job description')}
+          hint={t(
+            'Paste the full text. The AI will propose screening criteria from it, which you review and edit.',
+          )}
         >
           <textarea
             className={`${input} h-48 font-mono`}
@@ -157,7 +170,7 @@ function NewVacancy() {
         </Field>
         {error && <Notice kind="error">{error}</Notice>}
         <button className={btnPrimary} disabled={busy}>
-          Create vacancy
+          {t('Create vacancy')}
         </button>
       </form>
     </Card>

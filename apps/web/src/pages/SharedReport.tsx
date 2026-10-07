@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SharedReportSnapshot, SnapshotCandidate } from '@cv/shared';
 import { BAND_LABEL, STAR_COLOUR, type MatchBand } from '../results-logic';
 import { api, ApiError } from '../api';
+import { useT } from '../i18n';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
 
 /**
@@ -28,6 +29,7 @@ const KIND_MARK = { found: '✓', partly: '~', missing: '✗' } as const;
 const BANDS: MatchBand[] = ['strong', 'good', 'partial', 'limited', 'human'];
 
 export function SharedReport({ id }: { id: string }) {
+  const t = useT();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [tries, setTries] = useState(0);
   const [showAll, setShowAll] = useState(false);
@@ -51,33 +53,38 @@ export function SharedReport({ id }: { id: string }) {
     };
   }, [id, tries]);
 
-  if (state.kind === 'loading') return <p className="text-sm text-ink-3">Preparing your report…</p>;
+  if (state.kind === 'loading')
+    return <p className="text-sm text-ink-3">{t('Preparing your report…')}</p>;
   if (state.kind === 'gone')
     return (
       <div className="mx-auto max-w-lg space-y-3">
         <Notice kind="info">
-          This report is no longer available. Ask the recruiter for a new link.
+          {t('This report is no longer available. Ask the recruiter for a new link.')}
         </Notice>
         <a className="text-link underline" href="#/reports">
-          Reports shared with me
+          {t('Reports shared with me')}
         </a>
       </div>
     );
   if (state.kind === 'denied')
     return (
       <div className="mx-auto max-w-lg space-y-3">
-        <Notice kind="error">You don't have access to this report. Ask the recruiter.</Notice>
+        <Notice kind="error">
+          {t("You don't have access to this report. Ask the recruiter.")}
+        </Notice>
         <a className="text-link underline" href="#/reports">
-          Reports shared with me
+          {t('Reports shared with me')}
         </a>
       </div>
     );
   if (state.kind === 'error')
     return (
       <div className="space-y-3">
-        <Notice kind="error">The report could not be opened. {state.message}</Notice>
+        <Notice kind="error">
+          {t('The report could not be opened. {message}', { message: state.message })}
+        </Notice>
         <button className={btnSecondary} onClick={() => setTries((n) => n + 1)}>
-          Try again
+          {t('Try again')}
         </button>
       </div>
     );
@@ -86,91 +93,123 @@ export function SharedReport({ id }: { id: string }) {
   const top = r.expandedCount;
   const shown = showAll ? r.candidates : r.candidates.slice(0, top);
   const stopped = r.counts.stopped > 0;
+  // "3–5 years" is built in English by the shared helper; shown in the viewer's language.
+  const expMatch = r.role.experience ? /^(.+) years$/.exec(r.role.experience) : null;
+  const experience = expMatch ? t('{n} years', { n: expMatch[1]! }) : r.role.experience;
 
   return (
-    <article className="space-y-6" aria-label="Shared evaluation report">
+    <article className="space-y-6" aria-label={t('Shared evaluation report')}>
       <header
         className="rounded-3xl px-6 py-6 text-white"
         style={{ background: 'linear-gradient(160deg,#0C1A3D,#0F2459)' }}
       >
-        <p className="text-sm text-[#B9C8F2]">Evaluation report · shared with you</p>
+        <p className="text-sm text-[#B9C8F2]">{t('Evaluation report · shared with you')}</p>
         <h1 className="text-2xl font-bold tracking-tight">{r.title}</h1>
         <p className="mt-1 text-sm text-[#B9C8F2]">
-          Snapshot of {when(sharedAt)} · {r.counts.read} read, {r.counts.scored} scored,{' '}
-          {r.counts.needLook} need a human look
+          {t('Snapshot of {date} · {read} read, {scored} scored, {need} need a human look', {
+            date: when(sharedAt),
+            read: r.counts.read,
+            scored: r.counts.scored,
+            need: r.counts.needLook,
+          })}
         </p>
         <p className="mt-1 text-sm text-[#B9C8F2]">
-          Shared by {sharedBy} · this link works until {when(expiresAt)}
+          {t('Shared by {by} · this link works until {date}', {
+            by: sharedBy,
+            date: when(expiresAt),
+          })}
         </p>
       </header>
 
       <Notice kind="info">
-        This is a snapshot, not a live page. Candidate data stays inside Azerconnect Group: please
-        do not forward this report.
+        {t(
+          'This is a snapshot, not a live page. Candidate data stays inside Azerconnect Group: please do not forward this report.',
+        )}
       </Notice>
       {stopped && (
         <Notice kind="warn">
-          Stopped at {r.counts.read} of {r.counts.total}. Files not read are listed under Data
-          quality.
+          {t('Stopped at {read} of {total}. Files not read are listed under Data quality.', {
+            read: r.counts.read,
+            total: r.counts.total,
+          })}
         </Notice>
       )}
 
       <section aria-labelledby="sr-role" className="space-y-2">
         <h2 id="sr-role" className="text-lg font-semibold">
-          The role
+          {t('The role')}
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-sm font-medium">Must-have ({r.role.must.length})</p>
+            <p className="text-sm font-medium">{t('Must-have ({n})', { n: r.role.must.length })}</p>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-2">
-              {r.role.must.map((t, i) => (
-                <li key={i}>{t}</li>
+              {r.role.must.map((text, i) => (
+                <li key={i}>{text}</li>
               ))}
             </ul>
           </div>
           <div>
-            <p className="text-sm font-medium">Nice-to-have ({r.role.nice.length})</p>
+            <p className="text-sm font-medium">
+              {t('Nice-to-have ({n})', { n: r.role.nice.length })}
+            </p>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-2">
-              {r.role.nice.length === 0 && <li className="list-none text-ink-3">None</li>}
-              {r.role.nice.map((t, i) => (
-                <li key={i}>{t}</li>
+              {r.role.nice.length === 0 && <li className="list-none text-ink-3">{t('None')}</li>}
+              {r.role.nice.map((text, i) => (
+                <li key={i}>{text}</li>
               ))}
             </ul>
           </div>
         </div>
+        {experience && (
+          <p className="text-sm text-ink-2">
+            {t('Experience asked for: {years}.', { years: experience })}
+          </p>
+        )}
         {r.role.ignored.length > 0 && (
-          <p className="text-sm text-ink-3">Not counted: {r.role.ignored.join(', ')}.</p>
+          <p className="text-sm text-ink-3">
+            {t('Not counted: {list}.', { list: r.role.ignored.join(', ') })}
+          </p>
         )}
       </section>
 
       <section aria-labelledby="sr-how" className="space-y-2">
         <h2 id="sr-how" className="text-lg font-semibold">
-          How it was scored
+          {t('How it was scored')}
         </h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
           <li>
-            Scored against requirements version {r.method.criteriaVersion ?? '–'}
-            {r.method.frozenAt && `, frozen ${when(r.method.frozenAt)}`}.
+            {r.method.frozenAt
+              ? t('Scored against requirements version {version}, frozen {date}.', {
+                  version: r.method.criteriaVersion ?? '–',
+                  date: when(r.method.frozenAt),
+                })
+              : t('Scored against requirements version {version}.', {
+                  version: r.method.criteriaVersion ?? '–',
+                })}
             {r.method.model &&
-              ` Read by ${r.method.provider ?? 'the AI provider'} (${r.method.model}).`}
+              ` ${t('Read by {provider} ({model}).', {
+                provider: r.method.provider ?? t('the AI provider'),
+                model: r.method.model,
+              })}`}
           </li>
           <li>
-            AI suggests, a human decides. A missing must-have lowers the match; it never hides
-            anyone.
+            {t('AI suggests, a human decides.')}{' '}
+            {t('A missing must-have lowers the match; it never hides anyone.')}
           </li>
           <li>
-            Match bands: Strong 80 and up, Good 70 to 79, Partial 50 to 69, Limited under 50. These
-            cut-offs have not been calibrated yet. Scores may differ slightly if the screening is
-            run again.
+            {t(
+              'Match bands: Strong 80 and up, Good 70 to 79, Partial 50 to 69, Limited under 50. These cut-offs have not been calibrated yet.',
+            )}{' '}
+            {t('Scores may differ slightly if the screening is run again.')}
           </li>
         </ul>
       </section>
 
       <section aria-labelledby="sr-bands" className="space-y-2">
         <h2 id="sr-bands" className="text-lg font-semibold">
-          The match
+          {t('The match')}
         </h2>
-        <ul className="flex flex-wrap gap-2 text-sm" aria-label="Candidates by match">
+        <ul className="flex flex-wrap gap-2 text-sm" aria-label={t('Candidates by match')}>
           {BANDS.map((b) => (
             <li
               key={b}
@@ -181,7 +220,7 @@ export function SharedReport({ id }: { id: string }) {
                 className="inline-block h-3 w-3 rounded-full border border-edge"
                 style={{ background: STAR_COLOUR[b] }}
               />
-              {BAND_LABEL[b]} <strong>{r.bands[b]}</strong>
+              {t(BAND_LABEL[b])} <strong>{r.bands[b]}</strong>
             </li>
           ))}
         </ul>
@@ -189,12 +228,12 @@ export function SharedReport({ id }: { id: string }) {
 
       <section aria-labelledby="sr-cands" className="space-y-3">
         <h2 id="sr-cands" className="text-lg font-semibold">
-          Candidates, best match first
+          {t('Candidates, best match first')}
         </h2>
         <p className="text-sm text-ink-3" aria-live="polite">
           {showAll || r.candidates.length <= top
-            ? `Showing all ${r.candidates.length} scored`
-            : `Showing ${top} of ${r.candidates.length} scored`}
+            ? t('Showing all {n} scored', { n: r.candidates.length })
+            : t('Showing {top} of {n} scored', { top, n: r.candidates.length })}
         </p>
         <ol className="space-y-3">
           {shown.map((c) => (
@@ -216,24 +255,26 @@ export function SharedReport({ id }: { id: string }) {
         </ol>
         {r.candidates.length > top && (
           <button className={btnSecondary} onClick={() => setShowAll((v) => !v)}>
-            {showAll ? `Show only the top ${top}` : `Show all ${r.candidates.length}`}
+            {showAll
+              ? t('Show only the top {top}', { top })
+              : t('Show all {n}', { n: r.candidates.length })}
           </button>
         )}
       </section>
 
       <section aria-labelledby="sr-quality" className="space-y-2">
         <h2 id="sr-quality" className="text-lg font-semibold">
-          Data quality
+          {t('Data quality')}
         </h2>
         {r.unread.length === 0 ? (
-          <p className="text-sm text-ink-2">Every file was read.</p>
+          <p className="text-sm text-ink-2">{t('Every file was read.')}</p>
         ) : (
           <>
-            <p className="text-sm font-medium">Not read ({r.unread.length})</p>
+            <p className="text-sm font-medium">{t('Not read ({n})', { n: r.unread.length })}</p>
             <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
               {r.unread.map((u, i) => (
                 <li key={i}>
-                  {u.label}: {u.reason}
+                  {u.label}: {t(u.reason)}
                 </li>
               ))}
             </ul>
@@ -244,23 +285,29 @@ export function SharedReport({ id }: { id: string }) {
       {(r.changes.length > 0 || r.decisions.length > 0) && (
         <section aria-labelledby="sr-changes" className="space-y-2">
           <h2 id="sr-changes" className="text-lg font-semibold">
-            Changes and decisions
+            {t('Changes and decisions')}
           </h2>
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
             {r.changes.map((c, i) => (
               <li key={i}>
-                {c.text}, by {c.by} on {when(c.at)}.
+                {t('{text}, by {by} on {date}.', { text: c.text, by: c.by, date: when(c.at) })}
               </li>
             ))}
             {r.changes.length > 0 && (
               <li className="list-none text-ink-3">
-                The original ranking is available in the app.
+                {t('The original ranking is available in the app.')}
               </li>
             )}
             {r.decisions.map((d, i) => (
               <li key={`d${i}`}>
-                Recruiter decision, separate from the AI match. {d.label}:{' '}
-                {OUTCOME[d.outcome]?.[0] ?? d.outcome} by {d.by} on {when(d.at)}.
+                {t('Recruiter decision, separate from the AI match.')}{' '}
+                {t('{label}: {outcome} by {by} on {date}.', {
+                  label: d.label,
+                  outcome: t(OUTCOME[d.outcome]?.[0] ?? d.outcome),
+                  by: d.by,
+                  date: when(d.at),
+                })}
+                {d.reason ? ` ${t('Reason: {reason}', { reason: d.reason })}` : ''}
               </li>
             ))}
           </ul>
@@ -268,12 +315,16 @@ export function SharedReport({ id }: { id: string }) {
       )}
 
       <footer className="border-t border-line pt-3 text-xs text-ink-3">
-        Run {r.runId} · report date {when(r.takenAt)} · created by {r.createdBy}. Candidate data
-        stays inside Azerconnect Group.{' '}
+        {t('Run {id} · report date {date} · created by {by}.', {
+          id: r.runId,
+          date: when(r.takenAt),
+          by: r.createdBy,
+        })}{' '}
+        {t('Candidate data stays inside Azerconnect Group.')}{' '}
         {r.includeNames
-          ? 'Real names are shown only for candidates the recruiter showed or shortlisted.'
-          : 'Candidates appear as numbers; names stay out of the report.'}
-        {!r.includeQuotes && ' Quotes from CVs were left out.'}
+          ? t('Real names are shown only for candidates the recruiter showed or shortlisted.')
+          : t('Candidates appear as numbers; names stay out of the report.')}
+        {!r.includeQuotes && ` ${t('Quotes from CVs were left out.')}`}
       </footer>
     </article>
   );
@@ -290,6 +341,7 @@ function Entry({
   canCollapse: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   return (
     <li className="rounded-lg border border-line bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -297,26 +349,29 @@ function Entry({
           {c.rank}. {c.label}
           {c.name && <span className="font-normal text-ink-2"> · {c.name}</span>}
         </h3>
-        <span className="inline-flex items-center gap-2 text-sm" title={`Score ${c.score} of 100`}>
+        <span
+          className="inline-flex items-center gap-2 text-sm"
+          title={t('Score {score} of 100', { score: c.score })}
+        >
           <span
             aria-hidden="true"
             className="inline-block h-3 w-3 rounded-full border border-edge"
             style={{ background: STAR_COLOUR[c.band] }}
           />
-          {BAND_LABEL[c.band]}
+          {t(BAND_LABEL[c.band])}
           <span className="text-ink-3">
-            · {c.mustFound} of {c.mustTotal} must-haves found
+            · {t('{found} of {total} must-haves found', { found: c.mustFound, total: c.mustTotal })}
           </span>
         </span>
       </div>
       {expanded ? (
         <div className="mt-3 space-y-3 text-sm">
-          <ul className="flex flex-wrap gap-2" aria-label="Skills">
+          <ul className="flex flex-wrap gap-2" aria-label={t('Skills')}>
             {c.chips.map((k, i) => (
               <li key={i} className="rounded-full border border-line px-2.5 py-0.5 text-ink-2">
                 <span aria-hidden="true">{KIND_MARK[k.kind]} </span>
                 {k.text}
-                <span className="sr-only">: {KIND_LABEL[k.kind]}</span>
+                <span className="sr-only">: {t(KIND_LABEL[k.kind])}</span>
               </li>
             ))}
           </ul>
@@ -324,22 +379,27 @@ function Entry({
           {c.quotes.map((q, i) => (
             <blockquote key={i} className="border-l-4 border-accent pl-3 text-ink-2">
               {q.quote}
-              <footer className="text-xs text-ink-3">For: {q.requirement}</footer>
+              <footer className="text-xs text-ink-3">
+                {t('For: {requirement}', { requirement: q.requirement })}
+                {q.page ? ` · ${t('page {n}', { n: q.page })}` : ''}
+              </footer>
             </blockquote>
           ))}
           {c.missing && (
-            <p className="text-ink-3">Not found in this CV. Searched for: {c.missing}</p>
+            <p className="text-ink-3">
+              {t('Not found in this CV. Searched for: {text}', { text: c.missing })}
+            </p>
           )}
           {canCollapse && (
             <button className="text-link underline" onClick={onToggle}>
-              Hide details
+              {t('Hide details')}
             </button>
           )}
         </div>
       ) : (
         <div className="mt-2">
           <button className="text-sm text-link underline" onClick={onToggle}>
-            Show details
+            {t('Show details')}
           </button>
         </div>
       )}
@@ -349,6 +409,7 @@ function Entry({
 
 /** What has been shared with the signed-in person. Works for an account with no role. */
 export function SharedList() {
+  const t = useT();
   const [rows, setRows] = useState<
     { id: string; title: string; sharedBy: string; sharedAt: string; expiresAt: string }[] | null
   >(null);
@@ -361,13 +422,14 @@ export function SharedList() {
   }, []);
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-xl font-semibold">Reports shared with me</h1>
+      <h1 className="text-xl font-semibold">{t('Reports shared with me')}</h1>
       {error && <Notice kind="error">{error}</Notice>}
-      {rows === null && !error && <p className="text-sm text-ink-3">Loading…</p>}
+      {rows === null && !error && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
       {rows?.length === 0 && (
         <Notice kind="info">
-          Nothing has been shared with you, or the links have expired. Ask the recruiter for a new
-          link.
+          {t(
+            'Nothing has been shared with you, or the links have expired. Ask the recruiter for a new link.',
+          )}
         </Notice>
       )}
       <ul className="space-y-2">
@@ -377,7 +439,11 @@ export function SharedList() {
               {r.title}
             </a>
             <p className="text-sm text-ink-3">
-              Shared by {r.sharedBy} on {when(r.sharedAt)} · works until {when(r.expiresAt)}
+              {t('Shared by {by} on {date} · works until {until}', {
+                by: r.sharedBy,
+                date: when(r.sharedAt),
+                until: when(r.expiresAt),
+              })}
             </p>
           </li>
         ))}

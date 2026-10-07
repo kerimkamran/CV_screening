@@ -9,19 +9,45 @@ import { bandFor, computeScore, type ScoreInput } from './score';
  */
 describe('the score formula uses job evidence only', () => {
   const items: ScoreInput[] = [
-    { requirementId: '0000000000000000000000RQ01', text: 'BGP', classification: 'mandatory', weight: 10, status: 'met' },
-    { requirementId: '0000000000000000000000RQ02', text: 'Kubernetes', classification: 'mandatory', weight: 10, status: 'not_found' },
-    { requirementId: '0000000000000000000000RQ03', text: 'Python', classification: 'preferred', weight: 5, status: 'partially_met' },
+    {
+      requirementId: '0000000000000000000000RQ01',
+      text: 'BGP',
+      classification: 'mandatory',
+      weight: 10,
+      status: 'met',
+    },
+    {
+      requirementId: '0000000000000000000000RQ02',
+      text: 'Kubernetes',
+      classification: 'mandatory',
+      weight: 10,
+      status: 'not_found',
+    },
+    {
+      requirementId: '0000000000000000000000RQ03',
+      text: 'Python',
+      classification: 'preferred',
+      weight: 5,
+      status: 'partially_met',
+    },
   ];
   it('takes no personal field, and the same evidence always gives the same score and band', () => {
-    expect(Object.keys(items[0]!).sort()).toEqual(['classification', 'requirementId', 'status', 'text', 'weight']);
+    expect(Object.keys(items[0]!).sort()).toEqual([
+      'classification',
+      'requirementId',
+      'status',
+      'text',
+      'weight',
+    ]);
     const a = computeScore(items);
     const b = computeScore(JSON.parse(JSON.stringify(items)));
     expect(a).toEqual(b);
     expect(a.score).toBe(50);
     expect(bandFor(a.score, false)).toBe('possible_match');
     // There is no "reject" band to fall into.
-    expect(['strong_match', 'possible_match', 'weak_match', 'needs_review']).toContain(bandFor(0, false));
+    expect(['strong_match', 'possible_match', 'weak_match', 'needs_review']).toContain(
+      bandFor(0, false),
+    );
   });
 });
 
@@ -64,7 +90,10 @@ describeDb('names and personal details do not move scores, bands or ranks', () =
   it('upload order, not the name, breaks a tie; reversing the names does not reverse the result', async () => {
     const ayla = await h.recruiter('ayla-bias2@azerconnect.test');
     const mk = async (names: string[]) => {
-      const vid = await h.scenario(ayla.api, names.map((name) => ({ name, lines: job })));
+      const vid = await h.scenario(
+        ayla.api,
+        names.map((name) => ({ name, lines: job })),
+      );
       const rows = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as {
         candidateName: string;
         ordinal: number;
@@ -80,7 +109,10 @@ describeDb('names and personal details do not move scores, bands or ranks', () =
     const ayla = await h.recruiter('ayla-bias3@azerconnect.test');
     const vid = await h.scenario(ayla.api, [
       { name: 'Plain Person', lines: job },
-      { name: 'Detailed Person', lines: [...job, 'Female, born 1991, married, two children, Muslim'] },
+      {
+        name: 'Detailed Person',
+        lines: [...job, 'Female, born 1991, married, two children, Muslim'],
+      },
     ]);
     const rows = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as {
       score: { value: number; breakdown: { items: { status: string }[] } };

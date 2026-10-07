@@ -37,14 +37,45 @@ export class AdminController {
       `SELECT u.id, u.issuer, u.subject, u.email, u.display_name AS "displayName",
               u.actor_kind AS "actorKind", u.status, u.last_seen_at AS "lastSeenAt",
               COALESCE(c.must_change, false) AS "mustChangePassword",
+              (c.totp_secret IS NOT NULL) AS mfa,
               COALESCE(array_agg(r.role::text ORDER BY r.role) FILTER (WHERE r.role IS NOT NULL), '{}'::text[]) AS roles
          FROM app_user u
          LEFT JOIN role_assignment r ON r.user_id = u.id AND r.revoked_at IS NULL
          LEFT JOIN local_credential c ON c.user_id = u.id
         WHERE u.issuer <> 'system'
-        GROUP BY u.id, c.must_change ORDER BY u.created_at`,
+        GROUP BY u.id, c.must_change, c.totp_secret ORDER BY u.created_at`,
     );
     return rows;
+  }
+
+  /** A user who lost their phone and recovery codes: switches their two-step sign-in off (audited). */
+  @Post('users/:userId/mfa-reset')
+  @HttpCode(200)
+  mfaReset(
+    @Param('userId') userId: string,
+    @CurrentPrincipal() actor: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const uid = parse(ulidSchema, userId);
+    return this.db.withTx(async (tx) => {
+      const r = await tx.query(
+        `UPDATE local_credential SET totp_secret = NULL, totp_pending = NULL, totp_enabled_at = NULL,
+                totp_last_step = NULL, recovery_hashes = '{}', session_version = session_version + 1
+          WHERE user_id = $1`,
+        [uid],
+      );
+      if (!r.rowCount) throw new NotFoundException('No password account for that user');
+      await this.audit.record(tx, {
+        actorId: actor.userId,
+        actorType: actor.actorType,
+        actorRole: 'ADMIN',
+        sourceIp: req.ip,
+        action: 'auth.mfa_reset',
+        entityType: 'app_user',
+        entityId: uid,
+      });
+      return { reset: true };
+    });
   }
 
   @Post('users/:userId/roles')

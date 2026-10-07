@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import {
+  experienceLine,
   isPending,
   KIND_NAME,
   matchBand,
@@ -89,7 +90,10 @@ export class ReportService {
     const top = scoredRows.slice(0, EXPANDED).filter((r) => r.screeningId);
     const detail = new Map<
       string,
-      { summary: string | null; quotes: { requirement: string; quote: string }[] }
+      {
+        summary: string | null;
+        quotes: { requirement: string; quote: string; page?: number | null }[];
+      }
     >();
     if (top.length) {
       const ids = top.map((r) => r.screeningId!);
@@ -101,7 +105,7 @@ export class ReportService {
         screening_id: string;
         text: string;
         status: string | null;
-        evidence: { quote: string }[] | null;
+        evidence: { quote: string; page?: number | null }[] | null;
       }>(
         `SELECT a.screening_id, r.text, a.status, a.evidence
            FROM requirement_assessment a JOIN requirement r ON r.id = a.requirement_id
@@ -114,7 +118,11 @@ export class ReportService {
         const d = detail.get(a.screening_id);
         if (!d || d.quotes.length >= 2) continue;
         if ((a.status === 'met' || a.status === 'partially_met') && a.evidence?.[0]?.quote) {
-          d.quotes.push({ requirement: a.text, quote: a.evidence[0].quote });
+          d.quotes.push({
+            requirement: a.text,
+            quote: a.evidence[0].quote,
+            page: a.evidence[0].page ?? null,
+          });
         }
       }
     }
@@ -147,7 +155,11 @@ export class ReportService {
         summary: expanded && d?.summary ? clean(d.summary) : null,
         quotes:
           expanded && opts.includeQuotes
-            ? (d?.quotes ?? []).map((q) => ({ requirement: q.requirement, quote: clean(q.quote) }))
+            ? (d?.quotes ?? []).map((q) => ({
+                requirement: q.requirement,
+                quote: clean(q.quote),
+                page: q.page ?? null,
+              }))
             : [],
         missing: expanded && missing ? missing.text : null,
       };
@@ -185,6 +197,7 @@ export class ReportService {
         must: used.filter((r) => r.current === 'mandatory').map((r) => r.text),
         nice: used.filter((r) => r.current === 'preferred').map((r) => r.text),
         ignored: used.filter((r) => r.current === 'ignore').map((r) => r.text),
+        experience: experienceLine(used.filter((r) => r.current !== 'ignore').map((r) => r.text)),
       },
       method: {
         criteriaVersion: set?.version ?? null,
@@ -213,10 +226,15 @@ export class ReportService {
       decisions: ordered
         .filter((r) => r.decision)
         .map((r) => ({
+          documentId: r.documentId,
           label: labels.get(r.documentId)!,
           outcome: r.decision!.outcome,
           by: r.decision!.decidedBy,
           at: new Date(r.decision!.decidedAt).toISOString(),
+          reason: (shown.has(r.documentId)
+            ? r.decision!.reason
+            : redact(r.decision!.reason, r.candidateName)
+          ).slice(0, 400),
         })),
     };
   }
@@ -239,6 +257,11 @@ export class ReportService {
         c.name = null;
         c.summary = null;
         c.quotes = [];
+      }
+      for (const d of s.snapshot.decisions) {
+        if (d.documentId !== documentId || d.reason === undefined) continue;
+        d.reason = '';
+        hit = true;
       }
       if (hit) {
         await tx.query(`UPDATE report_share SET snapshot = $2 WHERE id = $1`, [

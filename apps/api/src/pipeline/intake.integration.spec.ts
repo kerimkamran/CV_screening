@@ -106,6 +106,18 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
       expect(res.filter((x) => x.status === 'skipped')).toEqual([
         expect.objectContaining({ message: 'A run holds at most 2 resumes' }),
       ]);
+      // Uploaded again later and taken in: it is no longer listed as skipped.
+      const skippedNow = async () =>
+        ((await a.api.get(`/vacancies/${vid}/skipped`)).json().skipped as { filename: string }[])
+          .map((x) => x.filename)
+          .filter((f) => f.includes('c.txt'));
+      expect(await skippedNow()).toEqual(['c.txt']);
+      env.MAX_RESUMES_PER_RUN = 10;
+      const again = await a.api.upload(`/vacancies/${vid}/documents`, [
+        { name: 'c.txt', type: 'text/plain', data: Buffer.from(cv('Cem C', ['BGP routing.'])) },
+      ]);
+      expect(again.json().results[0].status).toBe('queued');
+      expect(await skippedNow()).toEqual([]);
     } finally {
       env.MAX_RESUMES_PER_RUN = was;
     }

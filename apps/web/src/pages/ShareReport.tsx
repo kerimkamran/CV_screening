@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 import { btnDanger, btnPrimary, btnSecondary, errMsg, Field, input, Notice, when } from '../ui';
 
 /**
@@ -43,6 +44,7 @@ export function ShareReport({
   /** Why sharing is not offered right now (scan still running, nothing scored). */
   blocked: string | null;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [shares, setShares] = useState<Share[]>([]);
   const [q, setQ] = useState('');
@@ -115,7 +117,7 @@ export function ShareReport({
       setCopied(id);
     } catch {
       setCopied('');
-      setError('Could not copy. Select the link and copy it by hand.');
+      setError(t('Could not copy. Select the link and copy it by hand.'));
     }
   }
 
@@ -123,7 +125,7 @@ export function ShareReport({
     <section aria-labelledby="share-h" className="rounded-lg border border-line bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="share-h" className="text-lg font-semibold">
-          Share this report
+          {t('Share this report')}
         </h3>
         <button
           className={btnSecondary}
@@ -131,11 +133,11 @@ export function ShareReport({
           onClick={() => setOpen((v) => !v)}
           disabled={Boolean(blocked) && shares.length === 0}
         >
-          {open ? 'Close' : 'Share as a link'}
+          {open ? t('Close') : t('Share as a link')}
         </button>
       </div>
       <p className="mt-1 text-sm text-ink-3">
-        A login-only link to a snapshot taken now. Only the people you name can open it.
+        {t('A login-only link to a snapshot taken now. Only the people you name can open it.')}
       </p>
       {blocked && <p className="mt-2 text-sm text-ink-2">{blocked}</p>}
 
@@ -144,36 +146,39 @@ export function ShareReport({
           {created ? (
             <div className="space-y-2" role="status">
               <Notice kind="info">
-                The link is ready. Send it to the people you named; they sign in to open it.
+                {t('The link is ready. Send it to the people you named; they sign in to open it.')}
               </Notice>
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   readOnly
-                  aria-label="Report link"
+                  aria-label={t('Report link')}
                   className={`${input} max-w-xl`}
                   value={reportLink(created)}
                   onFocus={(e) => e.currentTarget.select()}
                 />
                 <button className={btnPrimary} onClick={() => void copy(created)}>
-                  {copied === created ? 'Copied' : 'Copy link'}
+                  {copied === created ? t('Copied') : t('Copy link')}
                 </button>
                 <button className={btnSecondary} onClick={() => setCreated(null)}>
-                  Share with someone else
+                  {t('Share with someone else')}
                 </button>
               </div>
             </div>
           ) : (
             <>
-              <Field label="Who can open it" hint="People with an account. They must sign in.">
+              <Field
+                label={t('Who can open it')}
+                hint={t('People with an account. They must sign in.')}
+              >
                 <input
                   className={input}
-                  placeholder="Search by name or e-mail"
+                  placeholder={t('Search by name or e-mail')}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />
               </Field>
               {picked.length > 0 && (
-                <ul className="flex flex-wrap gap-2" aria-label="Chosen people">
+                <ul className="flex flex-wrap gap-2" aria-label={t('Chosen people')}>
                   {picked.map((p) => (
                     <li
                       key={p.id}
@@ -182,7 +187,7 @@ export function ShareReport({
                       {p.displayName}
                       <button
                         className="text-ink-3 hover:text-ink"
-                        aria-label={`Remove ${p.displayName}`}
+                        aria-label={t('Remove {name}', { name: p.displayName })}
                         onClick={() => toggle(p)}
                       >
                         ×
@@ -193,10 +198,10 @@ export function ShareReport({
               )}
               <ul
                 className="max-h-48 overflow-auto rounded-md border border-line"
-                aria-label="People found"
+                aria-label={t('People found')}
               >
                 {found.length === 0 && (
-                  <li className="px-3 py-2 text-sm text-ink-3">No one found.</li>
+                  <li className="px-3 py-2 text-sm text-ink-3">{t('No one found.')}</li>
                 )}
                 {found.map((p) => (
                   <li key={p.id} className="border-b border-line last:border-0">
@@ -212,7 +217,7 @@ export function ShareReport({
                   </li>
                 ))}
               </ul>
-              <Field label="Link works for">
+              <Field label={t('Link works for')}>
                 <select
                   className={`${input} max-w-xs`}
                   value={days}
@@ -220,7 +225,7 @@ export function ShareReport({
                 >
                   {DAYS.map((d) => (
                     <option key={d} value={d}>
-                      {d} days
+                      {t('{n} days', { n: d })}
                     </option>
                   ))}
                 </select>
@@ -234,10 +239,10 @@ export function ShareReport({
                     onChange={(e) => setNames(e.target.checked)}
                   />
                   <span>
-                    Include real names, only for candidates you showed or shortlisted.
+                    {t('Include real names, only for candidates you showed or shortlisted.')}
                     {names && (
                       <span className="block text-ink-2">
-                        Real names will be visible to the people you choose.
+                        {t('Real names will be visible to the people you choose.')}
                       </span>
                     )}
                   </span>
@@ -250,9 +255,9 @@ export function ShareReport({
                     onChange={(e) => setQuotes(e.target.checked)}
                   />
                   <span>
-                    Include quotes from the CVs.
+                    {t('Include quotes from the CVs.')}
                     <span className="block text-ink-3">
-                      Quotes are text from resumes and count as personal data.
+                      {t('Quotes are text from resumes and count as personal data.')}
                     </span>
                   </span>
                 </label>
@@ -263,7 +268,7 @@ export function ShareReport({
                 disabled={busy || picked.length === 0}
                 onClick={() => void create()}
               >
-                {busy ? 'Preparing…' : 'Create link'}
+                {busy ? t('Preparing…') : t('Create link')}
               </button>
             </>
           )}
@@ -273,46 +278,54 @@ export function ShareReport({
 
       {shares.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-medium">Shared so far</h4>
+          <h4 className="text-sm font-medium">{t('Shared so far')}</h4>
           <ul className="mt-2 space-y-3">
             {shares.map((s) => (
               <li key={s.id} className="rounded-md border border-line p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span>
-                    Snapshot of {when(s.createdAt)} ·{' '}
+                    {t('Snapshot of {date}', { date: when(s.createdAt) })} ·{' '}
                     {s.state === 'active'
-                      ? `works until ${when(s.expiresAt)}`
+                      ? t('works until {date}', { date: when(s.expiresAt) })
                       : s.state === 'expired'
-                        ? 'expired'
-                        : 'revoked'}
+                        ? t('expired')
+                        : t('revoked')}
                   </span>
                   {s.state === 'active' && (
                     <span className="flex gap-2">
                       <button className={btnSecondary} onClick={() => void copy(s.id)}>
-                        {copied === s.id ? 'Copied' : 'Copy link'}
+                        {copied === s.id ? t('Copied') : t('Copy link')}
                       </button>
                       <button className={btnDanger} onClick={() => void revoke(s.id)}>
-                        Revoke
+                        {t('Revoke')}
                       </button>
                     </span>
                   )}
                 </div>
                 <p className="mt-1 text-ink-2">
-                  For {s.viewers.map((v) => v.name).join(', ') || 'no one'}.{' '}
-                  {s.includeNames ? 'Real names included.' : 'Pseudonyms only.'}{' '}
-                  {s.includeQuotes ? 'Quotes included.' : 'No quotes.'}
+                  {t('For {names}.', {
+                    names: s.viewers.map((v) => v.name).join(', ') || t('no one'),
+                  })}{' '}
+                  {s.includeNames ? t('Real names included.') : t('Pseudonyms only.')}{' '}
+                  {s.includeQuotes ? t('Quotes included.') : t('No quotes.')}
                 </p>
                 <details className="mt-1">
                   <summary className="cursor-pointer text-link">
-                    Opened {s.openCount} {s.openCount === 1 ? 'time' : 'times'}
+                    {s.openCount === 1
+                      ? t('Opened {n} time', { n: s.openCount })
+                      : t('Opened {n} times', { n: s.openCount })}
                   </summary>
                   <ul className="mt-1 list-disc pl-5 text-ink-2">
                     {s.opens.length === 0 && (
-                      <li className="list-none text-ink-3">Not opened yet.</li>
+                      <li className="list-none text-ink-3">{t('Not opened yet.')}</li>
                     )}
                     {s.opens.map((o, i) => (
                       <li key={i}>
-                        {o.by} {OUTCOME_TEXT[o.outcome] ?? o.outcome}, {when(o.at)}
+                        {t('{by} {outcome}, {date}', {
+                          by: o.by,
+                          outcome: t(OUTCOME_TEXT[o.outcome] ?? o.outcome),
+                          date: when(o.at),
+                        })}
                       </li>
                     ))}
                   </ul>

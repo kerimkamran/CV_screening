@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canTransition, isUlid, newId, REQ_STATUSES } from './index.js';
+import { canTransition, experienceLine, isUlid, newId, REQ_STATUSES } from './index.js';
 
 describe('ids (INTG-01)', () => {
   it('generates valid, sortable, unique ULIDs', () => {
@@ -41,5 +41,19 @@ describe('taxonomy (MATCH-02)', () => {
     expect(REQ_STATUSES).toContain('not_found');
     expect(REQ_STATUSES).toContain('not_met');
     expect(REQ_STATUSES).toHaveLength(6);
+  });
+});
+
+describe('experienceLine', () => {
+  it('reads a range, a minimum or nothing', () => {
+    expect(experienceLine(['Python', '3 to 5 years of experience'])).toBe('3–5 years');
+    expect(experienceLine(['Experience: 3-5 years'])).toBe('3–5 years');
+    expect(experienceLine(['Experience: 5 or more years'])).toBe('5+ years');
+    expect(experienceLine(['At least 7 years in networking'])).toBe('7+ years');
+    expect(experienceLine(['5+ years of Java'])).toBe('5+ years');
+    expect(experienceLine(['Kubernetes', 'Team lead'])).toBeNull();
+  });
+  it('does not invent a range from an unrelated pair of numbers', () => {
+    expect(experienceLine(['Handle 10 to 5 years of backlog'])).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useT } from '../i18n';
 import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
 import {
   BAND_LABEL,
@@ -47,6 +48,7 @@ const MAP_MAX = 79;
 const LABELS_ON_MAP = 5;
 
 export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: () => void }) {
+  const t = useT();
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
@@ -227,9 +229,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   async function copyShortlist() {
     try {
       await navigator.clipboard.writeText(shortlistText(entries));
-      setCopied('Copied.');
+      setCopied(t('Copied.'));
     } catch {
-      setCopied('Your browser did not allow copying. Use the CSV instead.');
+      setCopied(t('Your browser did not allow copying. Use the CSV instead.'));
     }
   }
   function downloadCsv() {
@@ -255,7 +257,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         l.candidates.filter((r) => !r.erased).map((r) => [r.documentId, matchBand(r)]),
       );
       setAdjNote(
-        path === '/reset' ? 'Back to the original ranking.' : bandMoves(before, nowBand).line,
+        path === '/reset' ? t('Back to the original ranking.') : bandMoves(before, nowBand).line,
       );
     } catch (e) {
       setAdjError(errMsg(e));
@@ -268,7 +270,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     setAdjError('');
     setDrawerFocus(requirementId);
     setDrawer(true);
-    setAdjNote('Checking what this would change…');
+    setAdjNote(t('Checking what this would change…'));
     try {
       const r = await api.post<{ scores: Record<string, number | null> }>(
         `/vacancies/${vacancyId}/adjustments/preview`,
@@ -281,7 +283,10 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         after.set(row.documentId, matchBand({ ...row, score: { ...row.score, value: v } }));
       }
       setAdjNote(
-        `What if “${text}” were nice-to-have: ${bandMoves(bandOf, after).line} Nothing changes until you choose it below.`,
+        t('What if “{text}” were nice-to-have: {line} Nothing changes until you choose it below.', {
+          text,
+          line: bandMoves(bandOf, after).line,
+        }),
       );
     } catch (e) {
       setAdjNote('');
@@ -290,7 +295,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }
   const selectedRow = selected ? rowById.get(selected) : undefined;
   const target =
-    selectedRow?.screeningId && bandOf.get(selectedRow.documentId) && bandOf.get(selectedRow.documentId) !== 'human'
+    selectedRow?.screeningId &&
+    bandOf.get(selectedRow.documentId) &&
+    bandOf.get(selectedRow.documentId) !== 'human'
       ? {
           screeningId: selectedRow.screeningId,
           label: names.get(selectedRow.documentId)!,
@@ -312,15 +319,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const counts = (b: MatchBand) => (b === 'human' ? human.length : inBand(b).length);
 
   if (error && !data) return <Notice kind="error">{error}</Notice>;
-  if (!data) return <p className="text-sm text-ink-3">Loading…</p>;
+  if (!data) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
   if (data.counts.total === 0) {
     return (
       <Notice kind="info">
-        No resumes yet. Start a screening from{' '}
+        {t('No resumes yet. Start a screening from')}{' '}
         <a className="underline" href="#/">
-          New screening
+          {t('New screening')}
         </a>
-        , or upload on the Table tab.
+        {t(', or upload on the Table tab.')}
       </Notice>
     );
   }
@@ -330,15 +337,16 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {error && <Notice kind="error">{error}</Notice>}
       {!data.aiActive && (
         <Notice kind="warn">
-          No AI provider is active, so resumes wait in the queue. An administrator can set one up
-          under Admin → AI models.
+          {t(
+            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+          )}
         </Notice>
       )}
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Your constellation</h2>
-          <p className="text-ink-2">Select a star. Brighter means a better fit.</p>
+          <h2 className="text-2xl font-bold tracking-tight">{t('Your constellation')}</h2>
+          <p className="text-ink-2">{t('Select a star. Brighter means a better fit.')}</p>
         </div>
         {adj && adj.requirements.length > 0 && (
           <button
@@ -347,12 +355,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             aria-expanded={drawer}
             onClick={() => setDrawer(true)}
           >
-            Requirements{adj.changeCount > 0 ? ` (${adj.changeCount} changed)` : ''}
+            {t('Requirements')}
+            {adj.changeCount > 0 ? ` ${t('({n} changed)', { n: adj.changeCount })}` : ''}
           </button>
         )}
         <p className="text-sm text-ink-3" aria-live="polite">
-          {data.counts.total} {data.counts.total === 1 ? 'resume' : 'resumes'} in this scan
-          {data.counts.failed > 0 && ` · ${data.counts.failed} failed (see Table)`}
+          {data.counts.total === 1
+            ? t('{n} resume in this scan', { n: data.counts.total })
+            : t('{n} resumes in this scan', { n: data.counts.total })}
+          {data.counts.failed > 0 && ` · ${t('{n} failed (see Table)', { n: data.counts.failed })}`}
         </p>
       </div>
 
@@ -376,14 +387,14 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           config={assistant}
           target={target}
           others={compareChoices}
-          onEditRequirement={(id, t) => void openEdit(id, t)}
+          onEditRequirement={(id, text) => void openEdit(id, text)}
         />
       )}
       {adj && adj.changeCount > 0 && (
         <Notice kind="info">
-          The ranking uses your requirement changes ({adj.changeCount}).{' '}
+          {t('The ranking uses your requirement changes ({n}).', { n: adj.changeCount })}{' '}
           <button className="underline" disabled={adjBusy} onClick={() => void adjust('/reset')}>
-            Back to original
+            {t('Back to original')}
           </button>
         </Notice>
       )}
@@ -391,49 +402,61 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {sending && (
         <Notice kind="info">
           <span role="status">
-            Sending {intake!.sent} of {intake!.total} files. You can start looking now: the rest
-            appear here as they are read.
+            {t(
+              'Sending {sent} of {total} files. You can start looking now: the rest appear here as they are read.',
+              { sent: intake!.sent, total: intake!.total },
+            )}
           </span>
         </Notice>
       )}
-      {intake?.error && <Notice kind="error">Some files could not be sent. {intake.error}</Notice>}
+      {intake?.error && (
+        <Notice kind="error">
+          {t('Some files could not be sent.')} {intake.error}
+        </Notice>
+      )}
       {pending > 0 && (
         <div role="status" aria-live="polite" className="space-y-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-ink-2">
-              {read} of {data.counts.total} read. You can leave this page: the scan continues and is
-              kept in Past scans.
+              {t(
+                '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.',
+                { read, total: data.counts.total },
+              )}
             </p>
             <button
               className={btnSecondary}
               disabled={busy}
               onClick={() => void runControl('stop')}
             >
-              Stop the scan
+              {t('Stop the scan')}
             </button>
           </div>
           <progress
             className="h-2 w-full"
             max={data.counts.total}
             value={read}
-            aria-label="Resumes read"
+            aria-label={t('Resumes read')}
           />
         </div>
       )}
       {pending > 0 && (
         <p className="text-sm text-ink-2">
-          {scored.length} ready, {pending} being read, {human.length} need a look
+          {t('{ready} ready, {pending} being read, {human} need a look', {
+            ready: scored.length,
+            pending,
+            human: human.length,
+          })}
         </p>
       )}
       {skipped.length > 0 && (
         <div className="text-sm text-ink-2">
-          {skipped.length} skipped,{' '}
+          {t('{n} skipped,', { n: skipped.length })}{' '}
           <button
             className="text-link underline"
             aria-expanded={showSkipped}
             onClick={() => setShowSkipped((v) => !v)}
           >
-            {showSkipped ? 'hide which' : 'see which'}
+            {showSkipped ? t('hide which') : t('see which')}
           </button>
           {showSkipped && (
             <ul className="mt-1 max-h-48 list-disc overflow-auto pl-5">
@@ -449,20 +472,27 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {pending === 0 && stoppedCount > 0 && (
         <Notice kind="warn">
           <span role="status">
-            Stopped at {read} of {data.counts.total}. What was scored is kept.
+            {t('Stopped at {read} of {total}. What was scored is kept.', {
+              read,
+              total: data.counts.total,
+            })}
           </span>{' '}
           <button className="underline" disabled={busy} onClick={() => void runControl('continue')}>
-            Continue reading the other {stoppedCount}
+            {t('Continue reading the other {n}', { n: stoppedCount })}
           </button>
         </Notice>
       )}
       {pending === 0 && stoppedCount === 0 && (
         <p className="text-sm text-ink-2" role="status">
-          {read} read, {scored.length} scored, {human.length} need a human look
+          {t('{read} read, {scored} scored, {human} need a human look', {
+            read,
+            scored: scored.length,
+            human: human.length,
+          })}
         </p>
       )}
 
-      <ul className="flex flex-wrap gap-2 text-sm" aria-label="Candidates by match">
+      <ul className="flex flex-wrap gap-2 text-sm" aria-label={t('Candidates by match')}>
         {(['strong', 'good', 'partial', 'limited', 'human'] as MatchBand[]).map((b) => (
           <li
             key={b}
@@ -473,47 +503,51 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               className="inline-block h-3 w-3 rounded-full border border-edge"
               style={{ background: STAR_COLOUR[b] }}
             />
-            {BAND_LABEL[b]} <strong>{counts(b)}</strong>
+            {t(BAND_LABEL[b])} <strong>{counts(b)}</strong>
           </li>
         ))}
       </ul>
 
       {ranked.length + limited.length > 0 && counts('strong') === 0 && (
         <Notice kind="info">
-          No strong match in this batch. These are the best matches found; none of them reached
-          Strong.
+          {t(
+            'No strong match in this batch. These are the best matches found; none of them reached Strong.',
+          )}
         </Notice>
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {focusOn ? (
           <span>
-            <strong>Focus on skills is on.</strong> Names stay hidden unless you reveal one.{' '}
+            <strong>{t('Focus on skills is on.')}</strong>{' '}
+            {t('Names stay hidden unless you reveal one.')}{' '}
             <button className="text-link underline" onClick={() => void setFocusPref(false)}>
-              Turn off
+              {t('Turn off')}
             </button>
           </span>
         ) : !confirmAll ? (
           <button className={btnSecondary} onClick={() => setConfirmAll(true)}>
-            Reveal all names
+            {t('Reveal all names')}
           </button>
         ) : (
-          <div role="group" aria-label="Confirm" className="flex flex-wrap items-center gap-2">
-            <span>Names are hidden to keep the first look about skills. Show all?</span>
+          <div role="group" aria-label={t('Confirm')} className="flex flex-wrap items-center gap-2">
+            <span>{t('Names are hidden to keep the first look about skills. Show all?')}</span>
             <button className={btnSecondary} onClick={() => void reveal(ordered)}>
-              Show all
+              {t('Show all')}
             </button>
             <button className={btnSecondary} onClick={() => setConfirmAll(false)}>
-              Cancel
+              {t('Cancel')}
             </button>
           </div>
         )}
-        <span className="text-ink-3">Names are hidden on screen, not removed from the file.</span>
+        <span className="text-ink-3">
+          {t('Names are hidden on screen, not removed from the file.')}
+        </span>
         {!focusOn && (
           <span className="text-ink-3">
-            Want a first look about skills only?{' '}
+            {t('Want a first look about skills only?')}{' '}
             <button className="text-link underline" onClick={() => void setFocusPref(true)}>
-              Try Focus on skills
+              {t('Try Focus on skills')}
             </button>
           </span>
         )}
@@ -522,21 +556,25 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {marked('shortlist') + marked('hold') + marked('reject') > 0 && (
         <div
           className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-edge p-3 text-sm"
-          aria-label="My marks"
+          aria-label={t('My marks')}
           role="group"
         >
-          <span className="font-medium">My marks</span>
+          <span className="font-medium">{t('My marks')}</span>
           <span>
-            {marked('shortlist')} shortlisted · {marked('hold')} maybe · {marked('reject')} not now
+            {t('{a} shortlisted · {b} maybe · {c} not now', {
+              a: marked('shortlist'),
+              b: marked('hold'),
+              c: marked('reject'),
+            })}
           </span>
-          <span className="text-ink-3">They never change the match or the order.</span>
+          <span className="text-ink-3">{t('They never change the match or the order.')}</span>
           {entries.length > 0 && (
             <>
               <button className={btnSecondary} onClick={() => void copyShortlist()}>
-                Copy shortlist
+                {t('Copy shortlist')}
               </button>
               <button className={btnSecondary} onClick={downloadCsv}>
-                Download CSV
+                {t('Download CSV')}
               </button>
               <span role="status">{copied}</span>
             </>
@@ -545,9 +583,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       )}
 
       {scored.length > 0 && (
-        <section aria-label="Star map" aria-describedby="star-summary">
+        <section aria-label={t('Star map')} aria-describedby="star-summary">
           <button className={`${btnSecondary} lg:hidden`} onClick={() => setMapOpen((o) => !o)}>
-            {mapOpen ? 'Hide star map' : 'Show star map'}
+            {mapOpen ? t('Hide star map') : t('Show star map')}
           </button>
           <div className={mapOpen ? 'mt-3 block' : 'hidden lg:block'}>
             <div
@@ -609,9 +647,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                     <button
                       type="button"
                       data-star=""
-                      aria-label={`${nameOf(r)}, ${BAND_LABEL[band]}`}
+                      aria-label={`${nameOf(r)}, ${t(BAND_LABEL[band])}`}
                       aria-pressed={on}
-                      title={`Score ${r.score!.value}`}
+                      title={t('Score {n}', { n: r.score!.value })}
                       onClick={() => select(r.documentId, true)}
                       onMouseEnter={() => setHovered(r.documentId)}
                       onMouseLeave={() => setHovered(null)}
@@ -643,34 +681,36 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               })}
             </div>
             <p id="star-summary" className="sr-only">
-              Star map, a picture of the ranked list below. {mapRows.length} stars, best first:{' '}
+              {t('Star map, a picture of the ranked list below. {n} stars, best first:', {
+                n: mapRows.length,
+              })}{' '}
               {mapRows
                 .slice(0, 5)
-                .map((r) => `${nameOf(r)}, ${BAND_LABEL[bandOf.get(r.documentId)!]}`)
+                .map((r) => `${nameOf(r)}, ${t(BAND_LABEL[bandOf.get(r.documentId)!])}`)
                 .join('; ')}
-              {mapRows.length > 5 ? '; and more' : ''}. Use the arrow keys to move between stars and
-              Enter to select one.
+              {mapRows.length > 5 ? t('; and more') : ''}.{' '}
+              {t('Use the arrow keys to move between stars and Enter to select one.')}
             </p>
             <p className="mt-2 text-sm text-ink-3">
               {scored.length > mapRows.length ? (
                 <>
-                  Showing top {mapRows.length} of {scored.length}.{' '}
+                  {t('Showing top {n} of {total}.', { n: mapRows.length, total: scored.length })}{' '}
                   <button className="text-link hover:underline" onClick={() => setMapAll(true)}>
-                    Show all
+                    {t('Show all')}
                   </button>{' '}
                 </>
               ) : mapAll && scored.length > MAP_TOP ? (
                 <button className="text-link hover:underline" onClick={() => setMapAll(false)}>
-                  Show top {MAP_TOP} only
+                  {t('Show top {n} only', { n: MAP_TOP })}
                 </button>
               ) : null}
-              A star's place on the map has no meaning beyond its rank.
+              {t("A star's place on the map has no meaning beyond its rank.")}
             </p>
           </div>
         </section>
       )}
 
-      <section aria-label="Candidates" className="space-y-3">
+      <section aria-label={t('Candidates')} className="space-y-3">
         {ranked.slice(0, shown).map((r) => (
           <CandidateCard
             key={r.documentId}
@@ -692,13 +732,18 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         ))}
         {ranked.length > shown && (
           <button className={btnSecondary} onClick={() => setShown((s) => s + PAGE)}>
-            Show {Math.min(PAGE, ranked.length - shown)} more ({ranked.length - shown} not shown)
+            {t('Show {n} more ({m} not shown)', {
+              n: Math.min(PAGE, ranked.length - shown),
+              m: ranked.length - shown,
+            })}
           </button>
         )}
         {limited.length > 0 && (
           <details className="rounded-lg border border-line bg-card p-3">
             <summary className="cursor-pointer font-medium">
-              Limited ({limited.length}): fewer of the requirements found. Nobody is rejected.
+              {t('Limited ({n}): fewer of the requirements found. Nobody is rejected.', {
+                n: limited.length,
+              })}
             </summary>
             <div className="mt-3 space-y-3">
               {limited.map((r) => (
@@ -726,7 +771,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         {missedByOne.length > 0 && (
           <details className="rounded-lg border border-line bg-card p-3">
             <summary className="cursor-pointer font-medium">
-              Missed by one must-have ({missedByOne.length})
+              {t('Missed by one must-have ({n})', { n: missedByOne.length })}
             </summary>
             <ul className="mt-2 divide-y divide-line text-sm">
               {missedByOne.map((r) => {
@@ -738,9 +783,11 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                 return (
                   <li key={r.documentId} className="flex flex-wrap justify-between gap-2 py-2">
                     <span>
-                      {nameOf(r)} · {BAND_LABEL[bandOf.get(r.documentId)!]}
+                      {nameOf(r)} · {t(BAND_LABEL[bandOf.get(r.documentId)!])}
                     </span>
-                    <span className="text-ink-3">Not found: {gap?.text}</span>
+                    <span className="text-ink-3">
+                      {t('Not found: {text}', { text: gap?.text ?? '' })}
+                    </span>
                   </li>
                 );
               })}
@@ -749,9 +796,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         )}
         {human.length > 0 && (
           <div className="rounded-lg border border-dashed border-edge p-3">
-            <h3 className="font-medium">Needs a human look ({human.length})</h3>
+            <h3 className="font-medium">{t('Needs a human look ({n})', { n: human.length })}</h3>
             <p className="text-sm text-ink-3">
-              These could not be scored. Open the original and read it yourself.
+              {t('These could not be scored. Open the original and read it yourself.')}
             </p>
             <ul className="mt-2 divide-y divide-line text-sm">
               {human.map((r) => (
@@ -762,10 +809,10 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   <span>
                     {nameOf(r)} ·{' '}
                     {r.state === 'failed'
-                      ? 'screening failed'
+                      ? t('screening failed')
                       : r.knockoutTriggered
-                        ? 'a knockout rule matched'
-                        : 'no readable text'}
+                        ? t('a knockout rule matched')
+                        : t('no readable text')}
                   </span>
                   <span className="flex gap-3">
                     {r.screeningId && (
@@ -773,12 +820,12 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                         className="text-link hover:underline"
                         href={`#/screenings/${r.screeningId}`}
                       >
-                        Open
+                        {t('Open')}
                       </a>
                     )}
                     {r.state === 'failed' && (
                       <button className="text-link hover:underline" onClick={onTable}>
-                        Retry on the Table tab
+                        {t('Retry on the Table tab')}
                       </button>
                     )}
                   </span>

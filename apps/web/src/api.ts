@@ -117,6 +117,7 @@ export interface Me {
   background?: 'white' | 'grey' | 'sky' | 'dark' | null;
   /** The recruiter's own "Focus on skills" switch (spec 6.2.6). */
   focusOnSkills?: boolean;
+  language?: string | null;
 }
 export interface Session {
   token: string;
@@ -207,6 +208,7 @@ export interface AdminUser {
   roles: Role[];
   lastSeenAt: string;
   mustChangePassword: boolean;
+  mfa?: boolean;
 }
 export interface AiModel {
   id: string;

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { ProcessorService } from './processor.service';
 import { describeDb } from '../testing/pg-harness';
 import { boot, type Harness } from '../testing/app-harness';
 
@@ -118,7 +121,11 @@ describeDb('Shared reports (design spec 6.5)', () => {
     const names = rep.candidates.map((c: { name: string | null }) => c.name).filter(Boolean);
     expect(names.sort()).toEqual(['Alice Full', 'Bob Routing']);
     expect(JSON.stringify(rep)).not.toContain('Carol');
-    expect(rep.decisions[0]).toMatchObject({ outcome: 'shortlist' });
+    expect(rep.decisions[0]).toMatchObject({
+      outcome: 'shortlist',
+      reason: 'Strong routing background',
+    });
+    expect(rep.decisions[0].documentId).toBeUndefined();
   });
 
   it('can leave the quotes out, and hides a candidate name found inside the text', async () => {
@@ -227,5 +234,62 @@ describeDb('Shared reports (design spec 6.5)', () => {
     const after = (await manager.api.get(`/reports/${s.id}`)).json().report;
     expect(JSON.stringify(after)).not.toContain('Alice');
     expect(after.candidates.every((c: { name: string | null }) => c.name === null)).toBe(true);
+  });
+
+  it('carries the reviewer reason, without a hidden name, and scrubs it on erase', async () => {
+    const { ayla, manager, vid } = await setup('h');
+    const list = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as (Cand & {
+      candidateName: string | null;
+    })[];
+    const carol = list.find((c) => c.candidateName?.includes('Carol'))!;
+    await ayla.api.post(`/screenings/${carol.screeningId}/decision`, {
+      outcome: 'hold',
+      reason: 'Carol Nothing to call back on Monday',
+    });
+    const s = (
+      await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
+    ).json();
+    const rep = (await manager.api.get(`/reports/${s.id}`)).json().report;
+    expect(rep.decisions).toHaveLength(1);
+    expect(rep.decisions[0].reason).toContain('[name]');
+    expect(JSON.stringify(rep)).not.toContain('Carol');
+    expect(JSON.stringify(rep)).not.toContain('Nothing');
+
+    expect((await ayla.api.post(`/documents/${carol.documentId}/erase`)).statusCode).toBe(200);
+    const after = (await manager.api.get(`/reports/${s.id}`)).json().report;
+    expect(after.decisions[0].reason).toBe('');
+  });
+
+  it('gives a PDF quotation its page number', async () => {
+    const ayla = await h.recruiter('ayla-p@azerconnect.test');
+    const manager = await h.recruiter('manager-p@azerconnect.test', 'NONE');
+    const vid = await h.scenario(ayla.api, []);
+    const up = await ayla.api.upload(`/vacancies/${vid}/documents`, [
+      {
+        name: 'nigar.pdf',
+        type: 'application/pdf',
+        data: readFileSync(join(__dirname, '..', 'testing', 'fixtures', 'cv-two-pages.pdf')),
+      },
+    ]);
+    expect(up.statusCode).toBe(200);
+    await h.app.get(ProcessorService).drain();
+    const list = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as Cand[];
+    const detail = (await ayla.api.get(`/screenings/${list[0]!.screeningId}`)).json();
+    const pages = detail.assessments
+      .filter((a: { evidence: unknown[] | null }) => a.evidence?.length)
+      .map((a: { text: string; evidence: { page: number }[] }) => [a.text, a.evidence[0]!.page]);
+    expect(pages).toEqual(
+      expect.arrayContaining([
+        ['BGP routing', 1],
+        ['Kubernetes', 2],
+      ]),
+    );
+    const { id } = (
+      await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
+    ).json();
+    const rep = (await manager.api.get(`/reports/${id}`)).json().report;
+    const q = rep.candidates[0].quotes as { requirement: string; page: number }[];
+    expect(q.find((x) => x.requirement === 'Kubernetes')?.page).toBe(2);
+    expect(q.find((x) => x.requirement === 'BGP routing')?.page).toBe(1);
   });
 });

@@ -17,11 +17,15 @@ export class SessionController {
   @Post('login')
   @HttpCode(200)
   login(@Body() body: unknown, @Req() req: FastifyRequest) {
-    const { email, password } = parse(
-      z.object({ email: z.string().max(254), password: z.string().min(1).max(256) }),
+    const { email, password, code } = parse(
+      z.object({
+        email: z.string().max(254),
+        password: z.string().min(1).max(256),
+        code: z.string().max(32).optional(),
+      }),
       body,
     );
-    return this.auth.login(email, password, req.ip);
+    return this.auth.login(email, password, req.ip, code);
   }
 
   /** Who an invitation / password-setup link is for (so the page can say so). */

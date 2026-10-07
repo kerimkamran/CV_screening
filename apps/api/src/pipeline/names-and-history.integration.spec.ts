@@ -53,20 +53,20 @@ describeDb('Names, Focus on skills and Past scans (design spec 6.2.6, 6.4)', () 
       focusOnSkills: false,
       background: null,
     });
-    expect((await r.api.put('/me/preferences', { focusOnSkills: true })).json()).toEqual({
+    expect((await r.api.put('/me/preferences', { focusOnSkills: true })).json()).toMatchObject({
       background: null,
       focusOnSkills: true,
     });
-    expect((await r.api.put('/me/preferences', { background: 'sky' })).json()).toEqual({
+    expect((await r.api.put('/me/preferences', { background: 'sky' })).json()).toMatchObject({
       background: 'sky',
       focusOnSkills: true,
     });
-    expect((await r.api.put('/me/preferences', { background: null })).json()).toEqual({
+    expect((await r.api.put('/me/preferences', { background: null })).json()).toMatchObject({
       background: null,
       focusOnSkills: true,
     });
     expect((await r.api.get('/me')).json().focusOnSkills).toBe(true);
-    expect((await r.api.put('/me/preferences', { focusOnSkills: false })).json()).toEqual({
+    expect((await r.api.put('/me/preferences', { focusOnSkills: false })).json()).toMatchObject({
       background: null,
       focusOnSkills: false,
     });

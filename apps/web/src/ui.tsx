@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ReqStatus } from './api';
+import { locale, tr } from './i18n';
 
 export const btn =
   'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
@@ -80,13 +81,13 @@ const STATUS: Record<ReqStatus, [string, string]> = {
   ambiguous: ['Unclear', 'bg-warn text-warn-ink'],
   not_applicable: ['Not applicable', 'bg-neutral text-ink-2'],
 };
-export const statusLabel = (s: ReqStatus) => STATUS[s][0];
+export const statusLabel = (s: ReqStatus) => tr(STATUS[s][0]);
 
 /** Status is always text plus colour, never colour alone. */
 export function StatusBadge({ status }: { status: ReqStatus | null }) {
   if (!status) return <span className="text-xs text-ink-3">—</span>;
   const [label, cls] = STATUS[status];
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
+  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{tr(label)}</span>;
 }
 
 const BAND: Record<string, [string, string]> = {
@@ -98,7 +99,7 @@ const BAND: Record<string, [string, string]> = {
 export function BandBadge({ band }: { band: string | null }) {
   if (!band) return <span className="text-xs text-ink-3">—</span>;
   const [label, cls] = BAND[band] ?? [band, 'bg-neutral'];
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
+  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{tr(label)}</span>;
 }
 
 export const OUTCOME: Record<string, [string, string]> = {
@@ -108,7 +109,8 @@ export const OUTCOME: Record<string, [string, string]> = {
 };
 
 export function when(iso: string | null | undefined) {
-  return iso ? new Date(iso).toLocaleString() : '';
+  return iso ? new Date(iso).toLocaleString(locale()) : '';
 }
 
-export const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');
+/** Server messages are English; the common ones have an Azerbaijani entry, the rest show as sent. */
+export const errMsg = (e: unknown) => tr(e instanceof Error ? e.message : 'Something went wrong');

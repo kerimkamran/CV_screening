@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { locale, useT } from '../i18n';
 import type { Adjustments, Kind } from '../api';
 import { KIND_NAME } from '../results-logic';
 import { btnSecondary, Notice, when } from '../ui';
@@ -20,6 +21,7 @@ export function RequirementsDrawer(props: {
   /** A requirement to point at when the drawer is opened from the assistant. */
   focusId?: string | null;
 }) {
+  const t = useT();
   const { data } = props;
   const ref = useRef<HTMLElement>(null);
   const { onClose, focusId } = props;
@@ -39,25 +41,28 @@ export function RequirementsDrawer(props: {
       ref={ref}
       tabIndex={-1}
       role="dialog"
-      aria-label="Requirements"
+      aria-label={t('Requirements')}
       className="fixed inset-y-0 right-0 z-30 w-full max-w-md overflow-y-auto border-l border-line bg-card p-5 shadow-xl focus:outline-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Requirements</h2>
+          <h2 className="text-lg font-semibold">{t('Requirements')}</h2>
           <p className="text-sm text-ink-2" role="status">
             {data.changeCount === 0
-              ? 'No changes since the first scan.'
-              : `${data.changeCount} ${data.changeCount === 1 ? 'change' : 'changes'} since the first scan.`}
+              ? t('No changes since the first scan.')
+              : data.changeCount === 1
+                ? t('{n} change since the first scan.', { n: data.changeCount })
+                : t('{n} changes since the first scan.', { n: data.changeCount })}
           </p>
         </div>
         <button className={btnSecondary} onClick={props.onClose}>
-          Close
+          {t('Close')}
         </button>
       </div>
       <p className="mt-2 text-sm text-ink-3">
-        Change what counts and the list re-ranks. No resume is read again. A missing must-have
-        lowers the match; it never hides anyone.
+        {t(
+          'Change what counts and the list re-ranks. No resume is read again. A missing must-have lowers the match; it never hides anyone.',
+        )}
       </p>
 
       {props.error && <Notice kind="error">{props.error}</Notice>}
@@ -79,7 +84,9 @@ export function RequirementsDrawer(props: {
               {r.text}
               {r.current !== r.original && (
                 <span className="ml-2 text-xs font-normal text-ink-3">
-                  changed (was {KIND_NAME[r.original].toLowerCase()})
+                  {t('changed (was {kind})', {
+                    kind: t(KIND_NAME[r.original]).toLocaleLowerCase(locale()),
+                  })}
                 </span>
               )}
             </legend>
@@ -92,7 +99,7 @@ export function RequirementsDrawer(props: {
                     checked={r.current === k}
                     onChange={() => props.onChange(r.id, k)}
                   />
-                  {KIND_NAME[k]}
+                  {t(KIND_NAME[k])}
                 </label>
               ))}
             </div>
@@ -101,8 +108,9 @@ export function RequirementsDrawer(props: {
       </div>
       {data.knockouts.length > 0 && (
         <p className="mt-3 text-sm text-ink-3">
-          Knockout rules ({data.knockouts.length}) are not changed here. They only send a CV to a
-          human look.
+          {t('Knockout rules ({n}) are not changed here. They only send a CV to a human look.', {
+            n: data.knockouts.length,
+          })}
         </p>
       )}
 
@@ -112,19 +120,23 @@ export function RequirementsDrawer(props: {
           disabled={data.changeCount === 0 || props.busy}
           onClick={props.onReset}
         >
-          Back to original
+          {t('Back to original')}
         </button>
       </div>
 
       {data.changes.length > 0 && (
-        <section aria-label="History of changes" className="mt-5">
-          <h3 className="text-sm font-semibold">History</h3>
+        <section aria-label={t('History of changes')} className="mt-5">
+          <h3 className="text-sm font-semibold">{t('History')}</h3>
           <ul className="mt-1 space-y-1 text-sm text-ink-2">
             {data.changes.map((c) => (
               <li key={c.id}>
                 {c.reset
-                  ? 'Back to original'
-                  : `${c.requirement}: ${KIND_NAME[c.from!].toLowerCase()} to ${KIND_NAME[c.to!].toLowerCase()}`}{' '}
+                  ? t('Back to original')
+                  : t('{requirement}: {from} to {to}', {
+                      requirement: c.requirement ?? '',
+                      from: t(KIND_NAME[c.from!]).toLocaleLowerCase(locale()),
+                      to: t(KIND_NAME[c.to!]).toLocaleLowerCase(locale()),
+                    })}{' '}
                 · {c.by} · {when(c.at)}
               </li>
             ))}

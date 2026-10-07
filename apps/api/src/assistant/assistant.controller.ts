@@ -49,7 +49,12 @@ export class AssistantController {
   ) {
     const b = parse(askSchema, body);
     if (b.intent === 'ask' && b.message.length === 0) {
-      return this.svc.ask(p, parse(ulidSchema, id), { ...b, message: 'Why this band?', intent: 'why' }, req.ip);
+      return this.svc.ask(
+        p,
+        parse(ulidSchema, id),
+        { ...b, message: 'Why this band?', intent: 'why' },
+        req.ip,
+      );
     }
     return this.svc.ask(p, parse(ulidSchema, id), b, req.ip);
   }

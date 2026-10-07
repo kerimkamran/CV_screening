@@ -35,6 +35,43 @@ export function normalizeText(raw: string): string {
     .trim();
 }
 
+/** A PDF's text with the offsets where each page starts, so a quotation can be given a page. */
+export interface TextWithPages {
+  text: string;
+  /** Offsets into `text` where pages 1, 2, 3 … start; null when the format has no fixed pages. */
+  pageStarts: number[] | null;
+}
+
+const PAGE = '\uE000';
+
+export async function extractTextWithPages(buf: Buffer, kind: Kind): Promise<TextWithPages> {
+  if (kind !== 'pdf') return { text: await extractText(buf, kind), pageStarts: null };
+  const raw = (await pdfToText(buf, 20_000, 5_000_000, true)).replaceAll('\f', PAGE);
+  const pages = normalizeText(raw)
+    .split(PAGE)
+    .map((p) => p.trim());
+  let text = '';
+  const pageStarts: number[] = [];
+  for (const [i, page] of pages.entries()) {
+    if (!page && i === pages.length - 1) break; // pdftotext ends the last page with a break
+    if (text) text += '\n\n';
+    pageStarts.push(text.length);
+    text += page;
+  }
+  return { text, pageStarts: pageStarts.length > 1 ? pageStarts : null };
+}
+
+/** 1-based page that holds a character offset; null when pages are not known. */
+export function pageAt(pageStarts: number[] | null | undefined, offset: number): number | null {
+  if (!pageStarts?.length) return null;
+  let page = 1;
+  for (const [i, start] of pageStarts.entries()) {
+    if (start <= offset) page = i + 1;
+    else break;
+  }
+  return page;
+}
+
 export async function extractText(buf: Buffer, kind: Kind): Promise<string> {
   switch (kind) {
     case 'pdf':
@@ -52,11 +89,20 @@ export async function extractText(buf: Buffer, kind: Kind): Promise<string> {
  * Poppler's pdftotext, fed over stdin so nothing touches disk. Chosen over pure-JS parsers for
  * robustness on real-world CVs. A hard timeout and output cap bound a hostile or pathological file.
  */
-export function pdfToText(buf: Buffer, timeoutMs = 20_000, maxBytes = 5_000_000): Promise<string> {
+export function pdfToText(
+  buf: Buffer,
+  timeoutMs = 20_000,
+  maxBytes = 5_000_000,
+  keepPageBreaks = false,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('pdftotext', ['-enc', 'UTF-8', '-nopgbrk', '-', '-'], {
-      stdio: ['pipe', 'pipe', 'ignore'],
-    });
+    const child = spawn(
+      'pdftotext',
+      ['-enc', 'UTF-8', ...(keepPageBreaks ? [] : ['-nopgbrk']), '-', '-'],
+      {
+        stdio: ['pipe', 'pipe', 'ignore'],
+      },
+    );
     const chunks: Buffer[] = [];
     let size = 0;
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);

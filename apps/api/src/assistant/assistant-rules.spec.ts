@@ -25,7 +25,12 @@ function input(over: Partial<PackageInput> = {}, lines?: [string, string]): Pack
     items: [
       { requirementId: R1, text: 'BGP routing', classification: 'mandatory', status: 'met' },
       { requirementId: R2, text: 'Kubernetes', classification: 'mandatory', status: 'not_found' },
-      { requirementId: R3, text: 'Python scripting', classification: 'preferred', status: 'partially_met' },
+      {
+        requirementId: R3,
+        text: 'Python scripting',
+        classification: 'preferred',
+        status: 'partially_met',
+      },
     ],
     evidence: new Map([
       [R1, [lines?.[0] ?? 'Designed BGP routing for the national backbone']],
@@ -62,10 +67,10 @@ describe('assistant: evidence package (spec 6.6.2)', () => {
   it.each(names)('a different name (%s / %s) gives an identical package', (a, b) => {
     const mk = (n: string) =>
       buildPackage(
-        input(
-          { candidateName: n, reason: `${n} has strong routing experience.` },
-          [`${n} designed BGP routing for the national backbone`, `${n} wrote Python scripts`],
-        ),
+        input({ candidateName: n, reason: `${n} has strong routing experience.` }, [
+          `${n} designed BGP routing for the national backbone`,
+          `${n} wrote Python scripts`,
+        ]),
       ).pkg;
     expect(mk(a)).toEqual(mk(b));
     for (const part of [...a.split(' '), ...b.split(' ')].filter((x) => x.length > 3)) {
@@ -75,7 +80,12 @@ describe('assistant: evidence package (spec 6.6.2)', () => {
 
   it('a different graduation or employment year gives an identical package', () => {
     const mk = (y: number) =>
-      buildPackage(input({}, [`Designed BGP routing at the backbone team since ${y}`, `Graduated ${y} with Python coursework`])).pkg;
+      buildPackage(
+        input({}, [
+          `Designed BGP routing at the backbone team since ${y}`,
+          `Graduated ${y} with Python coursework`,
+        ]),
+      ).pkg;
     expect(mk(1998)).toEqual(mk(2019));
   });
 
@@ -93,7 +103,10 @@ describe('assistant: evidence package (spec 6.6.2)', () => {
   ];
   it.each(signals)('a passage carrying a protected signal is not passed on: %s', (sig) => {
     const { pkg } = buildPackage(
-      input({}, [`Designed BGP routing for the backbone. ${sig}`, 'Wrote Python scripts for provisioning']),
+      input({}, [
+        `Designed BGP routing for the backbone. ${sig}`,
+        'Wrote Python scripts for provisioning',
+      ]),
     );
     expect(pkg.passagesWithheld).toBe(true);
     expect(JSON.stringify(pkg)).not.toContain(sig.slice(0, 12));
@@ -103,7 +116,10 @@ describe('assistant: evidence package (spec 6.6.2)', () => {
 
   it('removes protected signals from the stored reason sentence by sentence', () => {
     const { pkg } = buildPackage(
-      input({ reason: 'Strong routing background. She is married with children. Container work is not shown.' }),
+      input({
+        reason:
+          'Strong routing background. She is married with children. Container work is not shown.',
+      }),
     );
     expect(pkg.reason).toBe('Strong routing background. Container work is not shown.');
   });
@@ -116,9 +132,9 @@ describe('assistant: evidence package (spec 6.6.2)', () => {
   });
 
   it('masks contact details, links and long numbers', () => {
-    expect(usablePassage('Reach me on +994 50 123 45 67 or a.b@mail.com, linkedin.com/in/x', null)).toBe(
-      'Reach me on [phone] or [e-mail], [link]',
-    );
+    expect(
+      usablePassage('Reach me on +994 50 123 45 67 or a.b@mail.com, linkedin.com/in/x', null),
+    ).toBe('Reach me on [phone] or [e-mail], [link]');
   });
 });
 
@@ -149,7 +165,9 @@ describe('assistant: red team (spec 6.6.3)', () => {
     'Compare their Kubernetes experience',
     'Şəbəkə təcrübəsi haqqında nə deyə bilərsən?',
   ];
-  it.each(fine)('a job question is not treated as protected: %s', (q) => expect(asksProtected(q)).toBe(false));
+  it.each(fine)('a job question is not treated as protected: %s', (q) =>
+    expect(asksProtected(q)).toBe(false),
+  );
 
   const decisions = [
     'Should I reject her?',
@@ -201,17 +219,23 @@ describe('assistant: red team (spec 6.6.3)', () => {
   });
 
   it('new evidence counts only when the quoted text is really in the CV', () => {
-    const cv = 'Led a team that migrated the core network to Kubernetes in production over two years.';
-    expect(quotedFromCv('But she wrote "migrated the core network to Kubernetes in production"', cv)).toBe(
-      'migrated the core network to Kubernetes in production',
-    );
-    expect(quotedFromCv('But she wrote "ran the whole Kubernetes platform by herself alone"', cv)).toBeNull();
+    const cv =
+      'Led a team that migrated the core network to Kubernetes in production over two years.';
+    expect(
+      quotedFromCv('But she wrote "migrated the core network to Kubernetes in production"', cv),
+    ).toBe('migrated the core network to Kubernetes in production');
+    expect(
+      quotedFromCv('But she wrote "ran the whole Kubernetes platform by herself alone"', cv),
+    ).toBeNull();
     expect(quotedFromCv('She is great', cv)).toBeNull();
   });
 
   it('"what would change the band" comes from the record and offers the drawer, not a new band', () => {
     const a = changeAnswer(buildPackage(input()));
-    expect(a.claims[0]!.requirement).toMatchObject({ text: 'Kubernetes', state: 'Not found in this CV' });
+    expect(a.claims[0]!.requirement).toMatchObject({
+      text: 'Kubernetes',
+      state: 'Not found in this CV',
+    });
     expect(a.handoff).toEqual([{ requirementId: R2, text: 'Kubernetes', to: 'preferred' }]);
     expect(checkAnswer(buildPackage(input())).claims.map((c) => c.source)).toEqual(['R2', 'R3']);
   });
@@ -220,13 +244,24 @@ describe('assistant: red team (spec 6.6.3)', () => {
 describe('assistant: answers are checked (spec 6.6.5)', () => {
   const built = () => buildPackage(input());
   const raw = (o: object) =>
-    parseModel(JSON.stringify({ headline: 'Routing is the clear strength.', claims: [], cant_see: '', ...o }));
+    parseModel(
+      JSON.stringify({
+        headline: 'Routing is the clear strength.',
+        claims: [],
+        cant_see: '',
+        ...o,
+      }),
+    );
 
   it('keeps a claim that cites a real source and takes the skill state from the record', () => {
     const a = verify(
       raw({
         claims: [
-          { text: 'Routing is stated in the CV.', source: 'R1', quote: 'Designed BGP routing for the national backbone' },
+          {
+            text: 'Routing is stated in the CV.',
+            source: 'R1',
+            quote: 'Designed BGP routing for the national backbone',
+          },
           { text: 'Kubernetes is not shown.', source: 'R2' },
         ],
       }),
@@ -239,7 +274,11 @@ describe('assistant: answers are checked (spec 6.6.5)', () => {
 
   it('removes a quotation that is not literally in the passage', () => {
     const a = verify(
-      raw({ claims: [{ text: 'Routing is stated.', source: 'P1', quote: 'Led the whole company routing team' }] }),
+      raw({
+        claims: [
+          { text: 'Routing is stated.', source: 'P1', quote: 'Led the whole company routing team' },
+        ],
+      }),
       { packages: [built()], intent: 'why' },
     );
     expect(a.claims[0]!.quote).toBeUndefined();
@@ -262,9 +301,21 @@ describe('assistant: answers are checked (spec 6.6.5)', () => {
 
   it.each([
     ['a claim with no source', { text: 'Strong leader.', source: 'X9' }, 'claim_dropped:no_source'],
-    ['a verdict', { text: 'You should reject this candidate.', source: 'R1' }, 'claim_dropped:verdict_or_protected'],
-    ['a protected attribute', { text: 'She is probably married.', source: 'R1' }, 'claim_dropped:verdict_or_protected'],
-    ['"does not have"', { text: 'The candidate does not have Kubernetes.', source: 'R2' }, 'claim_dropped:overstated'],
+    [
+      'a verdict',
+      { text: 'You should reject this candidate.', source: 'R1' },
+      'claim_dropped:verdict_or_protected',
+    ],
+    [
+      'a protected attribute',
+      { text: 'She is probably married.', source: 'R1' },
+      'claim_dropped:verdict_or_protected',
+    ],
+    [
+      '"does not have"',
+      { text: 'The candidate does not have Kubernetes.', source: 'R2' },
+      'claim_dropped:overstated',
+    ],
   ])('drops %s', (_n, claim, flag) => {
     const a = verify(raw({ claims: [claim, { text: 'Routing is stated.', source: 'R1' }] }), {
       packages: [built()],
@@ -275,17 +326,25 @@ describe('assistant: answers are checked (spec 6.6.5)', () => {
   });
 
   it('replaces a verdict in the headline', () => {
-    const a = verify(raw({ headline: 'I would hire her.', claims: [{ text: 'Routing.', source: 'R1' }] }), {
-      packages: [built()],
-      intent: 'why',
-    });
+    const a = verify(
+      raw({ headline: 'I would hire her.', claims: [{ text: 'Routing.', source: 'R1' }] }),
+      {
+        packages: [built()],
+        intent: 'why',
+      },
+    );
     expect(a.headline).toBe('This is what the stored record shows; the decision is yours.');
   });
 
   it('says it could not confirm when nothing survives', () => {
-    const a = verify(raw({ claims: [{ text: 'Invented.', source: 'Z1' }] }), { packages: [built()], intent: 'why' });
+    const a = verify(raw({ claims: [{ text: 'Invented.', source: 'Z1' }] }), {
+      packages: [built()],
+      intent: 'why',
+    });
     expect(a.kind).toBe('unverified');
-    expect(verify(parseModel('no json here'), { packages: [built()], intent: 'why' }).kind).toBe('unverified');
+    expect(verify(parseModel('no json here'), { packages: [built()], intent: 'why' }).kind).toBe(
+      'unverified',
+    );
   });
 
   it('a challenge stands as "gap" only with a real source; otherwise it held', () => {
@@ -320,9 +379,53 @@ describe('assistant: answers are checked (spec 6.6.5)', () => {
     const a = buildPackage(input({ label: 'Candidate 01' }), 'A.');
     const b = buildPackage(input({ label: 'Candidate 02' }), 'B.');
     const out = verify(
-      raw({ claims: [{ text: 'A has routing.', source: 'A.R1' }, { text: 'B: Kubernetes is not found in this CV.', source: 'B.R2' }] }),
+      raw({
+        claims: [
+          { text: 'A has routing.', source: 'A.R1' },
+          { text: 'B: Kubernetes is not found in this CV.', source: 'B.R2' },
+        ],
+      }),
       { packages: [a, b], intent: 'compare' },
     );
-    expect(out.claims.map((c) => c.requirement?.candidate)).toEqual(['Candidate 01', 'Candidate 02']);
+    expect(out.claims.map((c) => c.requirement?.candidate)).toEqual([
+      'Candidate 01',
+      'Candidate 02',
+    ]);
+  });
+
+  it('applies the verdict and overstatement checks to Azerbaijani and Russian answers too', () => {
+    const cases: [string, string][] = [
+      ['Bu namizədi rədd edin.', 'headline'],
+      ['Namizədi işə götürün.', 'headline'],
+      ['Это нужно отклонить.', 'headline'],
+    ];
+    for (const [text] of cases) {
+      const a = verify(
+        raw({ headline: text, claims: [{ text: 'Marşrutlaşdırma.', source: 'R1' }] }),
+        {
+          packages: [built()],
+          intent: 'why',
+        },
+      );
+      expect(a.headline).toBe('This is what the stored record shows; the decision is yours.');
+    }
+    for (const text of [
+      'Kubernetes təcrübəsi yoxdur.',
+      'Namizəd bu sahədə heç vaxt işləməyib.',
+      'Кубернетес не имеет опыта.',
+    ]) {
+      const a = verify(raw({ claims: [{ text, source: 'R2' }] }), {
+        packages: [built()],
+        intent: 'why',
+      });
+      expect(a.claims).toHaveLength(0);
+      expect(a.flags).toContain('claim_dropped:overstated');
+    }
+    // A plain Azerbaijani statement from the record is kept.
+    const ok = verify(raw({ claims: [{ text: 'Kubernetes bu CV-də tapılmadı.', source: 'R2' }] }), {
+      packages: [built()],
+      intent: 'why',
+    });
+    expect(ok.claims).toHaveLength(1);
   });
 });

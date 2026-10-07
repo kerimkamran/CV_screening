@@ -5,29 +5,19 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
-import { newId, type ReqStatus, type RequirementClass } from '@cv/shared';
+import { newId } from '@cv/shared';
 import { AiGateway } from '../ai/ai-gateway.service';
 import { AuditService } from '../audit/audit.service';
 import { ENV, type Env } from '../config/env';
 import { DbService } from '../db/db.service';
-import { verifyEvidence } from './evidence';
 import { looksLikeInjection } from './injection';
-import { evaluateKnockout, type KnockoutRule } from './knockout';
-import { ASSESS_SYSTEM, assessUser } from './prompts';
-import { assessmentOutput, parseJsonLoose } from './schemas';
-import { bandFor, computeScore } from './score';
+import { redact } from './report.service';
+import { assessCv, type Req } from './assess';
+import { evaluateKnockout } from './knockout';
+import { bandFor } from './score';
 
 const MAX_ATTEMPTS = 3;
 const SYSTEM_SUBJECT = 'screening-worker';
-
-interface Req {
-  id: string;
-  text: string;
-  classification: RequirementClass;
-  weight: number | null;
-  rule: KnockoutRule | null;
-  confidence: string | null;
-}
 
 /**
  * Runs one screening: deterministic knockout → one model call → verified evidence →
@@ -128,8 +118,9 @@ export class ProcessorService implements OnApplicationBootstrap, OnModuleDestroy
         text: string | null;
         set_id: string;
         erased: boolean;
+        pages: number[] | null;
       }>(
-        `SELECT d.text, s.requirement_set_id AS set_id, d.erased_at IS NOT NULL AS erased
+        `SELECT d.text, d.page_starts AS pages, s.requirement_set_id AS set_id, d.erased_at IS NOT NULL AS erased
            FROM screening s JOIN cv_document d ON d.id = s.document_id WHERE s.id = $1`,
         [screeningId],
       )
@@ -154,58 +145,13 @@ export class ProcessorService implements OnApplicationBootstrap, OnModuleDestroy
     const knockoutTriggered = knockout.some((k) => k.triggered);
     const injection = looksLikeInjection(text);
 
-    // 2. One model call for everything that needs judgement.
-    const judged = reqs.filter((r) => r.classification !== 'disqualifier');
-    const out = await this.ai.complete({
-      system: ASSESS_SYSTEM,
-      user: assessUser(
-        judged.map((r) => ({ id: r.id, text: r.text, classification: r.classification })),
-        text,
-      ),
-      json: true,
-      maxTokens: 4000,
-    });
-    const parsed = assessmentOutput.parse(parseJsonLoose(out.text));
-    const byId = new Map(parsed.assessments.map((a) => [a.id, a]));
-
-    // 3. Verify evidence against the document; apply the status rules.
-    const rows = judged.map((r) => {
-      const a = byId.get(r.id);
-      if (!a) {
-        // The model skipped it. Never guess: ambiguous, flagged for the recruiter.
-        return {
-          req: r,
-          status: 'ambiguous' as ReqStatus,
-          confidence: 'unknown',
-          spans: [],
-          dropped: 0,
-          rationale: 'The model did not assess this criterion.',
-        };
-      }
-      const { spans, dropped } = verifyEvidence(text, a.evidence ?? []);
-      let status: ReqStatus = a.status;
-      let rationale = a.rationale ?? null;
-      let confidence = a.confidence ?? 'unknown';
-      // MATCH-07: a claim without verifiable evidence is not accepted as stated.
-      if ((status === 'met' || status === 'partially_met') && spans.length === 0) {
-        status = 'ambiguous';
-        confidence = 'low';
-        rationale = `${rationale ?? ''} [No quoted evidence could be verified in the CV.]`.trim();
-      } else if (status === 'not_met' && spans.length === 0) {
-        // Unsupported "not met" is really "nothing found" — never the other way round (MATCH-04).
-        status = 'not_found';
-      }
-      return { req: r, status, confidence, spans, dropped, rationale };
-    });
-
-    const { score, breakdown } = computeScore(
-      rows.map((x) => ({
-        requirementId: x.req.id,
-        text: x.req.text,
-        classification: x.req.classification,
-        weight: x.req.weight,
-        status: x.status,
-      })),
+    // 2-3. One model call, verified evidence, deterministic score (see assess.ts). The provider is
+    // shown the CV with identity and personal fields masked; who the candidate is comes from code.
+    const { identity, masked, parsed, out, rows, score, breakdown } = await assessCv(
+      this.ai,
+      reqs,
+      text,
+      s.pages,
     );
     const band = bandFor(score, knockoutTriggered || injection);
     const actorId = await this.actor();
@@ -237,9 +183,9 @@ export class ProcessorService implements OnApplicationBootstrap, OnModuleDestroy
           WHERE id = $1`,
         [
           screeningId,
-          parsed.candidate?.name?.slice(0, 200) ?? null,
-          parsed.candidate?.email?.slice(0, 200) ?? null,
-          parsed.summary?.slice(0, 1200) ?? null,
+          identity.name,
+          identity.email,
+          parsed.summary ? redact(parsed.summary, identity.name).slice(0, 1200) : null,
           JSON.stringify(knockout),
           knockoutTriggered,
           injection,
@@ -257,7 +203,14 @@ export class ProcessorService implements OnApplicationBootstrap, OnModuleDestroy
         action: 'screening.completed',
         entityType: 'screening',
         entityId: screeningId,
-        after: { provider: out.provider, model: out.model, band, knockoutTriggered, injection },
+        after: {
+          provider: out.provider,
+          model: out.model,
+          band,
+          knockoutTriggered,
+          injection,
+          masked: masked.counts,
+        },
       });
     });
   }

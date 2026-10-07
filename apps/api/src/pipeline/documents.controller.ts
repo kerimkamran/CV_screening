@@ -17,7 +17,7 @@ import { newId } from '@cv/shared';
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/multipart';
-import { eraseAssistantForDocument } from '../assistant/assistant-erase';
+import { eraseDocumentData } from './erase-document';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -27,7 +27,7 @@ import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { Inject } from '@nestjs/common';
 import {
-  extractText,
+  extractTextWithPages,
   MAX_TEXT_CHARS,
   MIN_READABLE_CHARS,
   MIME,
@@ -253,9 +253,20 @@ export class DocumentsController {
   async skipped(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
+    // The record is append-only; what is shown is the current picture: each file once (latest
+    // reason), and not a file that was uploaded again later and taken in.
     const { rows } = await this.db.query<{ filename: string; reason: string; at: Date }>(
-      `SELECT filename, reason, skipped_at AS at FROM intake_skip
-        WHERE vacancy_id = $1 ORDER BY skipped_at, id LIMIT 1000`,
+      `SELECT * FROM (
+         SELECT DISTINCT ON (s.filename) s.filename, s.reason, s.skipped_at AS at, s.id
+           FROM intake_skip s
+          WHERE s.vacancy_id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM cv_document d
+               WHERE d.vacancy_id = s.vacancy_id
+                 AND d.filename = regexp_replace(s.filename, '^.* › ', '')
+                 AND d.uploaded_at > s.skipped_at)
+          ORDER BY s.filename, s.skipped_at DESC, s.id DESC) x
+        ORDER BY at, id LIMIT 1000`,
       [vid],
     );
     return {
@@ -294,10 +305,11 @@ export class DocumentsController {
     }
 
     let text = '';
+    let pageStarts: number[] | null = null;
     let parseStatus: 'parsed' | 'empty' | 'failed' = 'parsed';
     let parseError: string | null = null;
     try {
-      text = await extractText(buf, kind);
+      ({ text, pageStarts } = await extractTextWithPages(buf, kind));
       if (text.length < MIN_READABLE_CHARS) parseStatus = 'empty'; // e.g. a scanned PDF: no OCR in the MVP
     } catch (e) {
       this.log.warn(`parse failed (${kind}): ${(e as Error).message}`);
@@ -305,7 +317,10 @@ export class DocumentsController {
       parseError = 'The file could not be read';
     }
     const truncated = text.length > MAX_TEXT_CHARS;
-    if (truncated) text = text.slice(0, MAX_TEXT_CHARS);
+    if (truncated) {
+      text = text.slice(0, MAX_TEXT_CHARS);
+      pageStarts = pageStarts?.filter((o) => o < text.length) ?? null;
+    }
     const readable = parseStatus === 'parsed';
 
     const docId = newId();
@@ -313,8 +328,8 @@ export class DocumentsController {
       await tx.query(
         `INSERT INTO cv_document
            (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
-            parse_status, parse_error, uploaded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            parse_status, parse_error, uploaded_by, page_starts)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           docId,
           vid,
@@ -328,6 +343,7 @@ export class DocumentsController {
           parseStatus,
           parseError,
           p.userId,
+          readable && pageStarts ? JSON.stringify(pageStarts) : null,
         ],
       );
       await tx.query(
@@ -552,29 +568,8 @@ export class DocumentsController {
     const did = parse(ulidSchema, id);
     await this.scope.assertDocument(p, did);
     return this.db.withTx(async (tx) => {
-      const r = await tx.query(
-        `UPDATE cv_document SET content = NULL, text = NULL, erased_at = now(), erased_by = $2
-          WHERE id = $1 AND erased_at IS NULL`,
-        [did, p.userId],
-      );
-      if (!r.rowCount) throw new ConflictException('Already erased');
-      await tx.query(
-        `DELETE FROM requirement_assessment WHERE screening_id IN (SELECT id FROM screening WHERE document_id = $1)`,
-        [did],
-      );
-      await tx.query(
-        `UPDATE screening SET candidate_name = NULL, candidate_email = NULL, summary = NULL,
-                state = CASE WHEN state IN ('queued','processing') THEN 'manual'::screening_state ELSE state END
-          WHERE document_id = $1`,
-        [did],
-      );
-      // Shared reports must not keep what was erased (spec 6.5).
-      const vac = await tx.query<{ vacancy_id: string }>(
-        `SELECT vacancy_id FROM cv_document WHERE id = $1`,
-        [did],
-      );
-      await this.reports.scrubDocument(tx, vac.rows[0]!.vacancy_id, did);
-      await eraseAssistantForDocument(tx, did);
+      if (!(await eraseDocumentData(tx, this.reports, did, p.userId)))
+        throw new ConflictException('Already erased');
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -596,7 +591,17 @@ export class DocumentsController {
     const vid = parse(ulidSchema, id);
     const vac = await this.scope.assert(p, vid);
     const rows = await this.candidatesSvc.rows(vid);
-    const buf = await this.xlsx.build(vac.title, vid, rows, p);
+    const revealed = new Set(await this.candidatesSvc.revealedBy(vid, p.userId));
+    const shown = new Set(
+      rows
+        .filter(
+          (r) =>
+            !r.erased &&
+            ((r.screeningId && revealed.has(r.screeningId)) || r.decision?.outcome === 'shortlist'),
+        )
+        .map((r) => r.documentId),
+    );
+    const buf = await this.xlsx.build(vac.title, vid, rows, p, shown);
     await this.db.withTx((tx) =>
       this.audit.record(tx, {
         actorId: p.userId,

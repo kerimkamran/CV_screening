@@ -9,12 +9,16 @@ import {
   type Me,
   type Session,
 } from './api';
-import { Appearance } from './Appearance';
+import { Appearance, LanguageSwitch } from './Appearance';
+import { applyLang, tr, useT, type Lang } from './i18n';
 import { AiSettings, AssistantSettings, Users } from './pages/Admin';
 import { rememberUser } from './assistant';
 import { Candidate } from './pages/Candidate';
 import { Home } from './pages/Home';
+import { Monitoring } from './pages/Monitoring';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
+import { Retention } from './pages/Retention';
+import { Security } from './pages/Security';
 import { SharedList, SharedReport } from './pages/SharedReport';
 import { Vacancies } from './pages/Vacancies';
 import { Vacancy, type Tab } from './pages/Vacancy';
@@ -31,8 +35,34 @@ const HEALTH_LABEL: Record<ApiHealth['state'], string> = {
   up: 'Service ready',
   down: 'Service unavailable',
 };
+const isLang = (v: unknown): v is Lang => v === 'en' || v === 'az';
+
+function AdminNav({ route }: { route: string }) {
+  const t = useT();
+  const tabs: [string, string][] = [
+    ['/admin', 'Users'],
+    ['/admin/ai', 'AI models'],
+    ['/admin/assistant', 'Assistant'],
+    ['/admin/monitoring', 'Monitoring'],
+    ['/admin/retention', 'Data retention'],
+  ];
+  return (
+    <nav className="flex flex-wrap gap-2 text-sm" aria-label={t('Administration')}>
+      {tabs.map(([href, label]) => (
+        <a
+          key={href}
+          className={`rounded px-3 py-1.5 ${route === href ? 'bg-accent text-on-accent' : 'bg-card border'}`}
+          href={`#${href}`}
+        >
+          {t(label)}
+        </a>
+      ))}
+    </nav>
+  );
+}
 
 export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealth> }) {
+  const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [booting, setBooting] = useState(true);
   const [health, setHealth] = useState<ApiHealth>({ state: 'checking' });
@@ -54,6 +84,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       rememberUser(m.userId);
       applyBackground(isBackground(m.background) ? m.background : null);
       setFocus(m.focusOnSkills === true);
+      // A saved language follows the person across devices; none saved follows the browser.
+      if (isLang(m.language)) applyLang(m.language);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status === 401) session.set(null);
     } finally {
@@ -64,7 +96,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   useEffect(() => {
     void loadMe();
     void check().then(setHealth);
-    return subscribeUnauthorized(() => signOut('Your session ended. Please sign in again.'));
+    return subscribeUnauthorized(() => signOut(tr('Your session ended. Please sign in again.')));
   }, [check, loadMe, signOut]);
 
   // Idle sign-out and keep-alive while the user is active.
@@ -76,7 +108,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     events.forEach((e) => window.addEventListener(e, touch));
     const t = setInterval(() => {
       if (Date.now() - lastActive.current > IDLE_MS)
-        return signOut('You were signed out after 30 minutes of inactivity.');
+        return signOut(tr('You were signed out after 30 minutes of inactivity.'));
       void api.post<Session>('/auth/refresh').then(
         (s) => session.set(s.token),
         () => undefined,
@@ -90,6 +122,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   const isTa = !!me?.roles.some((r) => r === 'TA_PARTNER' || r === 'TA_LEAD');
   const isAdmin = !!me?.roles.includes('ADMIN');
+  const isGov = !!me?.roles.includes('GOVERNANCE');
 
   // An invitation link works for anyone, signed in or not.
   const setupToken = /^\/set-password\?token=([\w-]{20,200})$/.exec(route)?.[1];
@@ -106,7 +139,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         }}
       />
     );
-  } else if (booting) body = <p className="text-sm text-ink-3">Loading…</p>;
+  } else if (booting) body = <p className="text-sm text-ink-3">{t('Loading…')}</p>;
   else if (!me) {
     body = (
       <>
@@ -129,52 +162,49 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         }}
       />
     );
+  else if (route === '/security') body = <Security />;
   else if (/^\/reports\/[0-9A-Z]{26}$/.test(route))
     body = <SharedReport id={route.split('/')[2]!} key={route} />;
   else if (route === '/reports') body = <SharedList />;
+  else if (route === '/admin/monitoring' && (isAdmin || isGov))
+    body = isAdmin ? (
+      <div className="space-y-4">
+        <AdminNav route={route} />
+        <Monitoring canRun />
+      </div>
+    ) : (
+      <Monitoring canRun={false} />
+    );
   else if (route.startsWith('/admin')) {
     body = isAdmin ? (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Administration</h1>
-        <nav className="flex gap-2 text-sm">
-          <a
-            className={`rounded px-3 py-1.5 ${route === '/admin' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
-            href="#/admin"
-          >
-            Users
-          </a>
-          <a
-            className={`rounded px-3 py-1.5 ${route === '/admin/ai' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
-            href="#/admin/ai"
-          >
-            AI models
-          </a>
-          <a
-            className={`rounded px-3 py-1.5 ${route === '/admin/assistant' ? 'bg-accent text-on-accent' : 'bg-card border'}`}
-            href="#/admin/assistant"
-          >
-            Assistant
-          </a>
-        </nav>
+        <h1 className="text-xl font-semibold">{t('Administration')}</h1>
+        <AdminNav route={route} />
         {route === '/admin/ai' ? (
           <AiSettings />
         ) : route === '/admin/assistant' ? (
           <AssistantSettings />
+        ) : route === '/admin/retention' ? (
+          <Retention />
         ) : (
           <Users meId={me.userId} />
         )}
       </div>
     ) : (
-      <Notice kind="error">Administrators only.</Notice>
+      <Notice kind="error">{t('Administrators only.')}</Notice>
     );
+  } else if (!isTa && isGov && !isAdmin) {
+    // Governance reviews the fairness figures and the audit trail; it does not see candidates.
+    body = <Monitoring canRun={false} />;
   } else if (!isTa && !me.roles.length) {
     // An account with no role can open the reports shared with it, and nothing else (spec 6.5).
     body = <SharedList />;
   } else if (!isTa && isAdmin) {
     body = (
       <Notice kind="info">
-        Administrators manage users and AI models under Admin. Candidate data is available only to
-        recruiters.
+        {t(
+          'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+        )}
       </Notice>
     );
   } else {
@@ -198,28 +228,35 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <a href="#/" className="font-semibold text-link">
-            Azerconnect CV Screening
+            {t('Azerconnect CV Screening')}
           </a>
+          {!me && <LanguageSwitch signedIn={false} />}
           {me && !me.mustChangePassword && (
-            <nav className="flex flex-wrap items-center gap-4 text-sm" aria-label="Main">
+            <nav className="flex flex-wrap items-center gap-4 text-sm" aria-label={t('Main')}>
               {isTa && (
                 <>
                   <a href="#/" className="hover:underline">
-                    New screening
+                    {t('New screening')}
                   </a>
                   <a href="#/vacancies" className="hover:underline">
-                    Past scans
+                    {t('Past scans')}
                   </a>
                 </>
               )}
               <a href="#/reports" className="hover:underline">
-                Shared with me
+                {t('Shared with me')}
               </a>
-              {isAdmin && (
-                <a href="#/admin" className="hover:underline">
-                  Admin
+              {isGov && !isAdmin && (
+                <a href="#/admin/monitoring" className="hover:underline">
+                  {t('Monitoring')}
                 </a>
               )}
+              {isAdmin && (
+                <a href="#/admin" className="hover:underline">
+                  {t('Admin')}
+                </a>
+              )}
+              <LanguageSwitch signedIn />
               <Appearance
                 value={isBackground(me.background) ? me.background : null}
                 onChange={(background) => setMe((m) => (m ? { ...m, background } : m))}
@@ -230,11 +267,14 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
                 }}
               />
               <a href="#/password" className="hover:underline">
-                Password
+                {t('Password')}
+              </a>
+              <a href="#/security" className="hover:underline">
+                {t('Security')}
               </a>
               <span className="text-ink-2">{me.displayName ?? me.email}</span>
               <button className="text-link hover:underline" onClick={() => signOut()}>
-                Sign out
+                {t('Sign out')}
               </button>
             </nav>
           )}
@@ -243,11 +283,12 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-ink-3">
         <p>
-          AI-assisted screening: scores and rankings are recommendations. Every decision about a
-          candidate is made by a person and recorded under their name.
+          {t(
+            'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.',
+          )}
         </p>
         <p role="status" aria-live="polite" className="mt-1">
-          {HEALTH_LABEL[health.state]}
+          {t(HEALTH_LABEL[health.state])}
         </p>
       </footer>
     </div>

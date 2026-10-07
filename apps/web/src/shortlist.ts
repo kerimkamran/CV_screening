@@ -1,4 +1,5 @@
 import type { CandidateRow } from './api';
+import { tr } from './i18n';
 import { BAND_LABEL, matchBand, mustHaveTally } from './results-logic';
 
 /** Recruiter marks (design spec 6.2.4). Kept apart from the AI band and never change it. */
@@ -9,7 +10,7 @@ export const MARKS = [
 ] as const;
 export type MarkKey = (typeof MARKS)[number]['key'];
 
-export const markLabel = (k: string) => MARKS.find((m) => m.key === k)?.done ?? k;
+export const markLabel = (k: string) => tr(MARKS.find((m) => m.key === k)?.done ?? k);
 
 export interface ShortlistEntry {
   name: string;
@@ -29,8 +30,8 @@ export function shortlistEntries(
       const t = mustHaveTally(r.score?.breakdown);
       return {
         name: nameOf(r),
-        band: BAND_LABEL[matchBand(r)],
-        mustHaves: `${t.found} of ${t.total}`,
+        band: tr(BAND_LABEL[matchBand(r)]),
+        mustHaves: tr('{found} of {total}', { found: t.found, total: t.total }),
         note: r.decision!.reason,
       };
     });
@@ -38,7 +39,15 @@ export function shortlistEntries(
 
 export function shortlistText(entries: ShortlistEntry[]): string {
   return entries
-    .map((e, i) => `${i + 1}. ${e.name} (${e.band}, must-haves found ${e.mustHaves}) ${e.note}`)
+    .map((e, i) =>
+      tr('{i}. {name} ({band}, must-haves found {found}) {note}', {
+        i: i + 1,
+        name: e.name,
+        band: e.band,
+        found: e.mustHaves,
+        note: e.note,
+      }),
+    )
     .join('\n');
 }
 
@@ -48,7 +57,9 @@ export function shortlistCsv(entries: ShortlistEntry[]): string {
     const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
     return `"${safe.replace(/"/g, '""')}"`;
   };
-  const head = ['Candidate', 'Match', 'Must-haves found', 'My note'].map(cell).join(',');
+  const head = [tr('Candidate'), tr('Match'), tr('Must-haves found'), tr('My note')]
+    .map(cell)
+    .join(',');
   const rows = entries.map((e) => [e.name, e.band, e.mustHaves, e.note].map(cell).join(','));
   return [head, ...rows].join('\r\n');
 }

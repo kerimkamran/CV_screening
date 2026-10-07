@@ -145,6 +145,29 @@ export type Kind = keyof typeof KIND_NAME;
  * so the page that shows it needs no other call, and what a viewer sees cannot drift from what the
  * recruiter chose to share.
  */
+/**
+ * The experience asked for, as one short line ("3–5 years", "5+ years"), read from the wording of
+ * the requirements. Null when no requirement states a number of years: nothing is guessed.
+ */
+export function experienceLine(texts: string[]): string | null {
+  const unit = '(?:years?|yrs?|il|illik|года?|лет)';
+  const range = new RegExp(`(\\d{1,2})\\s*(?:to|-|–|—|and)\\s*(\\d{1,2})\\s*\\+?\\s*${unit}`, 'i');
+  const plus = new RegExp(
+    `(?:(\\d{1,2})\\s*\\+\\s*${unit}|(\\d{1,2})\\s*(?:or more|and more|or above)\\s*${unit}|(?:at least|minimum(?: of)?|over|more than)\\s*(\\d{1,2})\\s*${unit})`,
+    'i',
+  );
+  for (const t of texts) {
+    const m = range.exec(t);
+    if (m && Number(m[1]) < Number(m[2])) return `${m[1]}–${m[2]} years`;
+  }
+  for (const t of texts) {
+    const m = plus.exec(t);
+    const n = m && (m[1] ?? m[2] ?? m[3]);
+    if (n) return `${n}+ years`;
+  }
+  return null;
+}
+
 export interface SnapshotChip {
   text: string;
   kind: 'found' | 'partly' | 'missing';
@@ -166,7 +189,8 @@ export interface SnapshotCandidate {
   /** Only the top candidates carry a reason and quotes. */
   expanded: boolean;
   summary: string | null;
-  quotes: { requirement: string; quote: string }[];
+  /** `page` is set for PDFs read after page numbers were kept; absent otherwise. */
+  quotes: { requirement: string; quote: string; page?: number | null }[];
   missing: string | null;
 }
 export interface SharedReportSnapshot {
@@ -178,7 +202,7 @@ export interface SharedReportSnapshot {
   includeNames: boolean;
   includeQuotes: boolean;
   counts: ReportCounts;
-  role: { must: string[]; nice: string[]; ignored: string[] };
+  role: { must: string[]; nice: string[]; ignored: string[]; experience?: string | null };
   method: {
     criteriaVersion: number | null;
     frozenAt: string | null;
@@ -190,5 +214,14 @@ export interface SharedReportSnapshot {
   expandedCount: number;
   unread: { label: string; reason: string }[];
   changes: { text: string; by: string; at: string }[];
-  decisions: { label: string; outcome: string; by: string; at: string }[];
+  /** `reason` is the reviewer's own words, with the candidate's name taken out unless shown. */
+  decisions: {
+    /** Internal key for scrubbing on erase; never sent to viewers. */
+    documentId?: string;
+    label: string;
+    outcome: string;
+    by: string;
+    at: string;
+    reason?: string;
+  }[];
 }

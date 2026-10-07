@@ -1,11 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, session, type Session } from '../api';
+import { api, ApiError, session, type Session } from '../api';
+import { useT } from '../i18n';
 import { btnPrimary, Card, errMsg, Field, input, Notice } from '../ui';
 
 export function Login({ onSignedIn }: { onSignedIn: () => void }) {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -13,11 +17,18 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     setBusy(true);
     setError('');
     try {
-      const s = await api.post<Session>('/auth/login', { email, password });
+      const s = await api.post<Session>('/auth/login', {
+        email,
+        password,
+        ...(needCode ? { code } : {}),
+      });
       session.set(s.token);
       onSignedIn();
     } catch (err) {
-      setError(errMsg(err));
+      if (err instanceof ApiError && err.code === 'mfa_required') {
+        setNeedCode(true);
+        setError('');
+      } else setError(errMsg(err));
     } finally {
       setBusy(false);
     }
@@ -25,9 +36,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="mx-auto mt-16 max-w-sm">
-      <Card title="Sign in">
+      <Card title={t('Sign in')}>
         <form onSubmit={submit} className="space-y-3">
-          <Field label="Email">
+          <Field label={t('Email')}>
             <input
               className={input}
               type="email"
@@ -37,7 +48,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
-          <Field label="Password">
+          <Field label={t('Password')}>
             <input
               className={input}
               type="password"
@@ -47,12 +58,28 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
               onChange={(e) => setPassword(e.target.value)}
             />
           </Field>
+          {needCode && (
+            <Field
+              label={t('Code from your authenticator app')}
+              hint={t('Six digits. Lost your phone? Use one of your recovery codes instead.')}
+            >
+              <input
+                className={input}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+              />
+            </Field>
+          )}
           {error && <Notice kind="error">{error}</Notice>}
           <button className={`${btnPrimary} w-full`} disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? t('Signing in…') : t('Sign in')}
           </button>
           <p className="text-xs text-ink-3">
-            Accounts are created by your administrator, who sends you an invitation link.
+            {t('Accounts are created by your administrator, who sends you an invitation link.')}
           </p>
         </form>
       </Card>
@@ -61,6 +88,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
 }
 
 export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: () => void }) {
+  const t = useT();
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [again, setAgain] = useState('');
@@ -69,7 +97,7 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (next !== again) return setError('The new passwords do not match');
+    if (next !== again) return setError(t('The new passwords do not match'));
     setBusy(true);
     setError('');
     try {
@@ -88,16 +116,16 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
 
   return (
     <div className="mx-auto mt-12 max-w-sm">
-      <Card title={forced ? 'Choose your own password' : 'Change password'}>
+      <Card title={forced ? t('Choose your own password') : t('Change password')}>
         {forced && (
           <div className="mb-3">
             <Notice kind="info">
-              Your temporary password must be replaced before you continue.
+              {t('Your temporary password must be replaced before you continue.')}
             </Notice>
           </div>
         )}
         <form onSubmit={submit} className="space-y-3">
-          <Field label={forced ? 'Temporary password (from your email)' : 'Current password'}>
+          <Field label={forced ? t('Temporary password (from your email)') : t('Current password')}>
             <input
               className={input}
               type="password"
@@ -107,7 +135,10 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
               onChange={(e) => setCur(e.target.value)}
             />
           </Field>
-          <Field label="New password" hint="At least 12 characters. A short sentence works well.">
+          <Field
+            label={t('New password')}
+            hint={t('At least 12 characters. A short sentence works well.')}
+          >
             <input
               className={input}
               type="password"
@@ -118,7 +149,7 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
               onChange={(e) => setNext(e.target.value)}
             />
           </Field>
-          <Field label="Repeat new password">
+          <Field label={t('Repeat new password')}>
             <input
               className={input}
               type="password"
@@ -130,7 +161,7 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
           </Field>
           {error && <Notice kind="error">{error}</Notice>}
           <button className={`${btnPrimary} w-full`} disabled={busy}>
-            Save password
+            {t('Save password')}
           </button>
         </form>
       </Card>
@@ -140,6 +171,7 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
 
 /** Opened from an invitation link: the user chooses their own password and is signed in. */
 export function SetPassword({ token, onDone }: { token: string; onDone: () => void }) {
+  const t = useT();
   const [who, setWho] = useState<{ email: string; displayName: string } | null>(null);
   const [invalid, setInvalid] = useState('');
   const [next, setNext] = useState('');
@@ -155,7 +187,7 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (next !== again) return setError('The passwords do not match');
+    if (next !== again) return setError(t('The passwords do not match'));
     setBusy(true);
     setError('');
     try {
@@ -171,23 +203,27 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
 
   return (
     <div className="mx-auto mt-12 max-w-sm">
-      <Card title="Choose your password">
+      <Card title={t('Choose your password')}>
         {invalid ? (
           <div className="space-y-3">
             <Notice kind="error">{invalid}</Notice>
             <a className="text-sm text-link hover:underline" href="#/">
-              Go to sign in
+              {t('Go to sign in')}
             </a>
           </div>
         ) : !who ? (
-          <p className="text-sm text-ink-3">Checking your link…</p>
+          <p className="text-sm text-ink-3">{t('Checking your link…')}</p>
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <p className="text-sm">
-              Welcome, {who.displayName}. Choose a password for <strong>{who.email}</strong>.
+              {t('Welcome, {name}. Choose a password for your account:', { name: who.displayName })}{' '}
+              <strong>{who.email}</strong>
             </p>
             <input type="hidden" autoComplete="username" value={who.email} readOnly />
-            <Field label="New password" hint="At least 12 characters. A short sentence works well.">
+            <Field
+              label={t('New password')}
+              hint={t('At least 12 characters. A short sentence works well.')}
+            >
               <input
                 className={input}
                 type="password"
@@ -198,7 +234,7 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
                 onChange={(e) => setNext(e.target.value)}
               />
             </Field>
-            <Field label="Repeat new password">
+            <Field label={t('Repeat new password')}>
               <input
                 className={input}
                 type="password"
@@ -210,7 +246,7 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
             </Field>
             {error && <Notice kind="error">{error}</Notice>}
             <button className={`${btnPrimary} w-full`} disabled={busy}>
-              Save password and sign in
+              {t('Save password and sign in')}
             </button>
           </form>
         )}

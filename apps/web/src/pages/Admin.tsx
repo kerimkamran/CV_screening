@@ -220,6 +220,7 @@ export function Users({ meId }: { meId: string }) {
                         : u.mustChangePassword
                           ? 'Invited'
                           : 'Active'}
+                      {u.mfa && <span className="ml-1 text-xs text-ink-3">· two-step on</span>}
                     </td>
                     <td className="pr-3 text-xs text-ink-3">{when(u.lastSeenAt)}</td>
                     <td className="space-x-2 whitespace-nowrap py-1">
@@ -237,6 +238,15 @@ export function Users({ meId }: { meId: string }) {
                       >
                         Reset password
                       </button>
+                      {u.mfa && (
+                        <button
+                          className={btnSecondary}
+                          title="For someone who lost their phone and recovery codes"
+                          onClick={() => act(() => api.post(`/admin/users/${u.id}/mfa-reset`))}
+                        >
+                          Reset two-step
+                        </button>
+                      )}
                       {u.id !== meId && (
                         <button
                           className={u.status === 'active' ? btnDanger : btnSecondary}
@@ -756,7 +766,12 @@ interface AssistantSettingsData {
   enabled: boolean;
   name: string;
   modelRowId: string | null;
-  features: { challenge: boolean; compare: boolean; interview: boolean; challengeRecruiter: boolean };
+  features: {
+    challenge: boolean;
+    compare: boolean;
+    interview: boolean;
+    challengeRecruiter: boolean;
+  };
   unavailableMessage: string;
   regionAllowed: string;
   dataTerms: 'unknown' | 'no_retention' | 'retained_no_training' | 'retained_may_train';
@@ -795,7 +810,14 @@ export function AssistantSettings() {
   const [msg, setMsg] = useState<Msg | null>(null);
   const [busy, setBusy] = useState(false);
   const [turns, setTurns] = useState<
-    { at: string; user: string | null; label: string | null; flags: string[]; model: string | null; kind: string | null }[]
+    {
+      at: string;
+      user: string | null;
+      label: string | null;
+      flags: string[];
+      model: string | null;
+      kind: string | null;
+    }[]
   >([]);
 
   const load = useCallback(async () => {
@@ -811,7 +833,12 @@ export function AssistantSettings() {
   }, []);
   useEffect(() => void load(), [load]);
 
-  if (!data || !form) return msg ? <Notice kind="error">{msg.text}</Notice> : <p className="text-sm text-ink-3">Loading…</p>;
+  if (!data || !form)
+    return msg ? (
+      <Notice kind="error">{msg.text}</Notice>
+    ) : (
+      <p className="text-sm text-ink-3">Loading…</p>
+    );
   const set = <K extends keyof AssistantSettingsData>(k: K, v: AssistantSettingsData[K]) =>
     setForm((f) => (f ? { ...f, [k]: v } : f));
   const num = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.floor(Number(v) || 0)));
@@ -851,7 +878,8 @@ export function AssistantSettings() {
     }
   }
 
-  const usageLine = (n: number, cap: number | null) => (cap === null ? `${n} (no limit)` : `${n} of ${cap}`);
+  const usageLine = (n: number, cap: number | null) =>
+    cap === null ? `${n} (no limit)` : `${n} of ${cap}`;
   return (
     <form className="space-y-4" onSubmit={save}>
       <Notice kind={data.settings.enabled ? 'ok' : 'info'}>
@@ -859,26 +887,43 @@ export function AssistantSettings() {
           ? `${data.settings.name} is on for recruiters.`
           : `${data.settings.name} is off. Recruiters do not see it. It explains stored matches; it never scores, ranks or decides.`}
       </Notice>
-      {data.warn && <Notice kind="warn">Usage has passed {data.settings.warnPct}% of a limit.</Notice>}
+      {data.warn && (
+        <Notice kind="warn">Usage has passed {data.settings.warnPct}% of a limit.</Notice>
+      )}
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
 
       <Card title="Assistant">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input type="checkbox" checked={form.enabled} onChange={(e) => set('enabled', e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={(e) => set('enabled', e.target.checked)}
+            />
             Turn the assistant on
           </label>
           <Field label="Name (working name, can change any time)">
-            <input className={input} maxLength={30} value={form.name} onChange={(e) => set('name', e.target.value)} />
+            <input
+              className={input}
+              maxLength={30}
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+            />
           </Field>
-          <Field label="Model" hint="Leave on the scoring model, or pick another. A model is only used after a passing test.">
+          <Field
+            label="Model"
+            hint="Leave on the scoring model, or pick another. A model is only used after a passing test."
+          >
             <select
               className={input}
               value={form.modelRowId ?? ''}
               onChange={(e) => set('modelRowId', e.target.value || null)}
             >
               <option value="">
-                Same as scoring{data.activeModel ? ` (${data.activeModel.provider} · ${data.activeModel.model})` : ''}
+                Same as scoring
+                {data.activeModel
+                  ? ` (${data.activeModel.provider} · ${data.activeModel.model})`
+                  : ''}
               </option>
               {data.models.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -888,7 +933,12 @@ export function AssistantSettings() {
             </select>
           </Field>
           <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-            <button type="button" className={btnSecondary} disabled={busy} onClick={() => void test()}>
+            <button
+              type="button"
+              className={btnSecondary}
+              disabled={busy}
+              onClick={() => void test()}
+            >
               Test connection
             </button>
             <span className="text-sm text-ink-3">
@@ -934,7 +984,9 @@ export function AssistantSettings() {
             <select
               className={input}
               value={form.dataTerms}
-              onChange={(e) => set('dataTerms', e.target.value as AssistantSettingsData['dataTerms'])}
+              onChange={(e) =>
+                set('dataTerms', e.target.value as AssistantSettingsData['dataTerms'])
+              }
             >
               {(Object.keys(TERMS_LABEL) as (keyof typeof TERMS_LABEL)[]).map((k) => (
                 <option key={k} value={k}>
@@ -957,7 +1009,8 @@ export function AssistantSettings() {
               I checked these terms with the provider’s own documentation.
               {data.settings.attestedAt && (
                 <span className="block text-xs text-ink-3">
-                  Last confirmed by {data.settings.attestedByName ?? 'an administrator'} · {when(data.settings.attestedAt)}
+                  Last confirmed by {data.settings.attestedByName ?? 'an administrator'} ·{' '}
+                  {when(data.settings.attestedAt)}
                 </span>
               )}
             </span>
@@ -988,13 +1041,15 @@ export function AssistantSettings() {
               className={input}
               inputMode="numeric"
               value={form.warnPct}
-              onChange={(e) => set('warnPct', Math.min(100, Math.max(1, num(e.target.value) ?? 80)))}
+              onChange={(e) =>
+                set('warnPct', Math.min(100, Math.max(1, num(e.target.value) ?? 80)))
+              }
             />
           </Field>
         </div>
         <p className="mt-2 text-sm text-ink-2">
-          Today: {usageLine(data.usage.today, form.dailyCap)} · This month: {usageLine(data.usage.month, form.monthlyCap)}.
-          Only answers a model wrote are counted.
+          Today: {usageLine(data.usage.today, form.dailyCap)} · This month:{' '}
+          {usageLine(data.usage.month, form.monthlyCap)}. Only answers a model wrote are counted.
         </p>
       </Card>
 

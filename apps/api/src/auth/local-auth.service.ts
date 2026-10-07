@@ -16,6 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { RateLimiter } from '../common/rate-limiter';
 import { ENV, type Env } from '../config/env';
 import { DbService } from '../db/db.service';
+import { SettingsCrypto } from '../ai/settings-crypto';
 import { EmailService } from './email.service';
 import { LOCAL_IDP, signSession } from './local-session';
 import {
@@ -26,6 +27,7 @@ import {
   verifyPassword,
 } from './password';
 import type { Principal } from './principal';
+import { verifyTotp } from './totp';
 
 const MAX_FAILURES = 5;
 /** Per-IP brake on top of the per-account lockout, so one address cannot spray many accounts. */
@@ -65,6 +67,7 @@ export class LocalAuthService {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly mail: EmailService,
+    private readonly crypto: SettingsCrypto,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -81,7 +84,12 @@ export class LocalAuthService {
     }));
   }
 
-  async login(emailRaw: string, password: string, ip?: string): Promise<SessionResult> {
+  async login(
+    emailRaw: string,
+    password: string,
+    ip?: string,
+    code?: string,
+  ): Promise<SessionResult> {
     this.assertLocal();
     if (ip && !ipLimiter.take(ip)) {
       throw new HttpException(
@@ -100,9 +108,13 @@ export class LocalAuthService {
         session_version: number;
         failed_attempts: number;
         locked: boolean;
+        totp_secret: string | null;
+        totp_last_step: string | null;
+        recovery_hashes: string[];
       }>(
         `SELECT u.id, u.status, c.password_hash, c.must_change, c.session_version, c.failed_attempts,
-                COALESCE(c.locked_until > now(), false) AS locked
+                COALESCE(c.locked_until > now(), false) AS locked,
+                c.totp_secret, c.totp_last_step, c.recovery_hashes
            FROM app_user u JOIN local_credential c ON c.user_id = u.id
           WHERE u.issuer = $1 AND lower(u.email) = $2
           FOR UPDATE OF c`,
@@ -119,7 +131,25 @@ export class LocalAuthService {
         this.log.warn({ msg: 'login refused: locked or disabled', userId: u.id, ip });
         return { ok: false as const };
       }
-      if (!ok) {
+      // Second step. A missing code is a prompt, not a failure; a wrong one counts like a wrong password.
+      let secondOk = true;
+      let usedStep: number | null = null;
+      let usedRecovery: string | null = null;
+      if (ok && u.totp_secret) {
+        if (!code?.trim()) return { ok: false as const, mfa: true as const };
+        const secret = this.crypto.decrypt(u.totp_secret, `totp:${u.id}`);
+        usedStep = verifyTotp(
+          secret,
+          code,
+          u.totp_last_step === null ? null : Number(u.totp_last_step),
+        );
+        if (usedStep === null) {
+          const h = sha256(code.trim().toLowerCase());
+          usedRecovery = u.recovery_hashes.includes(h) ? h : null;
+        }
+        secondOk = usedStep !== null || usedRecovery !== null;
+      }
+      if (!ok || !secondOk) {
         const failures = u.failed_attempts + 1;
         const lock = failures >= MAX_FAILURES;
         await tx.query(
@@ -139,9 +169,22 @@ export class LocalAuthService {
         return { ok: false as const };
       }
       await tx.query(
-        `UPDATE local_credential SET failed_attempts = 0, locked_until = NULL WHERE user_id = $1`,
-        [u.id],
+        `UPDATE local_credential SET failed_attempts = 0, locked_until = NULL,
+                totp_last_step = COALESCE($2::bigint, totp_last_step),
+                recovery_hashes = CASE WHEN $3::text IS NULL THEN recovery_hashes ELSE array_remove(recovery_hashes, $3::text) END
+          WHERE user_id = $1`,
+        [u.id, usedStep, usedRecovery],
       );
+      if (usedRecovery) {
+        await this.audit.record(tx, {
+          actorId: u.id,
+          actorType: 'human',
+          sourceIp: ip,
+          action: 'auth.mfa_recovery_used',
+          entityType: 'app_user',
+          entityId: u.id,
+        });
+      }
       await this.audit.record(tx, {
         actorId: u.id,
         actorType: 'human',
@@ -152,7 +195,17 @@ export class LocalAuthService {
       });
       return { ok: true as const, mustChange: u.must_change, sv: u.session_version };
     });
-    if (!outcome.ok) throw new UnauthorizedException(BAD_CREDENTIALS);
+    if (!outcome.ok) {
+      if ('mfa' in outcome && outcome.mfa) {
+        throw new UnauthorizedException({
+          message: 'Enter the 6-digit code from your authenticator app',
+          code: 'mfa_required',
+        });
+      }
+      throw new UnauthorizedException(
+        code?.trim() ? 'Invalid email, password or code' : BAD_CREDENTIALS,
+      );
+    }
     return this.session(email, outcome.mustChange, outcome.sv);
   }
 

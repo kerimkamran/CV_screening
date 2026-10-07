@@ -8,6 +8,8 @@ import { DocumentsController } from './documents.controller';
 import { ExportService } from './export.service';
 import { ProcessorService } from './processor.service';
 import { ReportService } from './report.service';
+import { RetentionController } from './retention.controller';
+import { RetentionService } from './retention.service';
 import { ReportsController } from './reports.controller';
 import { ScreeningsController } from './screenings.controller';
 
@@ -19,8 +21,22 @@ import { ScreeningsController } from './screenings.controller';
     ScreeningsController,
     AdjustmentsController,
     ReportsController,
+    RetentionController,
   ],
-  providers: [ProcessorService, ExportService, AdjustmentService, CandidatesService, ReportService],
-  exports: [ProcessorService, AdjustmentService, CandidatesService, ReportService],
+  providers: [
+    ProcessorService,
+    ExportService,
+    AdjustmentService,
+    CandidatesService,
+    ReportService,
+    RetentionService,
+  ],
+  exports: [
+    ProcessorService,
+    AdjustmentService,
+    CandidatesService,
+    ReportService,
+    RetentionService,
+  ],
 })
 export class PipelineModule {}

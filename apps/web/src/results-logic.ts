@@ -1,5 +1,6 @@
 import {
   BAND_LABEL,
+  experienceLine,
   isPending,
   KIND_NAME,
   matchBand,
@@ -12,6 +13,7 @@ import {
   type MatchBand,
   type ReportCounts,
 } from '@cv/shared';
+import { tr } from './i18n';
 
 /**
  * Pure rules for the Results screen (design spec 6.2). The rules for bands, order, pseudonyms and
@@ -20,6 +22,7 @@ import {
  */
 export {
   BAND_LABEL,
+  experienceLine,
   isPending,
   KIND_NAME,
   matchBand,
@@ -118,16 +121,22 @@ export function bandMoves(
   for (const [id, a] of after) {
     const b = before.get(id);
     if (b && b !== a) {
-      const k = `${BAND_LABEL[b]} to ${BAND_LABEL[a]}`;
+      const k = tr('{from} to {to}', { from: tr(BAND_LABEL[b]), to: tr(BAND_LABEL[a]) });
       moves.set(k, (moves.get(k) ?? 0) + 1);
     }
   }
   const moved = [...moves.values()].reduce((x, y) => x + y, 0);
-  if (moved === 0) return { moved, line: 'No candidate changed band. The order may have changed.' };
-  const parts = [...moves].map(([k, n]) => `${n} from ${k}`);
+  if (moved === 0) {
+    return { moved, line: tr('No candidate changed band. The order may have changed.') };
+  }
+  const parts = [...moves].map(([k, n]) => tr('{n} from {move}', { n, move: k }));
+  const list = parts.join(', ');
   return {
     moved,
-    line: `${moved} ${moved === 1 ? 'candidate' : 'candidates'} changed band: ${parts.join(', ')}.`,
+    line:
+      moved === 1
+        ? tr('{n} candidate changed band: {moves}.', { n: moved, moves: list })
+        : tr('{n} candidates changed band: {moves}.', { n: moved, moves: list }),
   };
 }
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import { api, type CandidateRow } from '../api';
 import { MARKS, markLabel, type MarkKey } from '../shortlist';
 import { btnPrimary, btnSecondary, errMsg, Notice } from '../ui';
@@ -6,6 +7,7 @@ import { BAND_LABEL, skillChips, STAR_COLOUR, type MatchBand } from '../results-
 
 export interface Span {
   quote: string;
+  page?: number | null;
 }
 export interface Detail {
   summary: string | null;
@@ -38,6 +40,7 @@ export function CandidateCard(props: {
   assistantName?: string;
   onAsk?: () => void;
 }) {
+  const t = useT();
   const { r, band, name, selected, detail } = props;
   const chips = skillChips(r.score?.breakdown);
   const d = typeof detail === 'object' ? detail : null;
@@ -57,17 +60,17 @@ export function CandidateCard(props: {
         >
           <span
             aria-hidden="true"
-            title={r.score ? `Score ${r.score.value}` : undefined}
+            title={r.score ? t('Score {n}', { n: r.score.value }) : undefined}
             className="inline-block h-10 w-10 shrink-0 rounded-full border-[1.5px] border-edge"
             style={{ background: STAR_COLOUR[band] }}
           />
           <span className="min-w-0">
             <span className="block truncate font-semibold">{name}</span>
             <span className="block text-sm text-ink-2">
-              {BAND_LABEL[band]}
+              {t(BAND_LABEL[band])}
               {r.decision && (
                 <span className="ml-2 rounded-full border border-dashed border-edge px-2 py-0.5 text-xs text-ink">
-                  My mark: {markLabel(r.decision.outcome)}
+                  {t('My mark: {mark}', { mark: markLabel(r.decision.outcome) })}
                 </span>
               )}
             </span>
@@ -75,11 +78,11 @@ export function CandidateCard(props: {
         </button>
         {props.isRevealed ? (
           <button className="text-sm text-link hover:underline" onClick={props.onHide}>
-            Hide name
+            {t('Hide name')}
           </button>
         ) : (
           <button className="text-sm text-link hover:underline" onClick={props.onReveal}>
-            Reveal name
+            {t('Reveal name')}
           </button>
         )}
       </div>
@@ -88,17 +91,20 @@ export function CandidateCard(props: {
         <div className="mt-3 space-y-3 border-t border-line pt-3">
           {r.score && (
             <p className="text-sm text-ink-3">
-              Score {r.score.value} of 100. A sorting aid, not a decision.
+              {t('Score {n} of 100. A sorting aid, not a decision.', { n: r.score.value })}
             </p>
           )}
           {chips.length > 0 && (
-            <ul className="flex flex-wrap gap-2" aria-label="Requirements">
+            <ul className="flex flex-wrap gap-2" aria-label={t('Requirements')}>
               {chips.map((c) => (
                 <li key={c.requirementId}>
                   <button
                     type="button"
                     aria-pressed={props.proof === c.requirementId}
-                    aria-label={`${c.text}: ${KIND_LABEL[c.kind]}. Show the proof`}
+                    aria-label={t('{text}: {kind}. Show the proof', {
+                      text: c.text,
+                      kind: t(KIND_LABEL[c.kind]),
+                    })}
                     onClick={() =>
                       props.onProof(props.proof === c.requirementId ? null : c.requirementId)
                     }
@@ -117,36 +123,43 @@ export function CandidateCard(props: {
               ))}
             </ul>
           )}
-          {detail === 'loading' && <p className="text-sm text-ink-3">Loading the reasons…</p>}
+          {detail === 'loading' && (
+            <p className="text-sm text-ink-3">{t('Loading the reasons…')}</p>
+          )}
           {detail === 'error' && (
-            <p className="text-sm text-warn-text">The reasons could not be loaded.</p>
+            <p className="text-sm text-warn-text">{t('The reasons could not be loaded.')}</p>
           )}
           {d?.summary && (
             <p className="text-sm">
-              <span className="font-medium">Why </span>
+              <span className="font-medium">{t('Why')} </span>
               {d.summary}
             </p>
           )}
           {props.proof && openChip && (
             <div
               role="region"
-              aria-label={`Proof for ${openChip.text}`}
+              aria-label={t('Proof for {text}', { text: openChip.text })}
               className="rounded-md border border-line bg-card p-3 text-sm"
             >
               <p className="font-medium">
-                {openChip.text}: {KIND_LABEL[openChip.kind]}
+                {openChip.text}: {t(KIND_LABEL[openChip.kind])}
               </p>
               {open?.evidence && open.evidence.length > 0 ? (
                 open.evidence.map((e, i) => (
                   <blockquote key={i} className="mt-2 border-l-4 border-accent pl-3 text-ink-2">
                     {e.quote}
+                    {e.page ? (
+                      <span className="ml-2 text-xs text-ink-3">
+                        {t('page {n}', { n: e.page })}
+                      </span>
+                    ) : null}
                   </blockquote>
                 ))
               ) : (
                 <p className="mt-1 text-ink-2">
                   {openChip.kind === 'missing'
-                    ? `Not found in this CV. Searched for: ${openChip.text}.`
-                    : 'No quote was kept for this requirement.'}
+                    ? t('Not found in this CV. Searched for: {text}.', { text: openChip.text })
+                    : t('No quote was kept for this requirement.')}
                 </p>
               )}
               {open?.rationale && <p className="mt-2 text-ink-3">{open.rationale}</p>}
@@ -161,13 +174,13 @@ export function CandidateCard(props: {
           )}
           {props.assistantName && props.onAsk && r.screeningId && band !== 'human' && (
             <button type="button" className={btnSecondary} onClick={props.onAsk}>
-              Ask {props.assistantName} about this candidate
+              {t('Ask {name} about this candidate', { name: props.assistantName })}
             </button>
           )}
           <p className="text-sm">
             {r.screeningId && (
               <a className="text-link hover:underline" href={`#/screenings/${r.screeningId}`}>
-                Open the full review and record a decision
+                {t('Open the full review and record a decision')}
               </a>
             )}
           </p>
@@ -191,6 +204,7 @@ export function MarkControls({
   screeningId: string;
   onMarked: () => void;
 }) {
+  const t = useT();
   const [pick, setPick] = useState<MarkKey | null>(null);
   const [note, setNote] = useState('');
   const [reviewed, setReviewed] = useState(false);
@@ -222,13 +236,15 @@ export function MarkControls({
 
   return (
     <fieldset className="rounded-md border border-dashed border-edge p-3">
-      <legend className="px-1 text-sm font-medium">My mark (separate from the AI match)</legend>
+      <legend className="px-1 text-sm font-medium">
+        {t('My mark (separate from the AI match)')}
+      </legend>
       {current && (
         <p className="mb-2 text-sm text-ink-2">
-          Now: <strong>{markLabel(current.outcome)}</strong>. {current.reason}
+          {t('Now:')} <strong>{markLabel(current.outcome)}</strong>. {current.reason}
         </p>
       )}
-      <div role="group" aria-label="Choose a mark" className="flex flex-wrap gap-2">
+      <div role="group" aria-label={t('Choose a mark')} className="flex flex-wrap gap-2">
         {MARKS.map((m) => (
           <button
             key={m.key}
@@ -240,20 +256,20 @@ export function MarkControls({
             }`}
           >
             <span aria-hidden="true">{pick === m.key ? '● ' : '○ '}</span>
-            {m.label}
+            {t(m.label)}
           </button>
         ))}
       </div>
       {pick && (
         <div className="mt-3 space-y-2">
           <label className="block text-sm">
-            <span className="font-medium">One line, in your words</span>
+            <span className="font-medium">{t('One line, in your words')}</span>
             <input
               className="mt-1 w-full rounded border border-edge bg-field px-2 py-1.5"
               value={note}
               maxLength={300}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Why? At least 10 characters"
+              placeholder={t('Why? At least 10 characters')}
             />
           </label>
           {pick === 'reject' && (
@@ -265,12 +281,14 @@ export function MarkControls({
                 className="mt-1"
               />
               <span>
-                I looked at the evidence, not only the band. "Not now" never hides this person.
+                {t(
+                  'I looked at the evidence, not only the band. "Not now" never hides this person.',
+                )}
               </span>
             </label>
           )}
           <button className={btnPrimary} disabled={!ready || busy} onClick={() => void save()}>
-            Save my mark
+            {t('Save my mark')}
           </button>
         </div>
       )}

@@ -7,6 +7,7 @@ import {
   type Requirement,
 } from '../api';
 import { useFocus } from '../focus';
+import { tr, useT } from '../i18n';
 import { pseudonyms } from '../results-logic';
 import { Report } from './Report';
 import { Results } from './Results';
@@ -41,6 +42,7 @@ const TAB_LABEL: Record<Tab, string> = {
 };
 
 export function Vacancy({ id, initialTab = 'results' }: { id: string; initialTab?: Tab }) {
+  const t = useT();
   const [v, setV] = useState<V | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState('');
@@ -51,12 +53,12 @@ export function Vacancy({ id, initialTab = 'results' }: { id: string; initialTab
   useEffect(() => void reload(), [reload]);
 
   if (error) return <Notice kind="error">{error}</Notice>;
-  if (!v) return <p className="text-sm text-ink-3">Loading…</p>;
+  if (!v) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
   return (
     <div className="space-y-4">
       <div>
         <a href="#/vacancies" className="text-sm text-link hover:underline">
-          ← Past scans
+          {t('← Past scans')}
         </a>
         <h1 className="text-xl font-semibold">{v.title}</h1>
         <p className="text-sm text-ink-3">
@@ -64,15 +66,15 @@ export function Vacancy({ id, initialTab = 'results' }: { id: string; initialTab
         </p>
       </div>
       <div role="tablist" className="flex gap-1 border-b">
-        {(['results', 'report', 'candidates', 'criteria'] as Tab[]).map((t) => (
+        {(['results', 'report', 'candidates', 'criteria'] as Tab[]).map((k) => (
           <button
-            key={t}
+            key={k}
             role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
-            {TAB_LABEL[t]}
+            {t(TAB_LABEL[k])}
           </button>
         ))}
       </div>
@@ -106,6 +108,7 @@ const blank = (): Requirement => ({
 });
 
 function CriteriaTab({ id }: { id: string }) {
+  const t = useT();
   const [c, setC] = useState<Criteria | null>(null);
   const [rows, setRows] = useState<Requirement[]>([]);
   const [jd, setJd] = useState('');
@@ -167,18 +170,19 @@ function CriteriaTab({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <Notice kind="info">
-        The AI proposes criteria from the job description. <strong>You decide</strong>: edit, add or
-        remove anything, then freeze. Frozen criteria cannot change, so every score can be traced to
-        exactly what was used.
+        {t('The AI proposes criteria from the job description.')} <strong>{t('You decide')}</strong>
+        {t(
+          ': edit, add or remove anything, then freeze. Frozen criteria cannot change, so every score can be traced to exactly what was used.',
+        )}
       </Notice>
       {error && <Notice kind="error">{error}</Notice>}
       {ok && <Notice kind="ok">{ok}</Notice>}
 
       <Card
-        title="Job description"
+        title={t('Job description')}
         actions={
           <button className={btnSecondary} onClick={() => setEditJd((e) => !e)}>
-            {editJd ? 'Close' : 'Edit text'}
+            {editJd ? t('Close') : t('Edit text')}
           </button>
         }
       >
@@ -196,11 +200,11 @@ function CriteriaTab({ id }: { id: string }) {
                 run('jd', async () => {
                   await api.put(`/vacancies/${id}/jd`, { jdText: jd });
                   setEditJd(false);
-                  setOk('Saved as a new version. Extract criteria again to refresh the draft.');
+                  setOk(t('Saved as a new version. Extract criteria again to refresh the draft.'));
                 })
               }
             >
-              Save new version
+              {t('Save new version')}
             </button>
           </div>
         ) : (
@@ -211,8 +215,10 @@ function CriteriaTab({ id }: { id: string }) {
       <Card
         title={
           c?.current
-            ? `Criteria · version ${c.current.version} · ${frozen ? 'frozen' : 'draft'}`
-            : 'Criteria'
+            ? frozen
+              ? t('Criteria · version {n} · frozen', { n: c.current.version })
+              : t('Criteria · version {n} · draft', { n: c.current.version })
+            : t('Criteria')
         }
         actions={
           <div className="flex flex-wrap gap-2">
@@ -222,7 +228,7 @@ function CriteriaTab({ id }: { id: string }) {
                 disabled={
                   !!busy ||
                   (rows.length > 0 &&
-                    !window.confirm('Replace the current draft with new AI suggestions?'))
+                    !window.confirm(t('Replace the current draft with new AI suggestions?')))
                 }
                 onClick={() =>
                   run('extract', async () =>
@@ -230,7 +236,7 @@ function CriteriaTab({ id }: { id: string }) {
                   )
                 }
               >
-                {busy === 'extract' ? 'Extracting…' : 'Extract with AI'}
+                {busy === 'extract' ? t('Extracting…') : t('Extract with AI')}
               </button>
             )}
             {frozen && (
@@ -243,7 +249,7 @@ function CriteriaTab({ id }: { id: string }) {
                   )
                 }
               >
-                Create new version to edit
+                {t('Create new version to edit')}
               </button>
             )}
           </div>
@@ -251,14 +257,14 @@ function CriteriaTab({ id }: { id: string }) {
       >
         {rows.length === 0 && !frozen && (
           <p className="text-sm text-ink-3">
-            No criteria yet. Extract them with AI or add your own.
+            {t('No criteria yet. Extract them with AI or add your own.')}
           </p>
         )}
         <div className="space-y-3">
           {rows.map((r, i) => (
             <div key={r.id ?? i} className="rounded-md border border-line p-3">
               <div className="grid gap-2 sm:grid-cols-[1fr_14rem_6rem_auto]">
-                <Field label="Criterion">
+                <Field label={t('Criterion')}>
                   <input
                     className={input}
                     disabled={frozen}
@@ -266,7 +272,7 @@ function CriteriaTab({ id }: { id: string }) {
                     onChange={(e) => edit(i, { text: e.target.value })}
                   />
                 </Field>
-                <Field label="Type">
+                <Field label={t('Type')}>
                   <select
                     className={input}
                     disabled={frozen}
@@ -275,12 +281,12 @@ function CriteriaTab({ id }: { id: string }) {
                   >
                     {(Object.keys(CLASS_LABEL) as Classification[]).map((k) => (
                       <option key={k} value={k}>
-                        {CLASS_LABEL[k]}
+                        {t(CLASS_LABEL[k])}
                       </option>
                     ))}
                   </select>
                 </Field>
-                <Field label="Weight">
+                <Field label={t('Weight')}>
                   <input
                     className={input}
                     type="number"
@@ -304,16 +310,16 @@ function CriteriaTab({ id }: { id: string }) {
                         setRows((rs) => rs.filter((_, j) => j !== i)),
                         setDirty(true)
                       )}
-                      aria-label={`Remove criterion ${i + 1}`}
+                      aria-label={t('Remove criterion {n}', { n: i + 1 })}
                     >
-                      Remove
+                      {t('Remove')}
                     </button>
                   </div>
                 )}
               </div>
               {r.classification === 'disqualifier' && r.rule && (
                 <div className="mt-2 grid gap-2 sm:grid-cols-[14rem_1fr]">
-                  <Field label="Rule">
+                  <Field label={t('Rule')}>
                     <select
                       className={input}
                       disabled={frozen}
@@ -325,16 +331,18 @@ function CriteriaTab({ id }: { id: string }) {
                       }
                     >
                       <option value="must_contain_any">
-                        Flag if the CV contains NONE of these words
+                        {t('Flag if the CV contains NONE of these words')}
                       </option>
                       <option value="must_not_contain_any">
-                        Flag if the CV contains ANY of these words
+                        {t('Flag if the CV contains ANY of these words')}
                       </option>
                     </select>
                   </Field>
                   <Field
-                    label="Words (comma-separated)"
-                    hint="Matched as whole words, ignoring case. Include likely synonyms and languages. A match only sends the CV to human review; nobody is rejected automatically."
+                    label={t('Words (comma-separated)')}
+                    hint={t(
+                      'Matched as whole words, ignoring case. Include likely synonyms and languages. A match only sends the CV to human review; nobody is rejected automatically.',
+                    )}
                   >
                     <input
                       className={input}
@@ -346,7 +354,7 @@ function CriteriaTab({ id }: { id: string }) {
                             ...r.rule!,
                             terms: e.target.value
                               .split(',')
-                              .map((t) => t.trim())
+                              .map((w) => w.trim())
                               .filter(Boolean),
                           },
                         })
@@ -357,8 +365,9 @@ function CriteriaTab({ id }: { id: string }) {
               )}
               {(r.confidence === 'low' || r.confidence === 'medium') && !dirty && (
                 <p className="mt-1 text-xs text-warn-text">
-                  The AI was {r.confidence === 'low' ? 'unsure' : 'moderately sure'} about this one.
-                  Please check it.
+                  {r.confidence === 'low'
+                    ? t('The AI was unsure about this one. Please check it.')
+                    : t('The AI was moderately sure about this one. Please check it.')}
                 </p>
               )}
             </div>
@@ -370,7 +379,7 @@ function CriteriaTab({ id }: { id: string }) {
               className={btnSecondary}
               onClick={() => (setRows((rs) => [...rs, blank()]), setDirty(true))}
             >
-              Add criterion
+              {t('Add criterion')}
             </button>
             <button
               className={btnSecondary}
@@ -380,12 +389,12 @@ function CriteriaTab({ id }: { id: string }) {
                   'save',
                   async () => (
                     apply(await api.put<Criteria>(`/vacancies/${id}/criteria`, payload())),
-                    setOk('Draft saved.')
+                    setOk(t('Draft saved.'))
                   ),
                 )
               }
             >
-              Save draft
+              {t('Save draft')}
             </button>
             <button
               className={btnPrimary}
@@ -394,24 +403,27 @@ function CriteriaTab({ id }: { id: string }) {
                 run('freeze', async () => {
                   if (
                     !window.confirm(
-                      'Freeze these criteria? They cannot be edited afterwards (you can create a new version).',
+                      t(
+                        'Freeze these criteria? They cannot be edited afterwards (you can create a new version).',
+                      ),
                     )
                   )
                     return;
                   if (dirty) await api.put(`/vacancies/${id}/criteria`, payload());
                   apply(await api.post<Criteria>(`/vacancies/${id}/criteria/freeze`));
-                  setOk('Criteria frozen. You can now upload CVs.');
+                  setOk(t('Criteria frozen. You can now upload CVs.'));
                 })
               }
             >
-              Freeze criteria
+              {t('Freeze criteria')}
             </button>
           </div>
         )}
         {frozen && c?.versions && c.versions.length > 1 && (
           <p className="mt-3 text-xs text-ink-3">
-            After creating and freezing a new version, use “Screen with latest criteria” on the
-            Candidates tab.
+            {t(
+              'After creating and freezing a new version, use “Screen with latest criteria” on the Candidates tab.',
+            )}
           </p>
         )}
       </Card>
@@ -441,6 +453,7 @@ function CandidatesTab({
   vacancy: V;
   onNotice: () => void;
 }) {
+  const t = useT();
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState('');
   const [uploads, setUploads] = useState<UploadResult['results']>([]);
@@ -510,20 +523,21 @@ function CandidatesTab({
       {error && <Notice kind="error">{error}</Notice>}
       {data && !data.aiActive && (
         <Notice kind="warn">
-          No AI provider is active, so uploaded CVs will wait in the queue. An administrator can set
-          one up under Admin → AI models.
+          {t(
+            'No AI provider is active, so uploaded CVs will wait in the queue. An administrator can set one up under Admin → AI models.',
+          )}
         </Notice>
       )}
 
       {!vacancy.candidateNoticeConfirmedAt ? (
-        <Card title="Before you upload: candidate notice">
+        <Card title={t('Before you upload: candidate notice')}>
           <p className="mb-2 text-sm text-ink-2">
-            Candidates must be told that AI assists the screening of their application. Share this
-            text (for example in the job advert or the application confirmation), then confirm
-            below. Uploading is blocked until you do.
+            {t(
+              'Candidates must be told that AI assists the screening of their application. Share this text (for example in the job advert or the application confirmation), then confirm below. Uploading is blocked until you do.',
+            )}
           </p>
           <blockquote className="mb-3 rounded border-l-4 border-accent bg-sel p-3 text-sm text-ink">
-            {NOTICE_TEXT}
+            {t(NOTICE_TEXT)}
           </blockquote>
           <label className="mb-3 flex items-start gap-2 text-sm">
             <input
@@ -533,31 +547,33 @@ function CandidatesTab({
               onChange={(e) => setAck(e.target.checked)}
             />
             <span>
-              I confirm that the candidates for this vacancy have been informed that AI is used to
-              assist the screening of their applications, and how to request human review.
+              {t(
+                'I confirm that the candidates for this vacancy have been informed that AI is used to assist the screening of their applications, and how to request human review.',
+              )}
             </span>
           </label>
           <button className={btnPrimary} disabled={!ack} onClick={confirmNotice}>
-            Confirm and enable uploads
+            {t('Confirm and enable uploads')}
           </button>
         </Card>
       ) : (
-        <Card title="Upload CVs">
+        <Card title={t('Upload CVs')}>
           <p className="mb-2 text-sm text-ink-2">
-            PDF, DOCX or TXT, up to 10 MB each, up to 50 files at a time. Scanned (image-only) PDFs
-            cannot be read and are flagged for manual review.
+            {t(
+              'PDF, DOCX or TXT, up to 10 MB each, up to 50 files at a time. Scanned (image-only) PDFs cannot be read and are flagged for manual review.',
+            )}
           </p>
           <input
             ref={fileRef}
             type="file"
             multiple
             accept=".pdf,.docx,.txt"
-            aria-label="Choose CV files"
+            aria-label={t('Choose CV files')}
             disabled={busy}
             onChange={(e) => void upload(Array.from(e.target.files ?? []))}
             className="block text-sm"
           />
-          {busy && <p className="mt-2 text-sm text-ink-3">Uploading and reading files…</p>}
+          {busy && <p className="mt-2 text-sm text-ink-3">{t('Uploading and reading files…')}</p>}
           {uploads.length > 0 && (
             <ul className="mt-3 space-y-1 text-sm">
               {uploads.map((u, i) => (
@@ -572,7 +588,7 @@ function CandidatesTab({
                   }
                 >
                   {u.filename}:{' '}
-                  {u.status === 'queued' ? 'queued for screening' : (u.message ?? u.status)}
+                  {u.status === 'queued' ? t('queued for screening') : t(u.message ?? u.status)}
                 </li>
               ))}
             </ul>
@@ -581,7 +597,7 @@ function CandidatesTab({
       )}
 
       <Card
-        title="Candidates"
+        title={t('Candidates')}
         actions={
           <div className="flex flex-wrap gap-2">
             <button
@@ -591,9 +607,9 @@ function CandidatesTab({
                   (r) => (
                     setUploads([
                       {
-                        filename: 'Re-screen',
+                        filename: t('Re-screen'),
                         status: 'queued',
-                        message: `${r.queued} CV(s) queued with the latest criteria`,
+                        message: t('{n} CV(s) queued with the latest criteria', { n: r.queued }),
                       },
                     ]),
                     load()
@@ -602,7 +618,7 @@ function CandidatesTab({
                 )
               }
             >
-              Screen with latest criteria
+              {t('Screen with latest criteria')}
             </button>
             <button
               className={btnSecondary}
@@ -612,47 +628,53 @@ function CandidatesTab({
                   .catch((e) => setError(errMsg(e)))
               }
             >
-              Export to Excel
+              {t('Export to Excel')}
             </button>
           </div>
         }
       >
         {data && (
           <p className="mb-3 text-sm text-ink-2" aria-live="polite">
-            {data.counts.total} CV(s) · {data.counts.undecided} awaiting your decision
-            {data.counts.queued > 0 && ` · ${data.counts.queued} being screened`}
-            {data.counts.failed > 0 && ` · ${data.counts.failed} failed`}
-            {data.counts.manual > 0 && ` · ${data.counts.manual} need manual reading`}
+            {t('{n} CV(s) · {undecided} awaiting your decision', {
+              n: data.counts.total,
+              undecided: data.counts.undecided,
+            })}
+            {data.counts.queued > 0 && ' · ' + t('{n} being screened', { n: data.counts.queued })}
+            {data.counts.failed > 0 && ' · ' + t('{n} failed', { n: data.counts.failed })}
+            {data.counts.manual > 0 &&
+              ' · ' + t('{n} need manual reading', { n: data.counts.manual })}
           </p>
         )}
         <div className="mb-3 max-w-xs">
-          <Field label="Filter">
+          <Field label={t('Filter')}>
             <select className={input} value={band} onChange={(e) => setBand(e.target.value)}>
-              <option value="">All</option>
-              <option value="needs_review">Needs a look</option>
-              <option value="strong_match">Strong match</option>
-              <option value="possible_match">Possible match</option>
-              <option value="weak_match">Weak match</option>
-              <option value="undecided">Awaiting my decision</option>
+              <option value="">{t('All')}</option>
+              <option value="needs_review">{t('Needs a look')}</option>
+              <option value="strong_match">{t('Strong match')}</option>
+              <option value="possible_match">{t('Possible match')}</option>
+              <option value="weak_match">{t('Weak match')}</option>
+              <option value="undecided">{t('Awaiting my decision')}</option>
             </select>
           </Field>
         </div>
         {data && data.counts.total === 0 && (
           <p className="text-sm text-ink-3">
-            No CVs yet. Freeze the criteria on the Criteria tab, confirm the notice, then upload.
+            {t(
+              'No CVs yet. Freeze the criteria on the Criteria tab, confirm the notice, then upload.',
+            )}
           </p>
         )}
         {rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <caption className="sr-only">Candidates ranked by score</caption>
+              <caption className="sr-only">{t('Candidates ranked by score')}</caption>
               <thead className="border-b text-xs uppercase text-ink-3">
                 <tr>
-                  <th className="py-2 pr-3">Candidate</th>
-                  <th className="pr-3">Score</th>
-                  <th className="pr-3">AI view (a sorting aid)</th>
-                  <th className="pr-3">Flags</th>
-                  <th className="pr-3">Your decision</th>
+                  <th className="py-2 pr-3">{t('Candidate')}</th>
+                  <th className="pr-3">{t('Score')}</th>
+                  <th className="pr-3">{t('AI view (a sorting aid)')}</th>
+                  <th className="pr-3">{t('Flags')}</th>
+                  <th className="pr-3">{t('Your decision')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -669,7 +691,7 @@ function CandidatesTab({
                             : pseudo.get(c.documentId)}
                         </a>
                       ) : (
-                        <span>{c.erased ? 'Erased' : pseudo.get(c.documentId)}</span>
+                        <span>{c.erased ? t('Erased') : pseudo.get(c.documentId)}</span>
                       )}
                       {!c.erased && c.screeningId && shown.has(c.screeningId) && !focusOn && (
                         <div className="text-xs text-ink-3">{c.filename}</div>
@@ -685,13 +707,15 @@ function CandidatesTab({
                     </td>
                     <td className="pr-3 text-xs">
                       {c.knockoutTriggered && (
-                        <div className="text-warn-text">Knockout rule matched</div>
+                        <div className="text-warn-text">{t('Knockout rule matched')}</div>
                       )}
                       {c.injectionSuspected && (
-                        <div className="text-warn-text">Text tries to instruct the AI</div>
+                        <div className="text-warn-text">{t('Text tries to instruct the AI')}</div>
                       )}
                       {c.score && c.score.breakdown.mandatoryGaps > 0 && (
-                        <div>{c.score.breakdown.mandatoryGaps} mandatory gap(s)</div>
+                        <div>
+                          {t('{n} mandatory gap(s)', { n: c.score.breakdown.mandatoryGaps })}
+                        </div>
                       )}
                     </td>
                     <td className="pr-3">
@@ -699,10 +723,10 @@ function CandidatesTab({
                         <span
                           className={`rounded px-1.5 py-0.5 text-xs font-medium ${OUTCOME[c.decision.outcome]![1]}`}
                         >
-                          {OUTCOME[c.decision.outcome]![0]}
+                          {t(OUTCOME[c.decision.outcome]![0])}
                         </span>
                       ) : (
-                        <span className="text-xs text-ink-3">Undecided</span>
+                        <span className="text-xs text-ink-3">{t('Undecided')}</span>
                       )}
                     </td>
                     <td>
@@ -715,12 +739,12 @@ function CandidatesTab({
                               .then(load, (e) => setError(errMsg(e)))
                           }
                         >
-                          Retry
+                          {t('Retry')}
                         </button>
                       )}
                       {c.state === 'manual' && c.screeningId && !c.erased && (
                         <a className={btnSecondary} href={`#/screenings/${c.screeningId}`}>
-                          Open
+                          {t('Open')}
                         </a>
                       )}
                     </td>
@@ -731,7 +755,7 @@ function CandidatesTab({
           </div>
         )}
         {data && data.counts.total > 0 && rows.length === 0 && (
-          <p className="text-sm text-ink-3">Nothing matches this filter.</p>
+          <p className="text-sm text-ink-3">{t('Nothing matches this filter.')}</p>
         )}
       </Card>
     </div>
@@ -741,15 +765,15 @@ function CandidatesTab({
 function stateLabel(c: CandidateRow) {
   switch (c.state) {
     case 'queued':
-      return 'Waiting to be screened';
+      return tr('Waiting to be screened');
     case 'processing':
-      return 'Screening…';
+      return tr('Screening…');
     case 'failed':
-      return `Failed${c.error ? `: ${c.error}` : ''}`;
+      return c.error ? tr('Failed: {error}', { error: c.error }) : tr('Failed');
     case 'manual':
-      return 'No readable text: review the original';
+      return tr('No readable text: review the original');
     case 'stopped':
-      return 'Stopped before it was read';
+      return tr('Stopped before it was read');
     default:
       return c.state;
   }

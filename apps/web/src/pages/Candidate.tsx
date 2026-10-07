@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import { api, type Breakdown, type Classification, type Decision, type ReqStatus } from '../api';
 import { useFocus } from '../focus';
 import { BAND_LABEL, matchBand, STAR_COLOUR } from '../results-logic';
@@ -11,6 +12,7 @@ interface Span {
   start: number;
   end: number;
   quote: string;
+  page?: number | null;
 }
 interface Assessment {
   requirementId: string;
@@ -62,6 +64,7 @@ interface Detail {
 }
 
 export function Candidate({ id }: { id: string }) {
+  const t = useT();
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState('');
   const [focus, setFocusSpan] = useState<Span | null>(null);
@@ -88,7 +91,7 @@ export function Candidate({ id }: { id: string }) {
   }, [vacancyId, id]);
 
   if (error) return <Notice kind="error">{error}</Notice>;
-  if (!d) return <p className="text-sm text-ink-3">Loading…</p>;
+  if (!d) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
 
   const pseudonym = `Candidate ${String(d.ordinal).padStart(Math.max(2, String(d.documentCount).length), '0')}`;
   const band = matchBand({
@@ -114,7 +117,7 @@ export function Candidate({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <a href={`#/vacancies/${d.vacancyId}`} className="text-sm text-link hover:underline">
-        ← Back to results
+        {t('← Back to results')}
       </a>
       {assistant && !d.erased && band !== 'human' && (
         <AssistantPanel
@@ -137,27 +140,28 @@ export function Candidate({ id }: { id: string }) {
               className="mr-2 inline-block h-3 w-3 rounded-full border border-edge align-middle"
               style={{ background: STAR_COLOUR[band] }}
             />
-            {BAND_LABEL[band]}
-            {d.adjusted && ' · uses your requirement changes'}
+            {t(BAND_LABEL[band])}
+            {d.adjusted && ` · ${t('uses your requirement changes')}`}
           </p>
           {revealed ? (
             <p className="text-sm text-ink-3">
               {!focusOn && d.candidateEmail && <>{d.candidateEmail} · </>}
-              {!focusOn && <>{d.filename} · </>}uploaded {when(d.uploadedAt)}
+              {!focusOn && <>{d.filename} · </>}
+              {t('uploaded {when}', { when: when(d.uploadedAt) })}
               <br />
               <span className="text-xs">
-                Name and email were extracted by the AI and may be wrong.
+                {t('Name and email were extracted by the AI and may be wrong.')}
               </span>
               <br />
               <button className="text-link underline" onClick={() => void hide()}>
-                Hide name
+                {t('Hide name')}
               </button>
             </p>
           ) : (
             <p className="text-sm text-ink-3">
-              The name is hidden to keep the first look about skills.{' '}
+              {t('The name is hidden to keep the first look about skills.')}{' '}
               <button className="text-link underline" onClick={() => void reveal()}>
-                Reveal name
+                {t('Reveal name')}
               </button>
             </p>
           )}
@@ -165,7 +169,7 @@ export function Candidate({ id }: { id: string }) {
         <div className="flex items-center gap-3">
           {assistant && !d.erased && band !== 'human' && (
             <button className={btnSecondary} onClick={() => setAssistantOpen(true)}>
-              Ask {assistant.name} about this candidate
+              {t('Ask {name} about this candidate', { name: assistant.name })}
             </button>
           )}
           {!d.erased && (
@@ -180,7 +184,7 @@ export function Candidate({ id }: { id: string }) {
                   .catch((e) => setError(errMsg(e)))
               }
             >
-              Download original
+              {t('Download original')}
             </button>
           )}
         </div>
@@ -188,23 +192,26 @@ export function Candidate({ id }: { id: string }) {
 
       {d.erased && (
         <Notice kind="warn">
-          This candidate’s data has been erased. Only the decision record remains.
+          {t('This candidate’s data has been erased. Only the decision record remains.')}
         </Notice>
       )}
-      {d.state === 'failed' && <Notice kind="error">Screening failed: {d.error}</Notice>}
+      {d.state === 'failed' && (
+        <Notice kind="error">{t('Screening failed: {error}', { error: d.error ?? '' })}</Notice>
+      )}
       {d.state === 'manual' && !d.erased && (
         <Notice kind="warn">
-          No readable text could be extracted from this file (it may be a scan). Open the original
-          and review it yourself; you can still record a decision.
+          {t(
+            'No readable text could be extracted from this file (it may be a scan). Open the original and review it yourself; you can still record a decision.',
+          )}
         </Notice>
       )}
       {(d.state === 'queued' || d.state === 'processing') && (
-        <Notice kind="info">Screening is still running. Refresh in a moment.</Notice>
+        <Notice kind="info">{t('Screening is still running. Refresh in a moment.')}</Notice>
       )}
       {d.knockoutTriggered && (
         <Notice kind="warn">
-          <strong>Knockout rule matched.</strong> This CV was routed to you for review; nothing was
-          rejected automatically.
+          <strong>{t('Knockout rule matched.')}</strong>{' '}
+          {t('This CV was routed to you for review; nothing was rejected automatically.')}
           <ul className="mt-1 list-disc pl-5">
             {d.knockout
               ?.filter((k) => k.triggered)
@@ -212,8 +219,8 @@ export function Candidate({ id }: { id: string }) {
                 <li key={k.requirementId}>
                   {k.text} (
                   {k.rule.type === 'must_contain_any'
-                    ? `none of: ${k.rule.terms.join(', ')} found`
-                    : `found: ${k.matchedTerms.join(', ')}`}
+                    ? t('none of: {terms} found', { terms: k.rule.terms.join(', ') })
+                    : t('found: {terms}', { terms: k.matchedTerms.join(', ') })}
                   )
                 </li>
               ))}
@@ -222,22 +229,26 @@ export function Candidate({ id }: { id: string }) {
       )}
       {d.injectionSuspected && (
         <Notice kind="warn">
-          This CV contains text that looks like instructions to an AI. It has been routed to you for
-          review. Read the original carefully.
+          {t(
+            'This CV contains text that looks like instructions to an AI. It has been routed to you for review. Read the original carefully.',
+          )}
         </Notice>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
           {d.summary && (
-            <Card title="AI summary">
+            <Card title={t('AI summary')}>
               <p className="text-sm text-ink-2">{d.summary}</p>
               <p className="mt-2 text-xs text-ink-3">
-                Generated by {d.aiProvider} / {d.aiModel}. Check it against the CV.
+                {t('Generated by {provider} / {model}. Check it against the CV.', {
+                  provider: d.aiProvider ?? '',
+                  model: d.aiModel ?? '',
+                })}
               </p>
             </Card>
           )}
-          <Card title={`Criteria assessment (version ${d.criteriaVersion})`}>
+          <Card title={t('Criteria assessment (version {n})', { n: d.criteriaVersion })}>
             <div className="space-y-3">
               {d.assessments.map((a) => (
                 <div key={a.requirementId} className="rounded-md border border-line p-3">
@@ -246,9 +257,9 @@ export function Candidate({ id }: { id: string }) {
                     <StatusBadge status={a.status} />
                   </div>
                   <div className="mt-0.5 text-xs text-ink-3">
-                    {a.classification}
-                    {a.weight != null && ` · weight ${a.weight}`}
-                    {a.confidence && ` · AI confidence ${a.confidence}`}
+                    {t(a.classification)}
+                    {a.weight != null && ` · ${t('weight {n}', { n: a.weight })}`}
+                    {a.confidence && ` · ${t('AI confidence {level}', { level: t(a.confidence) })}`}
                   </div>
                   {a.rationale && <p className="mt-1 text-sm text-ink-2">{a.rationale}</p>}
                   {a.evidence?.map((e, i) => (
@@ -257,13 +268,15 @@ export function Candidate({ id }: { id: string }) {
                       onClick={() => setFocusSpan(e)}
                       className="mt-1 block w-full rounded border border-warn-line bg-warn text-warn-ink px-2 py-1 text-left text-sm italic hover:bg-hover"
                     >
-                      “{e.quote}”
+                      “{e.quote}”{e.page ? ` · ${t('page {n}', { n: e.page })}` : ''}
                     </button>
                   ))}
                   {!!a.evidenceDropped && (
                     <p className="mt-1 text-xs text-warn-text">
-                      The AI cited {a.evidenceDropped} quote(s) that do not appear in the CV; they
-                      were discarded.
+                      {t(
+                        'The AI cited {n} quote(s) that do not appear in the CV; they were discarded.',
+                        { n: a.evidenceDropped },
+                      )}
                     </p>
                   )}
                 </div>
@@ -271,16 +284,20 @@ export function Candidate({ id }: { id: string }) {
             </div>
           </Card>
           {d.score && (
-            <Card title={`How the score was calculated (${d.score.value} of 100, a sorting aid)`}>
+            <Card
+              title={t('How the score was calculated ({n} of 100, a sorting aid)', {
+                n: d.score.value,
+              })}
+            >
               <p className="mb-2 text-xs text-ink-3">{d.score.breakdown.formula}</p>
               <table className="w-full text-left text-sm">
-                <caption className="sr-only">Score breakdown</caption>
+                <caption className="sr-only">{t('Score breakdown')}</caption>
                 <thead className="border-b text-xs uppercase text-ink-3">
                   <tr>
-                    <th className="py-1 pr-2">Criterion</th>
-                    <th className="pr-2">Weight</th>
-                    <th className="pr-2">Status</th>
-                    <th className="text-right">Points</th>
+                    <th className="py-1 pr-2">{t('Criterion')}</th>
+                    <th className="pr-2">{t('Weight')}</th>
+                    <th className="pr-2">{t('Status')}</th>
+                    <th className="text-right">{t('Points')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -298,7 +315,7 @@ export function Candidate({ id }: { id: string }) {
                 <tfoot>
                   <tr>
                     <td colSpan={3} className="pt-2 font-medium">
-                      Total
+                      {t('Total')}
                     </td>
                     <td className="pt-2 text-right font-medium tabular-nums">
                       {d.score.breakdown.earned} / {d.score.breakdown.possible}
@@ -313,13 +330,14 @@ export function Candidate({ id }: { id: string }) {
         <div className="space-y-4">
           <DecisionPanel d={d} onSaved={load} />
           {d.text && focusOn && !showText && (
-            <Card title="CV text">
+            <Card title={t('CV text')}>
               <p className="text-sm text-ink-2">
-                Focus on skills is on. The full text can carry names and personal details, so it
-                waits behind a click. The proof for each requirement is shown on the left.
+                {t(
+                  'Focus on skills is on. The full text can carry names and personal details, so it waits behind a click. The proof for each requirement is shown on the left.',
+                )}
               </p>
               <button className={`${btnSecondary} mt-2`} onClick={() => setShowText(true)}>
-                Show the CV text
+                {t('Show the CV text')}
               </button>
             </Card>
           )}
@@ -348,6 +366,7 @@ function CvText({
   focus: Span | null;
   truncated: boolean;
 }) {
+  const t = useT();
   const focusRef = useRef<HTMLElement | null>(null);
   useEffect(
     () => focusRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
@@ -367,11 +386,11 @@ function CvText({
     return out;
   }, [text, spans]);
   return (
-    <Card title="CV text (evidence highlighted)">
+    <Card title={t('CV text (evidence highlighted)')}>
       {truncated && (
         <div className="mb-2">
           <Notice kind="warn">
-            This CV is very long; only the first part was read. Check the original.
+            {t('This CV is very long; only the first part was read. Check the original.')}
           </Notice>
         </div>
       )}
@@ -399,25 +418,29 @@ function CvText({
 }
 
 function DecisionPanel({ d, onSaved }: { d: Detail; onSaved: () => void }) {
+  const t = useT();
   const [error, setError] = useState('');
   const locked = d.erased || d.state === 'queued' || d.state === 'processing';
   const current = d.decisions[0] ?? null;
   const canMark = !locked && d.state !== 'failed';
 
   return (
-    <Card title="My mark">
+    <Card title={t('My mark')}>
       <p className="mb-3 text-xs text-ink-3">
-        The match and the order are a recommendation. Only you decide, and your mark and note are
-        recorded under your name. A mark never changes the match.
+        {t(
+          'The match and the order are a recommendation. Only you decide, and your mark and note are recorded under your name. A mark never changes the match.',
+        )}
       </p>
       {canMark && <MarkControls current={current} screeningId={d.id} onMarked={onSaved} />}
       {d.decisions.length > 0 && (
         <details className="mt-4 text-sm" open={d.decisions.length === 1}>
-          <summary className="cursor-pointer text-ink-2">History ({d.decisions.length})</summary>
+          <summary className="cursor-pointer text-ink-2">
+            {t('History ({n})', { n: d.decisions.length })}
+          </summary>
           <ul className="mt-2 space-y-2">
             {d.decisions.map((x) => (
               <li key={x.id} className="rounded border border-line p-2">
-                <strong>{OUTCOME[x.outcome]![0]}</strong> · {x.decidedBy} · {when(x.decidedAt)}
+                <strong>{t(OUTCOME[x.outcome]![0])}</strong> · {x.decidedBy} · {when(x.decidedAt)}
                 <div className="text-ink-2">{x.reason}</div>
               </li>
             ))}
@@ -432,7 +455,9 @@ function DecisionPanel({ d, onSaved }: { d: Detail; onSaved: () => void }) {
             onClick={() => {
               if (
                 window.confirm(
-                  'Erase this candidate’s file, extracted text and AI-extracted details? This cannot be undone. The decision record is kept.',
+                  t(
+                    'Erase this candidate’s file, extracted text and AI-extracted details? This cannot be undone. The decision record is kept.',
+                  ),
                 )
               ) {
                 void api
@@ -441,7 +466,7 @@ function DecisionPanel({ d, onSaved }: { d: Detail; onSaved: () => void }) {
               }
             }}
           >
-            Erase candidate data
+            {t('Erase candidate data')}
           </button>
         </div>
       )}

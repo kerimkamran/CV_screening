@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type Adjustments, type CandidateRow, type Criteria, type Me } from '../api';
 import {
   BAND_LABEL,
+  experienceLine,
   isPending,
   KIND_NAME,
   matchBand,
@@ -14,6 +15,7 @@ import {
   unreadReason,
   type MatchBand,
 } from '../results-logic';
+import { locale, useT } from '../i18n';
 import { ShareReport } from './ShareReport';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
 
@@ -36,7 +38,7 @@ interface Detail {
     requirementId: string;
     text: string;
     status: string | null;
-    evidence: { quote: string }[] | null;
+    evidence: { quote: string; page?: number | null }[] | null;
   }[];
 }
 
@@ -54,6 +56,7 @@ export function Report({
   title: string;
   createdAt: string;
 }) {
+  const t = useT();
   const [data, setData] = useState<Listing | null>(null);
   const [criteria, setCriteria] = useState<Criteria | null>(null);
   const [adj, setAdj] = useState<Adjustments | null>(null);
@@ -85,8 +88,8 @@ export function Report({
   const pending = data?.counts.queued ?? 0;
   useEffect(() => {
     if (!pending) return;
-    const t = setInterval(() => void load(), 4000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 4000);
+    return () => clearInterval(timer);
   }, [pending, load]);
 
   const all = useMemo(() => (data?.candidates ?? []).filter((r) => !r.erased), [data]);
@@ -123,16 +126,16 @@ export function Report({
   if (error && !data) {
     return (
       <div className="space-y-3">
-        <Notice kind="error">The report could not be prepared. {error}</Notice>
+        <Notice kind="error">{t('The report could not be prepared. {error}', { error })}</Notice>
         <button className={btnSecondary} onClick={() => void load()}>
-          Try again
+          {t('Try again')}
         </button>
       </div>
     );
   }
-  if (!data || !criteria) return <p className="text-sm text-ink-3">Preparing the report…</p>;
+  if (!data || !criteria) return <p className="text-sm text-ink-3">{t('Preparing the report…')}</p>;
   if (counts.total === 0) {
-    return <Notice kind="info">No resumes yet, so there is nothing to report.</Notice>;
+    return <Notice kind="info">{t('No resumes yet, so there is nothing to report.')}</Notice>;
   }
 
   const reqs = criteria.current?.requirements ?? [];
@@ -159,44 +162,67 @@ export function Report({
     all.filter((r) => matchBand(r) === b && !isPending(r) && r.state !== 'stopped').length;
   const aiLine = (() => {
     const d = Object.values(details).find((x): x is Detail => typeof x === 'object' && !!x.aiModel);
-    return d ? `Read by ${d.aiProvider ?? 'the AI provider'} (${d.aiModel}).` : null;
+    return d
+      ? t('Read by {provider} ({model}).', {
+          provider: d.aiProvider ?? t('the AI provider'),
+          model: d.aiModel ?? '',
+        })
+      : null;
   })();
   const today = new Date().toISOString().slice(0, 10);
   const shownRows = showAll ? scored : scored.slice(0, TOP);
+  // "3–5 years" comes from the shared helper in English; shown in the viewer's language.
+  const expText = (line: string | null) => {
+    const m = line ? /^(.+) years$/.exec(line) : null;
+    return m ? t('{n} years', { n: m[1]! }) : line;
+  };
+  const expLine = expText(experienceLine([...must, ...nice].map((r) => r.text)));
+  const outcomeText = (o: string) => t(OUTCOME[o]?.[0] ?? o);
+  const kindLow = (k: keyof typeof KIND_NAME) => t(KIND_NAME[k]).toLocaleLowerCase(locale());
 
   return (
-    <article className="space-y-6" aria-label="Evaluation report">
+    <article className="space-y-6" aria-label={t('Evaluation report')}>
       <header
         className="rounded-3xl px-6 py-6 text-white"
         style={{ background: 'linear-gradient(160deg,#0C1A3D,#0F2459)' }}
       >
-        <p className="text-sm text-[#B9C8F2]">Evaluation report</p>
+        <p className="text-sm text-[#B9C8F2]">{t('Evaluation report')}</p>
         <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
         <p className="mt-1 text-sm text-[#B9C8F2]">
-          Report date {today} · {counts.read} read, {counts.scored} scored, {counts.needLook} need a
-          human look
+          {t('Report date {date} · {read} read, {scored} scored, {need} need a human look', {
+            date: today,
+            read: counts.read,
+            scored: counts.scored,
+            need: counts.needLook,
+          })}
         </p>
       </header>
 
       {counts.total > counts.read + counts.stopped && (
         <div role="status" aria-live="polite">
           <Notice kind="info">
-            {counts.read} of {counts.total} read, this report will update.
+            {t('{read} of {total} read, this report will update.', {
+              read: counts.read,
+              total: counts.total,
+            })}
           </Notice>
         </div>
       )}
       {counts.stopped > 0 && (
         <div role="status">
           <Notice kind="warn">
-            Stopped at {counts.read} of {counts.total}. Files not read are listed under Data
-            quality.
+            {t('Stopped at {read} of {total}. Files not read are listed under Data quality.', {
+              read: counts.read,
+              total: counts.total,
+            })}
           </Notice>
         </div>
       )}
       {!data.aiActive && counts.read < counts.total && (
         <Notice kind="warn">
-          No AI provider is active, so resumes wait in the queue. An administrator can set one up
-          under Admin → AI models.
+          {t(
+            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+          )}
         </Notice>
       )}
 
@@ -204,20 +230,23 @@ export function Report({
         vacancyId={vacancyId}
         blocked={
           pending > 0
-            ? `A shared link is offered when the scan is done. ${counts.read} of ${counts.total} read so far.`
+            ? t('A shared link is offered when the scan is done. {read} of {total} read so far.', {
+                read: counts.read,
+                total: counts.total,
+              })
             : scored.length === 0
-              ? 'No candidate has been scored yet, so there is nothing to share.'
+              ? t('No candidate has been scored yet, so there is nothing to share.')
               : null
         }
       />
 
       <section aria-labelledby="rep-role" className="space-y-2">
         <h3 id="rep-role" className="text-lg font-semibold">
-          The role
+          {t('The role')}
         </h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-sm font-medium">Must-have ({must.length})</p>
+            <p className="text-sm font-medium">{t('Must-have ({n})', { n: must.length })}</p>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-2">
               {must.map((r, i) => (
                 <li key={r.id ?? i}>{r.text}</li>
@@ -225,54 +254,68 @@ export function Report({
             </ul>
           </div>
           <div>
-            <p className="text-sm font-medium">Nice-to-have ({nice.length})</p>
+            <p className="text-sm font-medium">{t('Nice-to-have ({n})', { n: nice.length })}</p>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink-2">
-              {nice.length === 0 && <li className="list-none text-ink-3">None</li>}
+              {nice.length === 0 && <li className="list-none text-ink-3">{t('None')}</li>}
               {nice.map((r, i) => (
                 <li key={r.id ?? i}>{r.text}</li>
               ))}
             </ul>
           </div>
         </div>
+        {expLine && (
+          <p className="text-sm text-ink-2">
+            {t('Experience asked for: {years}.', { years: expLine })}
+          </p>
+        )}
         {ignored.length > 0 && (
           <p className="text-sm text-ink-3">
-            Not counted: {ignored.map((r) => r.text).join(', ')}.
+            {t('Not counted: {list}.', { list: ignored.map((r) => r.text).join(', ') })}
           </p>
         )}
         {changes.length > 0 && (
           <p className="text-sm text-ink-3">
-            Requirements changed during this scan: version {changes[changes.length - 1]!.version}{' '}
-            was frozen on {when(changes[changes.length - 1]!.frozenAt)}.
+            {t('Requirements changed during this scan: version {version} was frozen on {date}.', {
+              version: changes[changes.length - 1]!.version,
+              date: when(changes[changes.length - 1]!.frozenAt),
+            })}
           </p>
         )}
       </section>
 
       <section aria-labelledby="rep-how" className="space-y-2">
         <h3 id="rep-how" className="text-lg font-semibold">
-          How it was scored
+          {t('How it was scored')}
         </h3>
         <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
           <li>
-            Scored against requirements version {criteria.current?.version ?? '–'}
-            {frozen.length > 0 && `, frozen ${when(frozen[frozen.length - 1]!.frozenAt)}`}.
+            {frozen.length > 0
+              ? t('Scored against requirements version {version}, frozen {date}.', {
+                  version: criteria.current?.version ?? '–',
+                  date: when(frozen[frozen.length - 1]!.frozenAt),
+                })
+              : t('Scored against requirements version {version}.', {
+                  version: criteria.current?.version ?? '–',
+                })}
             {aiLine && ` ${aiLine}`}
           </li>
           <li>
-            AI suggests, a human decides. A missing must-have lowers the match; it never hides
-            anyone.
+            {t('AI suggests, a human decides.')}{' '}
+            {t('A missing must-have lowers the match; it never hides anyone.')}
           </li>
           <li>
-            Match bands: Strong 80 and up, Good 70 to 79, Partial 50 to 69, Limited under 50. These
-            cut-offs have not been calibrated yet.
+            {t(
+              'Match bands: Strong 80 and up, Good 70 to 79, Partial 50 to 69, Limited under 50. These cut-offs have not been calibrated yet.',
+            )}
           </li>
         </ul>
       </section>
 
       <section aria-labelledby="rep-bands" className="space-y-2">
         <h3 id="rep-bands" className="text-lg font-semibold">
-          The match
+          {t('The match')}
         </h3>
-        <ul className="flex flex-wrap gap-2 text-sm" aria-label="Candidates by match">
+        <ul className="flex flex-wrap gap-2 text-sm" aria-label={t('Candidates by match')}>
           {BANDS.map((b) => (
             <li
               key={b}
@@ -283,31 +326,31 @@ export function Report({
                 className="inline-block h-3 w-3 rounded-full border border-edge"
                 style={{ background: STAR_COLOUR[b] }}
               />
-              {BAND_LABEL[b]} <strong>{bandCount(b)}</strong>
+              {t(BAND_LABEL[b])} <strong>{bandCount(b)}</strong>
             </li>
           ))}
         </ul>
         {scored.length > 0 && bandCount('strong') === 0 && (
-          <p className="text-sm text-ink-2">No strong match in this batch.</p>
+          <p className="text-sm text-ink-2">{t('No strong match in this batch.')}</p>
         )}
       </section>
 
       <section aria-labelledby="rep-cands" className="space-y-3">
         <h3 id="rep-cands" className="text-lg font-semibold">
-          Candidates, best match first
+          {t('Candidates, best match first')}
         </h3>
         {scored.length === 0 ? (
           <Notice kind="info">
             {counts.read < counts.total - counts.stopped
-              ? 'No candidate has been scored yet.'
-              : 'No candidate could be scored. See “Not read” below.'}
+              ? t('No candidate has been scored yet.')
+              : t('No candidate could be scored. See “Not read” below.')}
           </Notice>
         ) : (
           <>
             <p className="text-sm text-ink-3" aria-live="polite">
               {showAll || scored.length <= TOP
-                ? `Showing all ${scored.length} scored`
-                : `Showing ${TOP} of ${scored.length} scored`}
+                ? t('Showing all {n} scored', { n: scored.length })
+                : t('Showing {top} of {n} scored', { top: TOP, n: scored.length })}
             </p>
             <ol className="space-y-3">
               {shownRows.map((r, i) => (
@@ -332,7 +375,9 @@ export function Report({
             </ol>
             {scored.length > TOP && (
               <button className={btnSecondary} onClick={() => setShowAll((v) => !v)}>
-                {showAll ? `Show only the top ${TOP}` : `Show all ${scored.length}`}
+                {showAll
+                  ? t('Show only the top {top}', { top: TOP })
+                  : t('Show all {n}', { n: scored.length })}
               </button>
             )}
           </>
@@ -341,22 +386,24 @@ export function Report({
 
       <section aria-labelledby="rep-quality" className="space-y-2">
         <h3 id="rep-quality" className="text-lg font-semibold">
-          Data quality
+          {t('Data quality')}
         </h3>
         {unread.length === 0 ? (
-          <p className="text-sm text-ink-2">Every file was read.</p>
+          <p className="text-sm text-ink-2">{t('Every file was read.')}</p>
         ) : (
           <>
-            <p className="text-sm font-medium">Not read ({unread.length})</p>
+            <p className="text-sm font-medium">{t('Not read ({n})', { n: unread.length })}</p>
             <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
               {unread.map((r) => (
                 <li key={r.documentId}>
-                  {names.get(r.documentId)}: {unreadReason(r)}
+                  {names.get(r.documentId)}: {t(unreadReason(r) ?? '')}
                 </li>
               ))}
             </ul>
             <p className="text-sm text-ink-3">
-              These files were not scored and are not hidden: open the originals to review them.
+              {t(
+                'These files were not scored and are not hidden: open the originals to review them.',
+              )}
             </p>
           </>
         )}
@@ -365,33 +412,54 @@ export function Report({
       {(changes.length > 0 || adjChanges.length > 0 || decided.length > 0) && (
         <section aria-labelledby="rep-changes" className="space-y-2">
           <h3 id="rep-changes" className="text-lg font-semibold">
-            Changes and decisions
+            {t('Changes and decisions')}
           </h3>
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
             {changes.map((c) => (
               <li key={c.id}>
-                Requirements version {c.version} frozen on {when(c.frozenAt)}.
+                {t('Requirements version {version} frozen on {date}.', {
+                  version: c.version,
+                  date: when(c.frozenAt),
+                })}
               </li>
             ))}
             {adjChanges.map((c) => (
               <li key={c.id}>
-                {c.reset
-                  ? 'Requirements set back to the original'
-                  : `${c.requirement}: ${KIND_NAME[c.from!].toLowerCase()} to ${KIND_NAME[c.to!].toLowerCase()}`}
-                , by {c.by} on {when(c.at)}.
+                {t('{change}, by {by} on {date}.', {
+                  change: c.reset
+                    ? t('Requirements set back to the original')
+                    : t('{requirement}: {from} to {to}', {
+                        requirement: c.requirement ?? '',
+                        from: kindLow(c.from!),
+                        to: kindLow(c.to!),
+                      }),
+                  by: c.by,
+                  date: when(c.at),
+                })}
               </li>
             ))}
             {adjChanges.length > 0 && (
               <li className="list-none text-ink-3">
-                The original ranking is available in the app.
+                {t('The original ranking is available in the app.')}
               </li>
             )}
             {decided.map((r) => (
               <li key={r.documentId}>
-                Recruiter decision, separate from the AI match. {names.get(r.documentId)}:{' '}
-                {OUTCOME[r.decision!.outcome]?.[0] ?? r.decision!.outcome} by{' '}
-                {r.decision!.decidedBy} on {when(r.decision!.decidedAt)}
-                {r.decision!.reason ? ` (${r.decision!.reason})` : ''}.
+                {t('Recruiter decision, separate from the AI match.')}{' '}
+                {r.decision!.reason
+                  ? t('{name}: {outcome} by {by} on {date} ({reason}).', {
+                      name: names.get(r.documentId) ?? '',
+                      outcome: outcomeText(r.decision!.outcome),
+                      by: r.decision!.decidedBy,
+                      date: when(r.decision!.decidedAt),
+                      reason: r.decision!.reason,
+                    })
+                  : t('{name}: {outcome} by {by} on {date}.', {
+                      name: names.get(r.documentId) ?? '',
+                      outcome: outcomeText(r.decision!.outcome),
+                      by: r.decision!.decidedBy,
+                      date: when(r.decision!.decidedAt),
+                    })}
               </li>
             ))}
           </ul>
@@ -399,9 +467,13 @@ export function Report({
       )}
 
       <footer className="border-t border-line pt-3 text-xs text-ink-3">
-        Run {vacancyId.slice(-8)} · scan started {when(createdAt)} · report date {today}
-        {me?.displayName && ` · prepared for ${me.displayName}`}. Candidates appear as numbers;
-        names stay out of the report.
+        {t('Run {id} · scan started {date} · report date {today}', {
+          id: vacancyId.slice(-8),
+          date: when(createdAt),
+          today,
+        })}
+        {me?.displayName && ` · ${t('prepared for {name}', { name: me.displayName })}`}.{' '}
+        {t('Candidates appear as numbers; names stay out of the report.')}
       </footer>
     </article>
   );
@@ -416,6 +488,7 @@ function CandidateEntry(props: {
   detail: Detail | 'loading' | 'error' | undefined;
   onToggle: () => void;
 }) {
+  const t = useT();
   const { row, detail } = props;
   const band = matchBand(row);
   const tally = mustHaveTally(row.score?.breakdown);
@@ -438,15 +511,15 @@ function CandidateEntry(props: {
             className="inline-block h-3 w-3 rounded-full border border-edge"
             style={{ background: STAR_COLOUR[band] }}
           />
-          {BAND_LABEL[band]}
+          {t(BAND_LABEL[band])}
           <span className="text-ink-3">
-            · {tally.found} of {tally.total} must-haves found
+            · {t('{found} of {total} must-haves found', { found: tally.found, total: tally.total })}
           </span>
         </span>
       </div>
       {props.expanded ? (
         <div className="mt-3 space-y-3 text-sm">
-          <ul className="flex flex-wrap gap-2" aria-label="Skills">
+          <ul className="flex flex-wrap gap-2" aria-label={t('Skills')}>
             {chips.map((c) => (
               <li
                 key={c.requirementId}
@@ -454,14 +527,14 @@ function CandidateEntry(props: {
               >
                 <span aria-hidden="true">{KIND_MARK[c.kind]} </span>
                 {c.text}
-                <span className="sr-only">: {KIND_LABEL[c.kind]}</span>
+                <span className="sr-only">: {t(KIND_LABEL[c.kind])}</span>
               </li>
             ))}
           </ul>
           {detail === 'loading' || detail === undefined ? (
-            <p className="text-ink-3">Loading the reason…</p>
+            <p className="text-ink-3">{t('Loading the reason…')}</p>
           ) : detail === 'error' ? (
-            <p className="text-ink-3">The reason could not be loaded.</p>
+            <p className="text-ink-3">{t('The reason could not be loaded.')}</p>
           ) : (
             <>
               {d?.summary && <p className="text-ink">{d.summary}</p>}
@@ -471,24 +544,31 @@ function CandidateEntry(props: {
                   className="border-l-4 border-accent pl-3 text-ink-2"
                 >
                   {a.evidence![0]!.quote}
-                  <footer className="text-xs text-ink-3">For: {a.text}</footer>
+                  <footer className="text-xs text-ink-3">
+                    {t('For: {requirement}', { requirement: a.text })}
+                    {a.evidence![0]!.page
+                      ? ` · ${t('page {n}', { n: a.evidence![0]!.page! })}`
+                      : ''}
+                  </footer>
                 </blockquote>
               ))}
               {missing && (
-                <p className="text-ink-3">Not found in this CV. Searched for: {missing.text}</p>
+                <p className="text-ink-3">
+                  {t('Not found in this CV. Searched for: {text}', { text: missing.text })}
+                </p>
               )}
             </>
           )}
           {props.canCollapse && (
             <button className="text-link underline" onClick={props.onToggle}>
-              Hide details
+              {t('Hide details')}
             </button>
           )}
         </div>
       ) : (
         <div className="mt-2">
           <button className="text-sm text-link underline" onClick={props.onToggle}>
-            Show details
+            {t('Show details')}
           </button>
         </div>
       )}

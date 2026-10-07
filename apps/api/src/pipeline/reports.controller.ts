@@ -338,6 +338,7 @@ export class ReportsController {
       report: {
         ...s.snapshot,
         candidates: s.snapshot.candidates.map(({ documentId: _d, ...c }) => c),
+        decisions: s.snapshot.decisions.map(({ documentId: _d, ...c }) => c),
       },
     };
   }

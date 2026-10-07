@@ -234,9 +234,7 @@ export class LinkReader {
     }
   }
 
-  async read(
-    raw: string,
-  ): Promise<{
+  async read(raw: string): Promise<{
     host: string;
     title: string | null;
     text: string;

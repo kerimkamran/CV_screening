@@ -64,18 +64,31 @@ export class AssistantAdminController {
   @Get()
   async get() {
     const s = await this.svc.settings();
-    const models = await this.db.query<{ id: string; modelId: string; label: string; provider: string }>(
+    const models = await this.db.query<{
+      id: string;
+      modelId: string;
+      label: string;
+      provider: string;
+    }>(
       `SELECT m.id, m.model_id AS "modelId", m.label, c.name AS provider
          FROM ai_model m JOIN ai_connection c ON c.id = m.connection_id ORDER BY c.name, m.label`,
     );
     const usage = await this.svc.usage();
-    const pct = (n: number, cap: number | null) => (cap && cap > 0 ? Math.round((n / cap) * 100) : null);
+    const pct = (n: number, cap: number | null) =>
+      cap && cap > 0 ? Math.round((n / cap) * 100) : null;
     const dayPct = pct(usage.today, s.dailyCap);
     const monthPct = pct(usage.month, s.monthlyCap);
     const key = await this.modelKey(s.modelRowId);
     const fresh =
-      !!s.testedAt && Date.now() - new Date(s.testedAt).getTime() < TEST_VALID_FOR_MS && s.testedModelKey === key;
-    const log = await this.db.query<{ at: Date; actor: string | null; action: string; after: unknown }>(
+      !!s.testedAt &&
+      Date.now() - new Date(s.testedAt).getTime() < TEST_VALID_FOR_MS &&
+      s.testedModelKey === key;
+    const log = await this.db.query<{
+      at: Date;
+      actor: string | null;
+      action: string;
+      after: unknown;
+    }>(
       `SELECT e.occurred_at AS at, u.display_name AS actor, e.action, e.after
          FROM audit_event e LEFT JOIN app_user u ON u.id = e.actor_id
         WHERE e.entity_type = 'assistant_setting' ORDER BY e.seq DESC LIMIT 30`,
@@ -85,15 +98,24 @@ export class AssistantAdminController {
       models: models.rows,
       activeModel: await this.gateway.active(),
       usage,
-      warn: (dayPct !== null && dayPct >= s.warnPct) || (monthPct !== null && monthPct >= s.warnPct),
+      warn:
+        (dayPct !== null && dayPct >= s.warnPct) || (monthPct !== null && monthPct >= s.warnPct),
       testFresh: fresh,
-      log: log.rows.map((r) => ({ at: new Date(r.at).toISOString(), by: r.actor, action: r.action, after: r.after })),
+      log: log.rows.map((r) => ({
+        at: new Date(r.at).toISOString(),
+        by: r.actor,
+        action: r.action,
+        after: r.after,
+      })),
     };
   }
 
   private async name(id: string | null) {
     if (!id) return null;
-    const r = await this.db.query<{ n: string }>(`SELECT display_name AS n FROM app_user WHERE id = $1`, [id]);
+    const r = await this.db.query<{ n: string }>(
+      `SELECT display_name AS n FROM app_user WHERE id = $1`,
+      [id],
+    );
     return r.rows[0]?.n ?? null;
   }
 
@@ -110,22 +132,33 @@ export class AssistantAdminController {
     const turningOn = b.enabled && !before.enabled;
     if (b.enabled) {
       if (b.dataTerms === 'unknown')
-        throw new BadRequestException('Record what the provider does with the data before turning the assistant on');
+        throw new BadRequestException(
+          'Record what the provider does with the data before turning the assistant on',
+        );
       if (b.dataTerms === 'retained_may_train')
-        throw new BadRequestException('A provider that may train on this data cannot be used for the assistant');
-      if (!key) throw new BadRequestException('Choose a model, or make a scoring model active, first');
+        throw new BadRequestException(
+          'A provider that may train on this data cannot be used for the assistant',
+        );
+      if (!key)
+        throw new BadRequestException('Choose a model, or make a scoring model active, first');
       if (turningOn || modelChanged) {
         const fresh =
           before.testedModelKey === key &&
           !!before.testedAt &&
           Date.now() - new Date(before.testedAt).getTime() < TEST_VALID_FOR_MS;
-        if (!fresh) throw new ConflictException('Run "Test connection" on this model within the last hour first');
+        if (!fresh)
+          throw new ConflictException(
+            'Run "Test connection" on this model within the last hour first',
+          );
       }
     }
-    const termsChanged = b.dataTerms !== before.dataTerms || b.regionAllowed !== before.regionAllowed;
+    const termsChanged =
+      b.dataTerms !== before.dataTerms || b.regionAllowed !== before.regionAllowed;
     const attestNow = b.attest;
     if (b.enabled && (termsChanged || turningOn) && !b.attest)
-      throw new BadRequestException('Confirm that you checked these data terms before turning the assistant on');
+      throw new BadRequestException(
+        'Confirm that you checked these data terms before turning the assistant on',
+      );
     await this.db.withTx(async (tx) => {
       await tx.query(
         `UPDATE assistant_setting SET
@@ -135,9 +168,22 @@ export class AssistantAdminController {
            attested_by = CASE WHEN $15::boolean THEN $16::text::ulid ELSE attested_by END,
            attested_at = CASE WHEN $15::boolean THEN now() ELSE attested_at END`,
         [
-          b.enabled, b.name, b.modelRowId, b.features.challenge, b.features.compare, b.features.interview,
-          b.features.challengeRecruiter, b.unavailableMessage, b.regionAllowed, b.dataTerms,
-          b.dailyCap, b.monthlyCap, b.warnPct, p.userId, attestNow, p.userId,
+          b.enabled,
+          b.name,
+          b.modelRowId,
+          b.features.challenge,
+          b.features.compare,
+          b.features.interview,
+          b.features.challengeRecruiter,
+          b.unavailableMessage,
+          b.regionAllowed,
+          b.dataTerms,
+          b.dailyCap,
+          b.monthlyCap,
+          b.warnPct,
+          p.userId,
+          attestNow,
+          p.userId,
         ],
       );
       const diff: Record<string, { from: unknown; to: unknown }> = {};
@@ -177,17 +223,33 @@ export class AssistantAdminController {
   async test(@Body() body: unknown, @CurrentPrincipal() p: Principal, @Req() req: FastifyRequest) {
     const b = parse(testSchema, body ?? {});
     const key = await this.modelKey(b.modelRowId);
-    if (!key) throw new BadRequestException('Choose a model, or make a scoring model active, first');
+    if (!key)
+      throw new BadRequestException('Choose a model, or make a scoring model active, first');
     const s = await this.svc.settings();
     const built = buildPackage(
       {
         label: 'Candidate 01',
         band: 'good',
         items: [
-          { requirementId: '0000000000000000000000TST1', text: 'Network operations experience', classification: 'mandatory', status: 'met' },
-          { requirementId: '0000000000000000000000TST2', text: 'Incident response on call', classification: 'mandatory', status: 'not_found' },
+          {
+            requirementId: '0000000000000000000000TST1',
+            text: 'Network operations experience',
+            classification: 'mandatory',
+            status: 'met',
+          },
+          {
+            requirementId: '0000000000000000000000TST2',
+            text: 'Incident response on call',
+            classification: 'mandatory',
+            status: 'not_found',
+          },
         ],
-        evidence: new Map([['0000000000000000000000TST1', ['Operated a 24/7 network operations centre for four years']]]),
+        evidence: new Map([
+          [
+            '0000000000000000000000TST1',
+            ['Operated a 24/7 network operations centre for four years'],
+          ],
+        ]),
         reason: 'Operations background is clear; on-call work is not shown.',
         candidateName: null,
         injectionSuspected: false,
@@ -210,7 +272,9 @@ export class AssistantAdminController {
       const parsed = parseModel(res.text);
       const ans = verify(parsed, { packages: [built], intent: 'why' });
       ok = !!parsed && ans.kind === 'answer' && ans.claims.length > 0;
-      detail = ok ? `${res.provider} / ${res.model} answered in the expected shape.` : 'The model answered, but not in a form that can be checked.';
+      detail = ok
+        ? `${res.provider} / ${res.model} answered in the expected shape.`
+        : 'The model answered, but not in a form that can be checked.';
     } catch (e) {
       detail = (e as Error).message;
     }
