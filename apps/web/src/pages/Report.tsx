@@ -15,6 +15,7 @@ import {
   unreadReason,
   type MatchBand,
 } from '../results-logic';
+import { BRAND_BY, BRAND_NAME, Mark } from '../brand';
 import { locale, useT } from '../i18n';
 import { ShareReport } from './ShareReport';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
@@ -186,6 +187,20 @@ export function Report({
         className="rounded-3xl px-6 py-6 text-white"
         style={{ background: 'linear-gradient(160deg,#0C1A3D,#0F2459)' }}
       >
+        <p
+          className="mb-3 flex items-center gap-2 text-white"
+          aria-label={`${BRAND_NAME} ${BRAND_BY}`}
+        >
+          <span className="text-[#5C93FF]">
+            <Mark size={26} />
+          </span>
+          <span aria-hidden="true" className="text-lg font-extrabold tracking-[-0.03em]">
+            {BRAND_NAME}
+          </span>
+          <span aria-hidden="true" className="text-xs font-semibold text-[#B9C8F2]">
+            {BRAND_BY}
+          </span>
+        </p>
         <p className="text-sm text-[#B9C8F2]">{t('Evaluation report')}</p>
         <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
         <p className="mt-1 text-sm text-[#B9C8F2]">

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, session, type Session } from '../api';
+import { Brand } from '../brand';
 import { useT } from '../i18n';
 import { btnPrimary, Card, errMsg, Field, input, Notice } from '../ui';
 
@@ -36,6 +37,9 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="mx-auto mt-16 max-w-sm">
+      <div className="mb-6 flex justify-center">
+        <Brand size={40} />
+      </div>
       <Card title={t('Sign in')}>
         <form onSubmit={submit} className="space-y-3">
           <Field label={t('Email')}>

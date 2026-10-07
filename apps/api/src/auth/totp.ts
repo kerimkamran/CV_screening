@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { BRAND_NAME } from '../brand';
 
 /** RFC 6238 time-based one-time passwords (HMAC-SHA1, 6 digits, 30 s), as every authenticator app expects. */
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -67,7 +68,7 @@ export function verifyTotp(
   return null;
 }
 
-export const otpauthUri = (secret: string, account: string, issuer = 'Azerconnect CV Screening') =>
+export const otpauthUri = (secret: string, account: string, issuer = BRAND_NAME) =>
   `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=${STEP_SECONDS}`;
 
 export function newRecoveryCodes(n = 8): string[] {

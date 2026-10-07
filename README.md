@@ -1,4 +1,4 @@
-# Azerconnect CV Screening
+# parallax by Azerconnect Group
 
 AI recruitment screening platform, built from **Programme Plan v1.0** (backlog, WSJF prioritisation,
 architecture, compliance). The product turns a job description into recruiter-owned criteria,

@@ -42,7 +42,7 @@ const EnvSchema = z.object({
   /** Directory holding the built web app; served by the API when set (single-service deploy). */
   WEB_DIST_DIR: z.string().optional(),
   EMAIL_PROVIDER: z.enum(['console', 'smtp', 'resend']).default('console'),
-  EMAIL_FROM: z.string().default('Azerconnect CV Screening <no-reply@example.invalid>'),
+  EMAIL_FROM: z.string().default('parallax by Azerconnect Group <no-reply@example.invalid>'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_USER: z.string().optional(),

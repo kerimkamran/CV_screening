@@ -17,6 +17,7 @@ import { Candidate } from './pages/Candidate';
 import { Home } from './pages/Home';
 import { Monitoring } from './pages/Monitoring';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
+import { Brand, BRAND_FULL } from './brand';
 import { Retention } from './pages/Retention';
 import { Security } from './pages/Security';
 import { SharedList, SharedReport } from './pages/SharedReport';
@@ -227,8 +228,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     <div className="min-h-screen bg-page text-ink">
       <header className="border-b bg-card">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <a href="#/" className="font-semibold text-link">
-            {t('Azerconnect CV Screening')}
+          <a href="#/" className="rounded focus-visible:outline-2" title={BRAND_FULL}>
+            <Brand />
           </a>
           {!me && <LanguageSwitch signedIn={false} />}
           {me && !me.mustChangePassword && (

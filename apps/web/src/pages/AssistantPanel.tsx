@@ -10,6 +10,7 @@ import {
   type Intent,
   type ThreadMessage,
 } from '../assistant';
+import { Mark } from '../brand';
 import { getLang, tr, useT } from '../i18n';
 import { type MatchBand } from '../results-logic';
 import { btnPrimary, btnSecondary, errMsg } from '../ui';
@@ -442,13 +443,7 @@ const startersLabel = (intent: Intent, fallback: string) =>
       : tr(fallback);
 
 function Orb() {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-block h-5 w-5 shrink-0 rounded-full border border-edge"
-      style={{ background: 'radial-gradient(circle at 35% 30%, #F5C461, #8FC4FF 70%)' }}
-    />
-  );
+  return <Mark size={22} className="shrink-0 text-link" />;
 }
 
 function AnswerView({

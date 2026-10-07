@@ -1,7 +1,6 @@
 /** Sign-in, menu, footer, shared labels, and the server messages people meet most often. */
 export const AZ_SHELL: Record<string, string> = {
   // header, menu, footer
-  'Azerconnect CV Screening': 'Azerconnect CV yoxlaması',
   'New screening': 'Yeni yoxlama',
   'Past scans': 'Keçmiş yoxlamalar',
   'Shared with me': 'Mənimlə paylaşılanlar',

@@ -16,6 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { RateLimiter } from '../common/rate-limiter';
 import { ENV, type Env } from '../config/env';
 import { DbService } from '../db/db.service';
+import { BRAND_FULL, BRAND_NAME } from '../brand';
 import { SettingsCrypto } from '../ai/settings-crypto';
 import { EmailService } from './email.service';
 import { LOCAL_IDP, signSession } from './local-session';
@@ -560,8 +561,8 @@ export class LocalAuthService {
       `Hello ${displayName},`,
       '',
       kind === 'welcome'
-        ? 'An account has been created for you on the Azerconnect AI CV Screening platform.'
-        : 'Your password on the Azerconnect AI CV Screening platform has been reset.',
+        ? `An account has been created for you on ${BRAND_FULL}.`
+        : `Your password on ${BRAND_FULL} has been reset.`,
       '',
       `Sign in:   ${link}`,
       `Email:     ${email}`,
@@ -581,7 +582,7 @@ export class LocalAuthService {
     const emailSent = await this.mail.send({
       to: email,
       subject:
-        kind === 'welcome' ? 'Your CV Screening account' : 'Your CV Screening password was reset',
+        kind === 'welcome' ? `Your ${BRAND_NAME} account` : `Your ${BRAND_NAME} password was reset`,
       text,
     });
     // When the email did not go out, the admin copies the link instead of a password.

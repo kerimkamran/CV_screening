@@ -21,6 +21,7 @@
   --c-accent-hover: #1a4dcb;
   --c-on-accent: #ffffff;
   --c-link: #1f5ae8;
+  --c-star: #9a5f00; /* brand mark star: gold as an icon on light pages (spec 4.2) */
   --c-focus: #1f5ae8;
   --c-danger: #b42318;
   --c-danger-hover: #912018;
@@ -69,6 +70,7 @@
 }
 
 :root[data-bg='sky'] {
+  --c-star: #7f4d00;
   --c-bg: #dceafb;
   --c-card: #f4f9ff;
   --c-sel: #d8e8fc;
@@ -88,6 +90,7 @@
 
 /* Dark: chosen explicitly, or by the device when nothing is chosen. */
 :root[data-bg='dark'] {
+  --c-star: #f5c461;
   --c-bg: #0a1530;
   --c-card: #0f1d45;
   --c-sel: #142654;
@@ -126,6 +129,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-bg]) {
+    --c-star: #f5c461;
     --c-bg: #0a1530;
     --c-card: #0f1d45;
     --c-sel: #142654;

@@ -36,7 +36,7 @@ No Docker daemon is needed on your machine; Render builds `docker/render.Dockerf
 
 Render's free web services block outbound SMTP, so the default is **Resend** over HTTPS (works on every plan):
 create a Resend account, verify your sending domain (e.g. azerconnect.az) or use their test sender, create an API key, and set
-`RESEND_API_KEY` and `EMAIL_FROM` (`Azerconnect CV Screening <no-reply@azerconnect.az>`). For SMTP on a paid plan set
+`RESEND_API_KEY` and `EMAIL_FROM` (`parallax by Azerconnect Group <no-reply@azerconnect.az>`). For SMTP on a paid plan set
 `EMAIL_PROVIDER=smtp` and the `SMTP_*` variables. If email is not configured or fails, creating a user still works: the admin copies the one-time invitation link (shown once) and sends it themselves.
 The link is built from the address you are using, so open the admin pages on the service's real URL (not a preview address) when copying links. `APP_BASE_URL` only affects links inside emails.
 
