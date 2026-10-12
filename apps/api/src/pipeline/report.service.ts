@@ -75,16 +75,8 @@ export class ReportService {
       );
     }
 
-    // Names: only candidates this recruiter revealed or shortlisted, and only if asked for.
-    const shown = new Set<string>();
-    if (opts.includeNames) {
-      const revealed = new Set(await this.cands.revealedBy(vid, p.userId));
-      for (const r of scoredRows) {
-        if ((r.screeningId && revealed.has(r.screeningId)) || r.decision?.outcome === 'shortlist') {
-          shown.add(r.documentId);
-        }
-      }
-    }
+    // Names are shown as written, for everyone who is let in (decision of 8 October 2026).
+    const shown = new Set<string>(scoredRows.map((r) => r.documentId));
 
     // Reasons and quotes for the expanded candidates only.
     const top = scoredRows.slice(0, EXPANDED).filter((r) => r.screeningId);

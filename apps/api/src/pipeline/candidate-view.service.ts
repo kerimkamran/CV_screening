@@ -2,9 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { MARK_LABEL, markFromStored, type Mark } from '@cv/shared';
 import { DbService } from '../db/db.service';
 import { AdjustmentService } from './adjustments.service';
-import { anonymise, anonymiseLine, toAnon } from './anonymise';
 import { pageAt } from './documents';
-import { PoolService, type PoolRow } from './pool.service';
+import type { PoolRow } from './pool.service';
 
 export type ReqState = 'matched' | 'partly' | 'missing';
 
@@ -16,24 +15,15 @@ interface Evidence {
 
 /**
  * What the two-pane report needs (Development Plan WP 3.5): the result on one side, the resume on
- * the other, and the anchors that join them. With CANDIDATE_NAMES=hidden everything here is passed
- * through the anonymiser first; with the default 'shown' the original text and quotes are returned.
+ * the other, and the anchors that join them. Names, the original text and quotes are shown as written
+ * (decision of 8 October 2026: candidate names are not hidden).
  */
 @Injectable()
 export class CandidateViewService {
   constructor(
     private readonly db: DbService,
     private readonly adj: AdjustmentService,
-    private readonly pool: PoolService,
   ) {}
-
-  async name(row: PoolRow): Promise<string | null> {
-    const { rows } = await this.db.query<{ n: string | null }>(
-      `SELECT candidate_name AS n FROM screening WHERE id = $1`,
-      [row.matchId],
-    );
-    return rows[0]?.n?.trim() || null;
-  }
 
   private async source(row: PoolRow) {
     const { rows } = await this.db.query<{
@@ -69,13 +59,9 @@ export class CandidateViewService {
 
   async report(row: PoolRow) {
     const src = await this.source(row);
-    const hide = !this.pool.namesShown;
-    const text = src.text ?? '';
-    const anon = hide ? anonymise(text, [src.name]) : null;
-    const view = anon?.text ?? text;
+    const view = src.text ?? '';
     const blocks = this.blocks(view, null);
     const blockOf = (pos: number) => blocks.findIndex((b) => pos >= b.start && pos < b.end + 1);
-    const clean = (s: string | null) => (hide ? anonymiseLine(s, [src.name]) : s);
 
     const { rows: assess } = await this.db.query<{
       requirementId: string;
@@ -109,18 +95,13 @@ export class CandidateViewService {
         a.status === 'met' ? 'matched' : a.status === 'partially_met' ? 'partly' : 'missing';
       const anchors = (a.evidence ?? [])
         .map((e) => {
-          const s = anon ? toAnon(anon.regions, e.start, 'start') : e.start;
-          const en = anon ? toAnon(anon.regions, e.end, 'end') : e.end;
-          if (en <= s) return null;
+          if (e.end <= e.start) return null;
           return {
-            start: s,
-            end: en,
-            /** the same place in the original text, for "Show original" */
-            os: e.start,
-            oe: e.end,
-            quote: view.slice(s, en),
+            start: e.start,
+            end: e.end,
+            quote: view.slice(e.start, e.end),
             page: pageAt(src.pageStarts, e.start),
-            block: Math.max(0, blockOf(s)),
+            block: Math.max(0, blockOf(e.start)),
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -132,7 +113,7 @@ export class CandidateViewService {
         unclear: a.status === 'ambiguous',
         notFound: a.status === 'not_found' || a.status === 'not_met',
         confidence: a.confidence,
-        rationale: clean(a.rationale),
+        rationale: a.rationale,
         anchors,
       };
     });
@@ -167,12 +148,11 @@ export class CandidateViewService {
     return {
       matchId: row.matchId,
       documentId: row.documentId,
-      namesShown: !hide,
       label: row.label,
       name: row.name,
       pseudonym: row.pseudonym,
-      email: hide ? null : src.email,
-      filename: hide ? null : src.filename,
+      email: src.email,
+      filename: src.filename,
       vacancy: {
         id: row.vacancyId,
         title: row.vacancyTitle,
@@ -183,7 +163,7 @@ export class CandidateViewService {
       band: row.band,
       mustFound: row.mustFound,
       mustTotal: row.mustTotal,
-      summary: clean(src.summary),
+      summary: src.summary,
       analyzedAt: row.analyzedAt,
       outOfDate: row.outOfDate
         ? {
@@ -210,25 +190,15 @@ export class CandidateViewService {
     };
   }
 
-  /** The resume as the reader shows it: pages, paragraphs, and what was hidden (if names are hidden). */
-  async resume(row: PoolRow, mode: 'original' | 'anonymised') {
+  /** The resume as the reader shows it: the original text with its pages and paragraphs. */
+  async resume(row: PoolRow) {
     const src = await this.source(row);
     const text = src.text ?? '';
-    const hide = mode === 'anonymised';
-    const anon = hide ? anonymise(text, [src.name]) : null;
-    const view = anon?.text ?? text;
-    const starts =
-      src.pageStarts?.map((o) => (anon ? toAnon(anon.regions, o, 'start') : o)) ?? null;
     return {
-      view: mode,
-      text: view,
+      text,
       truncated: src.truncated,
-      pageStarts: starts,
-      blocks: this.blocks(view, starts),
-      hidden: anon?.counts ?? {},
-      notice: hide
-        ? 'Names, contact details and personal details are hidden here. This is hidden on screen, not a guarantee.'
-        : null,
+      pageStarts: src.pageStarts,
+      blocks: this.blocks(text, src.pageStarts),
     };
   }
 }

@@ -21,7 +21,7 @@ Needs `pdftotext` (poppler-utils) on the machine for PDF CVs.
 
 ## Vacancies, the candidate pool and SenAI
 
-The product is organised around the vacancy: the Vacancy pool lists them; a vacancy page holds the role card, the resumes card and the tabs (Candidates, Star map, Report, Runs, Skills); the Candidate pool lists everyone across vacancies with decision marks; a report shows the result beside the original resume. **SenAI** (name editable in Admin) answers questions about one candidate or the whole pool, in the language of the question, and never decides. Recorded decisions: [`docs/decisions.md`](docs/decisions.md). Names are shown by default (`CANDIDATE_NAMES=hidden` hides them).
+The product is organised around the vacancy: the Vacancy pool lists them; a vacancy page holds the role card, the resumes card and the tabs (Candidates, Star map, Report, Runs, Skills); the Candidate pool lists everyone across vacancies with decision marks; a report shows the result beside the original resume. **SenAI** (name editable in Admin) answers questions about one candidate or the whole pool, in the language of the question, and never decides. Recorded decisions: [`docs/decisions.md`](docs/decisions.md). Candidate names are always shown to recruiters; there is no hide or reveal mode. Admin → SenAI also has an "Add an API for SenAI" card (company, model and key for the assistant only; scoring is not touched).
 
 Useful commands:
 

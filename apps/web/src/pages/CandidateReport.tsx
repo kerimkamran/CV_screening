@@ -79,7 +79,7 @@ function ResumeText({
   const text = data.text;
   const ranges = useMemo(() => {
     const r = anchors
-      .map((a) => (data.view === 'original' ? [a.os, a.oe] : [a.start, a.end]) as [number, number])
+      .map((a) => [a.start, a.end] as [number, number])
       .filter(([a, b]) => b > a && a >= 0 && a < text.length)
       .map(([a, b]) => [a, Math.min(b, text.length)] as [number, number])
       .sort((x, y) => x[0] - y[0]);
@@ -90,7 +90,7 @@ function ResumeText({
       else merged.push([...x]);
     }
     return merged;
-  }, [anchors, data.view, text.length]);
+  }, [anchors, text.length]);
 
   useEffect(() => {
     first.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
@@ -166,7 +166,6 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
   const [active, setActive] = useState<string | null>(null);
   const [nudge, setNudge] = useState(0);
   const [note, setNote] = useState('');
-  const [name, setName] = useState<string | null>(null);
   const [phoneView, setPhoneView] = useState<'report' | 'resume'>('report');
   const [split, setSplit] = useState<number>(() => {
     try {
@@ -196,7 +195,6 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
     setD(null);
     setResume(null);
     setActive(null);
-    setName(null);
     void load();
     api
       .get<ResumeData>(`/candidates/${id}/resume`)
@@ -283,32 +281,6 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
     }
   }
 
-  async function revealName() {
-    try {
-      const r = await api.post<{ name: string | null }>(`/candidates/${id}/reveal`, {
-        kind: 'name',
-      });
-      setName(r.name ?? tr('(no name found)'));
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-  async function hideName() {
-    setName(null);
-    await api.post(`/candidates/${id}/reveal`, { kind: 'name', hide: true }).catch(() => undefined);
-  }
-  async function showOriginal(on: boolean) {
-    try {
-      if (!on)
-        await api
-          .post(`/candidates/${id}/reveal`, { kind: 'original', hide: true })
-          .catch(() => undefined);
-      setResume(await api.get<ResumeData>(`/candidates/${id}/resume${on ? '?view=original' : ''}`));
-    } catch (e) {
-      setResumeError(errMsg(e));
-    }
-  }
-
   // ---------------------------------------------------------------- previous / next
   const at = origin ? origin.ids.indexOf(id) : -1;
   const prev = at > 0 ? origin!.ids[at - 1] : undefined;
@@ -347,7 +319,7 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
     );
   if (!d) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
 
-  const title = name ?? d.label;
+  const title = d.label;
   const report = (
     <div className="space-y-4">
       {d.outOfDate && (
@@ -456,38 +428,7 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
           {t('Resume')}
           {d.filename && <span className="ml-2 font-normal text-ink-3">{d.filename}</span>}
         </h2>
-        {!d.namesShown && canMark && resume && (
-          <div className="flex gap-2">
-            {name === null ? (
-              <button type="button" className={btnSecondary} onClick={() => void revealName()}>
-                {t('Reveal name')}
-              </button>
-            ) : (
-              <button type="button" className={btnSecondary} onClick={() => void hideName()}>
-                {t('Hide name')}
-              </button>
-            )}
-            {resume.view === 'anonymised' ? (
-              <button
-                type="button"
-                className={btnSecondary}
-                onClick={() => void showOriginal(true)}
-              >
-                {t('Show original')}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={btnSecondary}
-                onClick={() => void showOriginal(false)}
-              >
-                {t('Hide personal details')}
-              </button>
-            )}
-          </div>
-        )}
       </div>
-      {resume?.notice && <Notice kind="info">{resume.notice}</Notice>}
       {resumeError && <Notice kind="error">{resumeError}</Notice>}
       {!resume && !resumeError && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
       {resume && <ResumeText data={resume} anchors={activeReq?.anchors ?? []} focus={nudge} />}

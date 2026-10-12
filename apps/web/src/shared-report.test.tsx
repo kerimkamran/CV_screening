@@ -114,7 +114,7 @@ describe('Shared report (spec 6.5)', () => {
     }));
     render(<SharedReport id="R1" />);
     expect(await screen.findByText(/Alice Full/)).toBeInTheDocument();
-    expect(screen.getByText(/Real names are shown only for candidates/)).toBeInTheDocument();
+    expect(screen.getByText(/Candidates are shown with their real names/)).toBeInTheDocument();
     expect(screen.getByText(/Quotes from CVs were left out/)).toBeInTheDocument();
     expect(screen.queryByText(/Designed the BGP/)).toBeNull();
   });
@@ -213,7 +213,7 @@ describe('Share panel (spec 6.5)', () => {
     expect(screen.getByRole('button', { name: 'Share as a link' })).toBeDisabled();
   });
 
-  it('names the people, warns about names and quotes, creates a link and copies it', async () => {
+  it('names the people, warns about quotes, always includes names, creates a link and copies it', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const calls = mockFetch((url, init) => {
@@ -231,11 +231,7 @@ describe('Share panel (spec 6.5)', () => {
       screen.getByText(/Quotes are text from resumes and count as personal data/),
     ).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('checkbox', { name: /Manager/ }));
-    expect(screen.queryByText(/Real names will be visible/)).toBeNull();
-    await userEvent.click(screen.getByRole('checkbox', { name: /Include real names/ }));
-    expect(
-      screen.getByText('Real names will be visible to the people you choose.'),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Include real names/ })).toBeNull();
     await userEvent.selectOptions(screen.getByLabelText('Link works for'), '14');
     await userEvent.click(screen.getByRole('checkbox', { name: /Include quotes/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Create link' }));

@@ -27,14 +27,11 @@ export function CandidateCard(props: {
   r: CandidateRow;
   band: MatchBand;
   name: string;
-  isRevealed: boolean;
   selected: boolean;
   detail: Detail | 'loading' | 'error' | undefined;
   proof: string | null;
   onSelect: () => void;
   onProof: (req: string | null) => void;
-  onReveal: () => void;
-  onHide: () => void;
   onMarked: () => void;
   /** The assistant's name when it is on; the button is drawn only then. */
   assistantName?: string;
@@ -76,15 +73,6 @@ export function CandidateCard(props: {
             </span>
           </span>
         </button>
-        {props.isRevealed ? (
-          <button className="text-sm text-link hover:underline" onClick={props.onHide}>
-            {t('Hide name')}
-          </button>
-        ) : (
-          <button className="text-sm text-link hover:underline" onClick={props.onReveal}>
-            {t('Reveal name')}
-          </button>
-        )}
       </div>
 
       {selected && (

@@ -96,7 +96,7 @@ describe('star map in the browser', () => {
     stubApi();
     render(<Results vacancyId="V" onTable={() => undefined} />);
     const section = await screen.findByRole('region', { name: 'Star map' });
-    const stars = within(section).getAllByRole('button', { name: /Candidate 0\d, / });
+    const stars = within(section).getAllByRole('button', { name: /Real Name \d, / });
     expect(stars).toHaveLength(3);
     for (const s of stars) expect(s.className).toContain('h-11 w-11');
     const summary = document.getElementById('star-summary')!;

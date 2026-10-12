@@ -337,7 +337,7 @@ export function SharedReport({ id }: { id: string }) {
         })}{' '}
         {t('Candidate data stays inside Azerconnect Group.')}{' '}
         {r.includeNames
-          ? t('Real names are shown only for candidates the recruiter showed or shortlisted.')
+          ? t('Candidates are shown with their real names.')
           : t('Candidates appear as numbers; names stay out of the report.')}
         {!r.includeQuotes && ` ${t('Quotes from CVs were left out.')}`}
       </footer>

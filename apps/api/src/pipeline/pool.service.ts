@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   BAND_CUTOFFS,
   foldText,
@@ -9,7 +9,6 @@ import {
   type MatchBand,
   type VacancyStatus,
 } from '@cv/shared';
-import { ENV, type Env } from '../config/env';
 import { DbService } from '../db/db.service';
 import { AdjustmentService } from './adjustments.service';
 
@@ -24,7 +23,7 @@ export interface PoolRow {
   pseudonym: string;
   /** What the list shows: the candidate's name, or the pseudonym when names are hidden or unknown. */
   label: string;
-  /** The candidate's name; null when names are hidden (CANDIDATE_NAMES=hidden) or not found in the resume. */
+  /** The candidate's name as found in the resume; null when none was found. */
   name: string | null;
   ordinal: number;
   /** The current match: the latest completed scoring of this resume for this vacancy. */
@@ -95,12 +94,7 @@ export class PoolService {
   constructor(
     private readonly db: DbService,
     private readonly adj: AdjustmentService,
-    @Inject(ENV) private readonly env: Env,
   ) {}
-
-  get namesShown() {
-    return this.env.CANDIDATE_NAMES === 'shown';
-  }
 
   async rows(vacancyIds: string[], opts: { withSkills?: boolean } = {}): Promise<PoolRow[]> {
     if (vacancyIds.length === 0) return [];
@@ -175,11 +169,8 @@ export class PoolService {
         vacancyStatus: r.vacancyStatus,
         vacancyArchived: r.archived,
         pseudonym: pseudonym(r.ordinal, r.total),
-        label:
-          this.namesShown && r.candidateName?.trim()
-            ? r.candidateName.trim()
-            : pseudonym(r.ordinal, r.total),
-        name: this.namesShown && r.candidateName?.trim() ? r.candidateName.trim() : null,
+        label: r.candidateName?.trim() ? r.candidateName.trim() : pseudonym(r.ordinal, r.total),
+        name: r.candidateName?.trim() ? r.candidateName.trim() : null,
         ordinal: r.ordinal,
         matchId: r.matchId,
         score,

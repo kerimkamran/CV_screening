@@ -569,30 +569,15 @@ describeDb('Screening pipeline', () => {
     expect(headers).toContain('Human decision');
     expect(wb.getWorksheet('Criteria and notes')!.getCell('B1').value).toBe('Criterion');
 
-    // Pseudonyms by default; names and file names only for shortlisted or revealed candidates.
+    // Names and file names are shown as written (decision of 8 October 2026).
     const col = (w: ExcelJS.Worksheet, n: number) =>
       w
         .getColumn(n)
         .values.slice(2)
         .map((v) => (v == null ? '' : String(v)));
-    expect(col(ws, 1).every((v) => /^Candidate \d+$/.test(v))).toBe(true);
-    expect(col(ws, 3).filter(Boolean).sort()).toEqual(['mallory.txt', 'nolicence.txt']); // the shortlisted ones
-    expect(col(ws, 2).join('|')).not.toContain('Alice');
-
-    const list = (await rec().get(`/vacancies/${vid}/candidates`)).json();
-    const alice = list.candidates.find((c: { filename: string }) => c.filename === 'alice.txt');
-    await rec().post('/screenings/reveal-names', { screeningIds: [alice.screeningId] });
-    const r2 = await app.inject({
-      method: 'GET',
-      url: `/vacancies/${vid}/export.xlsx`,
-      headers: { authorization: `Bearer ${ayla}` },
-    });
-    const wb2 = new ExcelJS.Workbook();
-    await wb2.xlsx.load(r2.rawPayload as never);
-    const ws2 = wb2.getWorksheet('Candidates')!;
-    expect(col(ws2, 2)).toContain('Alice Honest');
-    expect(col(ws2, 3)).toContain('alice.txt');
-    expect(col(ws2, 2).filter((v) => v.includes('Bobby'))).toHaveLength(0);
+    expect(headers.slice(0, 2)).toEqual(['Candidate', 'File']);
+    expect(col(ws, 1)).toContain('Alice Honest');
+    expect(col(ws, 2)).toContain('alice.txt');
   });
 
   it('erases a candidate: file, text and extracted identity are gone; the decision record remains', async () => {

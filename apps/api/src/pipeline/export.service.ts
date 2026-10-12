@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import type { Principal } from '../auth/principal';
 import { pseudonyms } from '@cv/shared';
-import { redact } from './report.service';
 import type { Breakdown } from './score';
 
 export interface CandidateRow {
@@ -33,18 +32,8 @@ const safe = (v: unknown) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? 
 
 @Injectable()
 export class ExportService {
-  /**
-   * Names and file names are a reviewer's choice, as on screen: a row shows them only if this
-   * reviewer revealed the candidate or shortlisted them (`shown` holds document ids). Everyone else
-   * is "Candidate NN", and names typed into a decision reason are removed.
-   */
-  async build(
-    title: string,
-    vacancyId: string,
-    rows: Row[],
-    by: Principal,
-    shown: ReadonlySet<string> = new Set(),
-  ): Promise<Buffer> {
+  /** Names and file names are shown as written. "Candidate NN" stands in only when no name was found. */
+  async build(title: string, vacancyId: string, rows: Row[], by: Principal): Promise<Buffer> {
     const pseudo = pseudonyms(rows);
     const wb = new ExcelJS.Workbook();
     const reqs: { id: string; text: string }[] = [];
@@ -56,9 +45,8 @@ export class ExportService {
     }
     const ws = wb.addWorksheet('Candidates');
     ws.columns = [
-      { header: 'Candidate', key: 'name', width: 28 },
-      { header: 'Name (only if revealed or shortlisted)', key: 'real', width: 30 },
-      { header: 'File (only if revealed or shortlisted)', key: 'file', width: 30 },
+      { header: 'Candidate', key: 'name', width: 30 },
+      { header: 'File', key: 'file', width: 30 },
       { header: 'Score (0-100)', key: 'score', width: 14 },
       { header: 'AI band (sorting aid)', key: 'band', width: 20 },
       { header: 'Needs review: knockout', key: 'ko', width: 20 },
@@ -75,20 +63,17 @@ export class ExportService {
         (r.score?.breakdown.items ?? []).map((i) => [i.requirementId, i.status]),
       );
       ws.addRow({
-        name: r.erased ? '(erased)' : (pseudo.get(r.documentId) ?? ''),
-        real: r.erased || !shown.has(r.documentId) ? '' : safe(r.candidateName ?? ''),
-        file: r.erased || !shown.has(r.documentId) ? '' : safe(r.filename),
+        name: r.erased
+          ? '(erased)'
+          : safe(r.candidateName?.trim() || (pseudo.get(r.documentId) ?? '')),
+        file: r.erased ? '' : safe(r.filename),
         score: r.score?.value ?? '',
         band: r.band ?? r.state,
         ko: r.knockoutTriggered ? 'yes' : '',
         inj: r.injectionSuspected ? 'yes' : '',
         gaps: r.score?.breakdown.mandatoryGaps ?? '',
         decision: r.decision?.outcome ?? 'undecided',
-        reason: safe(
-          shown.has(r.documentId)
-            ? (r.decision?.reason ?? '')
-            : redact(r.decision?.reason ?? '', r.candidateName),
-        ),
+        reason: safe(r.decision?.reason ?? ''),
         by: safe(r.decision?.decidedBy ?? ''),
         at: r.decision?.decidedAt ? new Date(r.decision.decidedAt).toISOString() : '',
         ...Object.fromEntries(reqs.map((q) => [q.id, statusById.get(q.id) ?? ''])),
@@ -107,7 +92,6 @@ export class ExportService {
     for (const line of [
       `Vacancy: ${title} (${vacancyId})`,
       `Exported by ${by.displayName ?? by.email ?? by.userId} at ${new Date().toISOString()}`,
-      'Candidates are shown as pseudonyms ("Candidate NN", by upload order). Names and file names appear only for candidates this reviewer revealed or shortlisted.',
       'Scores and bands are AI-assisted recommendations for sorting. They are not decisions.',
       'Every shortlist, hold or reject decision is made and recorded by a named human reviewer.',
       'Score = 100 × Σ(weight × points) ÷ Σ(weight); met 1, partially met 0.5, otherwise 0.',

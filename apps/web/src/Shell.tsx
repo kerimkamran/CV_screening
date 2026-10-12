@@ -13,7 +13,6 @@ import { Brand, BRAND_FULL, Mark } from './brand';
 import { useT } from './i18n';
 import { AssistantPanel } from './pages/AssistantPanel';
 import { PoolPanel } from './pages/PoolPanel';
-import { setFocus } from './focus';
 import { isBackground } from './theme';
 
 /**
@@ -175,11 +174,6 @@ function AccountMenu({
           <Appearance
             value={isBackground(me.background) ? me.background : null}
             onChange={(background) => onMe((m) => (m ? { ...m, background } : m))}
-            focusOnSkills={me.focusOnSkills === true}
-            onFocusChange={(focusOnSkills) => {
-              setFocus(focusOnSkills);
-              onMe((m) => (m ? { ...m, focusOnSkills } : m));
-            }}
           />
         </div>
         <div className="border-t border-line pt-1">

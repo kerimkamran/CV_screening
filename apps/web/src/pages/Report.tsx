@@ -94,7 +94,14 @@ export function Report({
   }, [pending, load]);
 
   const all = useMemo(() => (data?.candidates ?? []).filter((r) => !r.erased), [data]);
-  const names = useMemo(() => pseudonyms(all), [all]);
+  const pseudo = useMemo(() => pseudonyms(all), [all]);
+  const names = useMemo(
+    () =>
+      new Map(
+        all.map((r) => [r.documentId, r.candidateName || r.filename || pseudo.get(r.documentId)!]),
+      ),
+    [all, pseudo],
+  );
   const ordered = useMemo(() => orderCandidates(all), [all]);
   const scored = useMemo(
     () =>
@@ -487,8 +494,7 @@ export function Report({
           date: when(createdAt),
           today,
         })}
-        {me?.displayName && ` · ${t('prepared for {name}', { name: me.displayName })}`}.{' '}
-        {t('Candidates appear as numbers; names stay out of the report.')}
+        {me?.displayName && ` · ${t('prepared for {name}', { name: me.displayName })}`}.
       </footer>
     </article>
   );

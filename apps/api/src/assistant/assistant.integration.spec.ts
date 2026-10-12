@@ -149,7 +149,8 @@ describeDb('Assistant (design spec 6.6)', () => {
     expect(r.statusCode).toBe(200);
     const a = r.json().answer;
     expect(a.kind).toBe('answer');
-    expect(a.about[0]).toMatch(/^Candidate \d\d$/);
+    // The recruiter reads the name; the model was sent only the pseudonym (checked below).
+    expect(a.about[0]).toBe('Alice Full');
     expect(a.claims[0].quote).toBeTruthy();
     expect(a.facts[0]).toContain('must-haves found');
     const sent = h.modelCalls.at(-1)!;

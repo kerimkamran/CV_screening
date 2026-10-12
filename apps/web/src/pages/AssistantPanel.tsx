@@ -19,7 +19,7 @@ import { btnPrimary, btnSecondary, errMsg } from '../ui';
 
 export interface AssistantTarget {
   screeningId: string;
-  /** The pseudonym, never the revealed name. */
+  /** The candidate's name as shown on screen. */
   label: string;
   band: MatchBand;
 }

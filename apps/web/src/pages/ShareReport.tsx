@@ -51,7 +51,6 @@ export function ShareReport({
   const [found, setFound] = useState<Person[]>([]);
   const [picked, setPicked] = useState<Person[]>([]);
   const [days, setDays] = useState(30);
-  const [names, setNames] = useState(false);
   const [quotes, setQuotes] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -91,7 +90,7 @@ export function ShareReport({
       const r = await api.post<{ id: string }>(`/vacancies/${vacancyId}/shares`, {
         viewerIds: picked.map((p) => p.id),
         expiresInDays: days,
-        includeNames: names,
+        includeNames: true,
         includeQuotes: quotes,
       });
       setCreated(r.id);
@@ -231,22 +230,6 @@ export function ShareReport({
                 </select>
               </Field>
               <div className="space-y-2 text-sm">
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={names}
-                    onChange={(e) => setNames(e.target.checked)}
-                  />
-                  <span>
-                    {t('Include real names, only for candidates you showed or shortlisted.')}
-                    {names && (
-                      <span className="block text-ink-2">
-                        {t('Real names will be visible to the people you choose.')}
-                      </span>
-                    )}
-                  </span>
-                </label>
                 <label className="flex items-start gap-2">
                   <input
                     type="checkbox"

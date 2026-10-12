@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { fetchReadiness, session } from './api';
 import { AiSettings, Users } from './pages/Admin';
-import { setFocus } from './focus';
 import { Report } from './pages/Report';
 import { Results } from './pages/Results';
 
@@ -532,23 +531,22 @@ describe('Results: bands, names hidden, proof', () => {
             ],
           },
         };
-      if (url.endsWith('/reveal-names')) return { body: { revealed: 1 } };
       return { body: {} };
     });
   }
 
-  it('shows plain bands with names hidden, and never prints a file name or a headline number', async () => {
+  it('shows plain bands with real names, and never prints a file name or a headline number', async () => {
     setup();
     render(<Results vacancyId="V" onTable={() => undefined} />);
     expect(await screen.findByText('Your constellation')).toBeInTheDocument();
     expect(screen.getByText(/No strong match in this batch/)).toBeInTheDocument();
-    // Candidate 02 (74) is Good and ranks first; the 31 is Limited, inside a collapsed group.
+    // Real Name 2 (74) is Good and ranks first; the 31 is Limited, inside a collapsed group.
     const cards = screen.getAllByRole('article');
-    expect(cards[0]).toHaveTextContent('Candidate 02');
+    expect(cards[0]).toHaveTextContent('Real Name 2');
     expect(cards[0]).toHaveTextContent('Good');
     expect(screen.getByText(/Limited \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Needs a human look \(1\)/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/cv_person|Real Name/);
+    expect(document.body.textContent).not.toMatch(/cv_person|Candidate 0/);
     expect(await screen.findByText(/Score 74 of 100/)).toBeInTheDocument(); // selected card only
     expect(cards[1]).not.toHaveTextContent(/Score \d/);
   });
@@ -567,28 +565,13 @@ describe('Results: bands, names hidden, proof', () => {
     expect(await screen.findByText(/no Kubernetes in this CV/)).toBeInTheDocument();
   });
 
-  it('reveals one name on request, recorded on the server, and can hide it again', async () => {
-    const calls = setup();
+  it('has no Reveal or Hide name buttons: real names are always shown', async () => {
+    setup();
     render(<Results vacancyId="V" onTable={() => undefined} />);
     const card = (await screen.findAllByRole('article'))[0]!;
-    await userEvent.click(within(card).getByRole('button', { name: 'Reveal name' }));
-    await waitFor(() => expect(card).toHaveTextContent('Real Name 2'));
-    const post = calls.find((c) => c.url.endsWith('/reveal-names'))!;
-    expect(JSON.parse(String(post.init!.body))).toEqual({ screeningIds: ['S2'] });
-    await userEvent.click(within(card).getByRole('button', { name: 'Hide name' }));
-    expect(card).not.toHaveTextContent('Real Name 2');
-  });
-
-  it('asks before revealing every name', async () => {
-    const calls = setup();
-    render(<Results vacancyId="V" onTable={() => undefined} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Reveal all names' }));
-    expect(
-      screen.getByText('Names are hidden to keep the first look about skills. Show all?'),
-    ).toBeInTheDocument();
-    expect(calls.some((c) => c.url.endsWith('/reveal-names'))).toBe(false);
-    await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
-    await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
+    expect(card).toHaveTextContent('Real Name 2');
+    expect(screen.queryByRole('button', { name: /Reveal|Hide name/ })).toBeNull();
+    expect(screen.queryByText(/Focus on skills/)).toBeNull();
   });
 
   it('has no mark pre-selected; a note is needed; "Not now" also needs the evidence check; the band does not change', async () => {
@@ -617,34 +600,7 @@ describe('Results: bands, names hidden, proof', () => {
     });
   });
 
-  it('shows names this recruiter already revealed in the run, and Focus on skills offers no "Reveal all"', async () => {
-    session.set('t');
-    mockFetch((url) => {
-      if (url.endsWith('/vacancies/V/revealed')) return { body: { screeningIds: ['S2'] } };
-      if (url.endsWith('/vacancies/V/candidates'))
-        return {
-          body: {
-            counts: { total: 4, queued: 0, failed: 0, manual: 1, undecided: 4 },
-            aiActive: true,
-            candidates: rows,
-          },
-        };
-      if (url.includes('/screenings/')) return { body: { summary: null, assessments: [] } };
-      return { body: {} };
-    });
-    setFocus(true);
-    try {
-      render(<Results vacancyId="V" onTable={() => undefined} />);
-      await waitFor(() => expect(document.body.textContent).toMatch(/Real Name 2/));
-      expect(document.body.textContent).not.toMatch(/Real Name 1|Real Name 3/);
-      expect(screen.queryByRole('button', { name: 'Reveal all names' })).toBeNull();
-      expect(screen.getByText(/Focus on skills is on/)).toBeInTheDocument();
-    } finally {
-      setFocus(false);
-    }
-  });
-
-  it('shows my marks apart from the match and exports only the shortlisted, by pseudonym', async () => {
+  it('shows my marks apart from the match and exports only the shortlisted, by name', async () => {
     setup();
     rows[1] = {
       ...rows[1]!,
@@ -663,8 +619,7 @@ describe('Results: bands, names hidden, proof', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Copy shortlist' }));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
     const text = String((writeText.mock.calls as unknown[][])[0]![0]);
-    expect(text).toMatch(/^1\. Candidate 02 \(Good/);
-    expect(text).not.toMatch(/Real Name/);
+    expect(text).toMatch(/^1\. Real Name 2 \(Good/);
     rows[1] = { ...(rows[1] as object), decision: null } as never;
   });
 });
@@ -773,7 +728,7 @@ describe('Report: evaluation report (spec 6.5)', () => {
     });
   }
 
-  it('shows the role, how it was scored, pseudonyms, quotes and what was not read, with no names', async () => {
+  it('shows the role, how it was scored, pseudonyms, quotes and what was not read, with real names', async () => {
     setup([cand(1, 62), cand(2, 74), cand(3, null, { parseStatus: 'empty' })]);
     render(<Report vacancyId="V" title="Core Network Engineer" createdAt="2026-10-01T08:00:00Z" />);
     expect(await screen.findByText('Core Network Engineer')).toBeInTheDocument();
@@ -784,17 +739,17 @@ describe('Report: evaluation report (spec 6.5)', () => {
     expect(screen.getByText(/AI suggests, a human decides/)).toBeInTheDocument();
     // Best match first, as numbers only; the quote and the reason arrive from the detail call.
     const entries = screen.getAllByRole('heading', { level: 4 });
-    expect(entries[0]).toHaveTextContent('1. Candidate 02');
-    expect(entries[1]).toHaveTextContent('2. Candidate 01');
+    expect(entries[0]).toHaveTextContent('1. Real Name 2');
+    expect(entries[1]).toHaveTextContent('2. Real Name 1');
     expect(
       (await screen.findAllByText('Designed the BGP peering for two carriers')).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Not found in this CV\. Searched for: Kubernetes/).length).toBe(2);
     expect(await screen.findByText(/Read by google \(gemini-x\)/)).toBeInTheDocument();
     expect(screen.getByText('Not read (1)')).toBeInTheDocument();
-    expect(screen.getByText(/Candidate 03: Scan only/)).toBeInTheDocument();
+    expect(screen.getByText(/Real Name 3: Scan only/)).toBeInTheDocument();
     expect(screen.getByText(/Showing all 2 scored/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/cv_person|Real Name/);
+    expect(document.body.textContent).not.toMatch(/cv_person/);
     expect(document.body.textContent).not.toMatch(/stays inside Azerconnect/);
     expect(screen.getByText(/prepared for Aysel/)).toBeInTheDocument();
   });

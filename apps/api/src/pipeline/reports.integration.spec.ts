@@ -30,7 +30,7 @@ describeDb('Shared reports (design spec 6.5)', () => {
     return { ayla, manager, outsider, vid };
   }
 
-  it('shares a snapshot with named people only; pseudonyms and no names by default', async () => {
+  it('shares a snapshot with named people only; candidate names are shown, no e-mail or internal key leaves', async () => {
     const { ayla, manager, outsider, vid } = await setup('a');
     const r = await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] });
     expect(r.statusCode).toBe(200);
@@ -44,10 +44,10 @@ describeDb('Shared reports (design spec 6.5)', () => {
     expect(report.role.must).toEqual(['BGP routing', 'Kubernetes']);
     expect(report.candidates.length).toBeGreaterThanOrEqual(2);
     const body = JSON.stringify(open.json());
-    // No real name, e-mail or internal key leaves the system by default.
-    for (const n of ['Alice', 'Bob', 'Carol', 'documentId']) expect(body).not.toContain(n);
-    expect(report.candidates[0].label).toMatch(/^Candidate \d\d$/);
-    expect(report.candidates[0].name).toBeNull();
+    // Names are shown as written; no internal key leaves the system.
+    expect(body).toContain('Alice Full');
+    expect(body).not.toContain('documentId');
+    expect(report.candidates[0].name).toBe('Alice Full');
     // Candidates are ranked, best first.
     const scores = report.candidates.map((c: { score: number }) => c.score);
     expect([...scores].sort((a, b) => b - a)).toEqual(scores);
@@ -90,37 +90,22 @@ describeDb('Shared reports (design spec 6.5)', () => {
     expect((await manager.api.post(`/shares/${id}/revoke`)).statusCode).toBe(403);
   });
 
-  it('includes real names only for revealed or shortlisted candidates, and only when asked', async () => {
+  it('includes the real name of every scored candidate, and shortlist reasons as written', async () => {
     const { ayla, manager, vid } = await setup('c');
     const list = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as (Cand & {
       candidateName: string | null;
     })[];
-    const alice = list.find((c) => c.candidateName?.includes('Alice'))!;
     const bob = list.find((c) => c.candidateName?.includes('Bob'))!;
-    await ayla.api.post('/screenings/reveal-names', { screeningIds: [alice.screeningId] });
     await ayla.api.post(`/screenings/${bob.screeningId}/decision`, {
       outcome: 'shortlist',
       reason: 'Strong routing background',
     });
-
-    // Not asked for: no names even though one was revealed.
-    const plain = (
-      await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
-    ).json();
-    expect(JSON.stringify((await manager.api.get(`/reports/${plain.id}`)).json())).not.toContain(
-      'Alice',
-    );
-
     const named = (
-      await ayla.api.post(`/vacancies/${vid}/shares`, {
-        viewerIds: [manager.userId],
-        includeNames: true,
-      })
+      await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
     ).json();
     const rep = (await manager.api.get(`/reports/${named.id}`)).json().report;
     const names = rep.candidates.map((c: { name: string | null }) => c.name).filter(Boolean);
-    expect(names.sort()).toEqual(['Alice Full', 'Bob Routing']);
-    expect(JSON.stringify(rep)).not.toContain('Carol');
+    expect(names).toEqual(expect.arrayContaining(['Alice Full', 'Bob Routing']));
     expect(rep.decisions[0]).toMatchObject({
       outcome: 'shortlist',
       reason: 'Strong routing background',
@@ -128,14 +113,13 @@ describeDb('Shared reports (design spec 6.5)', () => {
     expect(rep.decisions[0].documentId).toBeUndefined();
   });
 
-  it('can leave the quotes out, and hides a candidate name found inside the text', async () => {
+  it('can leave the quotes out', async () => {
     const { ayla, manager, vid } = await setup('d');
     const withQ = (
       await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
     ).json();
     const a = (await manager.api.get(`/reports/${withQ.id}`)).json().report;
     expect(a.candidates.some((c: { quotes: unknown[] }) => c.quotes.length > 0)).toBe(true);
-    expect(JSON.stringify(a)).not.toMatch(/Alice|Bob|Carol/);
 
     const noQ = (
       await ayla.api.post(`/vacancies/${vid}/shares`, {
@@ -220,7 +204,6 @@ describeDb('Shared reports (design spec 6.5)', () => {
       candidateName: string | null;
     })[];
     const alice = list.find((c) => c.candidateName?.includes('Alice'))!;
-    await ayla.api.post('/screenings/reveal-names', { screeningIds: [alice.screeningId] });
     const s = (
       await ayla.api.post(`/vacancies/${vid}/shares`, {
         viewerIds: [manager.userId],
@@ -233,10 +216,12 @@ describeDb('Shared reports (design spec 6.5)', () => {
     expect((await ayla.api.post(`/documents/${alice.documentId}/erase`)).statusCode).toBe(200);
     const after = (await manager.api.get(`/reports/${s.id}`)).json().report;
     expect(JSON.stringify(after)).not.toContain('Alice');
-    expect(after.candidates.every((c: { name: string | null }) => c.name === null)).toBe(true);
+    expect(after.candidates.some((c: { name: string | null }) => c.name === 'Alice Full')).toBe(
+      false,
+    );
   });
 
-  it('carries the reviewer reason, without a hidden name, and scrubs it on erase', async () => {
+  it('carries the reviewer reason as written, and scrubs it on erase', async () => {
     const { ayla, manager, vid } = await setup('h');
     const list = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as (Cand & {
       candidateName: string | null;
@@ -251,9 +236,7 @@ describeDb('Shared reports (design spec 6.5)', () => {
     ).json();
     const rep = (await manager.api.get(`/reports/${s.id}`)).json().report;
     expect(rep.decisions).toHaveLength(1);
-    expect(rep.decisions[0].reason).toContain('[name]');
-    expect(JSON.stringify(rep)).not.toContain('Carol');
-    expect(JSON.stringify(rep)).not.toContain('Nothing');
+    expect(rep.decisions[0].reason).toBe('Carol Nothing to call back on Monday');
 
     expect((await ayla.api.post(`/documents/${carol.documentId}/erase`)).statusCode).toBe(200);
     const after = (await manager.api.get(`/reports/${s.id}`)).json().report;

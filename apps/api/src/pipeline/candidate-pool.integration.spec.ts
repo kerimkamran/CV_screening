@@ -6,12 +6,10 @@ process.env['TEST_VISIBILITY'] = 'all';
 describeDb('Candidate pool (Development Plan WP 3.1 to 3.6; spec 6.8, 6.9)', () => {
   let h: Harness;
   beforeAll(async () => {
-    process.env['TEST_NAMES'] = 'shown';
     h = await boot('cpool');
   });
   afterAll(async () => {
     delete process.env['TEST_VISIBILITY'];
-    delete process.env['TEST_NAMES'];
     await h?.close();
   });
 
@@ -174,12 +172,11 @@ describeDb('Candidate pool (Development Plan WP 3.1 to 3.6; spec 6.8, 6.9)', () 
     const vid = await h.scenario(a.api, cvs.slice(0, 1), 'Pool role F');
     const row = (await a.api.get(`/candidates?vacancy=${vid}`)).json().rows[0];
     const rep = (await a.api.get(`/candidates/${row.matchId}/report`)).json();
-    expect(rep).toMatchObject({ namesShown: true, name: 'Alice One', outOfDate: null });
+    expect(rep).toMatchObject({ name: 'Alice One', outOfDate: null });
     const bgp = rep.requirements.find((r: { text: string }) => /BGP/.test(r.text));
     expect(bgp.state).toBe('matched');
     expect(bgp.anchors.length).toBeGreaterThan(0);
     const resume = (await a.api.get(`/candidates/${row.matchId}/resume`)).json();
-    expect(resume.view).toBe('original');
     const a0 = bgp.anchors[0];
     expect(resume.text.slice(a0.start, a0.end)).toBe(a0.quote);
     expect(resume.text).toContain('Alice One');

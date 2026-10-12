@@ -55,8 +55,6 @@ const EnvSchema = z.object({
    * vacancies they were given access to (the earlier IAM-04 rule).
    */
   VACANCY_VISIBILITY: z.enum(['all', 'granted']).default('all'),
-  /** 'shown' (default): recruiters see candidate names and the original resume. 'hidden': pseudonyms and the anonymised resume (design spec 6.9). */
-  CANDIDATE_NAMES: z.enum(['shown', 'hidden']).default('shown'),
   /** In-process screening worker (MVP). Set false to run API-only. */
   WORKER_ENABLED: z.enum(['true', 'false']).default('true'),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),

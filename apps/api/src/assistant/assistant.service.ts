@@ -296,6 +296,11 @@ export class AssistantService {
     const read = input.read ? redact(input.read, main.row.candidateName).slice(0, 400) : undefined;
 
     let answer: Answer;
+    const nameFor = new Map<string, string>();
+    const note = (label: string, name: string | null | undefined) => {
+      if (name?.trim()) nameFor.set(label, name.trim());
+    };
+    note(main.label, main.row.candidateName);
     let model: string | null = null;
     let counted = false;
     const flagsExtra: string[] = [];
@@ -332,6 +337,7 @@ export class AssistantService {
             const w = await this.scope.assertScreening(p, sid);
             if (w.vacancyId !== vacancyId) throw new NotFoundException();
             const b = await this.build(vacancyId, sid, letters[i]!);
+            note(b.label, b.row.candidateName);
             if (!b.unread) packages.push(b.built);
           }
         }
@@ -391,7 +397,7 @@ export class AssistantService {
         }
       }
     }
-    answer = localiseAnswer(answer, input.language);
+    answer = nameify(localiseAnswer(answer, input.language), nameFor);
     if (input.intent === 'ask' && answer.flags.length === 0) flagsExtra.push('free_question');
     const flags = [...answer.flags, ...flagsExtra];
 
@@ -504,4 +510,18 @@ export class AssistantService {
       about: [label],
     };
   }
+}
+
+/**
+ * The model and the stored record work with "Candidate NN"; the recruiter reads the person's name
+ * (decision of 8 October 2026: names are not hidden). The swap happens last, on the way out.
+ */
+export function nameify(a: Answer, names: ReadonlyMap<string, string>): Answer {
+  if (names.size === 0) return a;
+  let json = JSON.stringify(a);
+  for (const [label, name] of names) {
+    const safe = JSON.stringify(name).slice(1, -1);
+    json = json.split(label).join(safe);
+  }
+  return JSON.parse(json) as Answer;
 }

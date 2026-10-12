@@ -16,7 +16,6 @@ import {
   type MatchBand,
 } from '../results-logic';
 import { btnSecondary, errMsg, Notice } from '../ui';
-import { setFocus, useFocus } from '../focus';
 import { useIntake } from '../intake';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
@@ -25,7 +24,7 @@ import { RequirementsDrawer } from './RequirementsDrawer';
 
 /**
  * Results (design spec 6.2): a plain band for each candidate, why, and the proof behind each skill,
- * with names hidden until the recruiter chooses to show them. The star map is only a picture of the
+ * with the real names. The star map is only a picture of the
  * ranked list: a star's place carries no meaning beyond rank.
  */
 
@@ -52,10 +51,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const focusOn = useFocus();
-  const [revealed, setRevealed] = useState<Set<string>>(new Set());
-  const [revealedLoaded, setRevealedLoaded] = useState(false);
-  const [confirmAll, setConfirmAll] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [mapAll, setMapAll] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
@@ -112,25 +107,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }, [pending, load]);
 
   const all = useMemo(() => data?.candidates ?? [], [data]);
-  // Names this recruiter has already shown in this run come back from the audit trail.
-  useEffect(() => {
-    if (!data || revealedLoaded) return;
-    setRevealedLoaded(true);
-    api.get<{ screeningIds: string[] }>(`/vacancies/${vacancyId}/revealed`).then(
-      (x) => {
-        if (!Array.isArray(x?.screeningIds)) return;
-        const bySid = new Map(data.candidates.map((r) => [r.screeningId, r.documentId]));
-        setRevealed(
-          (s) =>
-            new Set([
-              ...s,
-              ...x.screeningIds.map((id) => bySid.get(id)).filter((d): d is string => !!d),
-            ]),
-        );
-      },
-      () => undefined,
-    );
-  }, [data, revealedLoaded, vacancyId]);
   const names = useMemo(() => pseudonyms(all), [all]);
   const ordered = useMemo(() => orderCandidates(all.filter((r) => !r.erased)), [all]);
   const bandOf = useMemo(
@@ -159,8 +135,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }
 
   const rowById = useMemo(() => new Map(all.map((r) => [r.documentId, r])), [all]);
-  const nameOf = (r: CandidateRow) =>
-    revealed.has(r.documentId) ? r.candidateName || r.filename : names.get(r.documentId)!;
+  const nameOf = (r: CandidateRow) => r.candidateName || r.filename || names.get(r.documentId)!;
 
   // The first candidate is selected on load, as in the prototype.
   useEffect(() => {
@@ -190,35 +165,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         0,
       );
     }
-  }
-
-  async function reveal(rows: CandidateRow[]) {
-    const withIds = rows.filter((r) => r.screeningId);
-    try {
-      await api.post('/screenings/reveal-names', {
-        screeningIds: withIds.map((r) => r.screeningId).slice(0, 500),
-      });
-      setRevealed((s) => new Set([...s, ...withIds.map((r) => r.documentId)]));
-      setConfirmAll(false);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }
-  async function hide(r: CandidateRow) {
-    setRevealed((s) => {
-      const n = new Set(s);
-      n.delete(r.documentId);
-      return n;
-    });
-    if (r.screeningId) {
-      await api
-        .post('/screenings/hide-names', { screeningIds: [r.screeningId] })
-        .catch((e) => setError(errMsg(e)));
-    }
-  }
-  async function setFocusPref(next: boolean) {
-    setFocus(next);
-    await api.put('/me/preferences', { focusOnSkills: next }).catch(() => undefined);
   }
 
   const marked = (o: string) => ordered.filter((r) => r.decision?.outcome === o).length;
@@ -298,13 +244,13 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     bandOf.get(selectedRow.documentId) !== 'human'
       ? {
           screeningId: selectedRow.screeningId,
-          label: names.get(selectedRow.documentId)!,
+          label: nameOf(selectedRow),
           band: bandOf.get(selectedRow.documentId)!,
         }
       : null;
   const compareChoices = scored
     .filter((r) => r.screeningId && r.documentId !== selected)
-    .map((r) => ({ screeningId: r.screeningId!, label: names.get(r.documentId)! }));
+    .map((r) => ({ screeningId: r.screeningId!, label: nameOf(r) }));
   const askAbout = (documentId: string) => {
     setSelected(documentId);
     setAssistantOpen(true);
@@ -521,43 +467,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         </Notice>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        {focusOn ? (
-          <span>
-            <strong>{t('Focus on skills is on.')}</strong>{' '}
-            {t('Names stay hidden unless you reveal one.')}{' '}
-            <button className="text-link underline" onClick={() => void setFocusPref(false)}>
-              {t('Turn off')}
-            </button>
-          </span>
-        ) : !confirmAll ? (
-          <button className={btnSecondary} onClick={() => setConfirmAll(true)}>
-            {t('Reveal all names')}
-          </button>
-        ) : (
-          <div role="group" aria-label={t('Confirm')} className="flex flex-wrap items-center gap-2">
-            <span>{t('Names are hidden to keep the first look about skills. Show all?')}</span>
-            <button className={btnSecondary} onClick={() => void reveal(ordered)}>
-              {t('Show all')}
-            </button>
-            <button className={btnSecondary} onClick={() => setConfirmAll(false)}>
-              {t('Cancel')}
-            </button>
-          </div>
-        )}
-        <span className="text-ink-3">
-          {t('Names are hidden on screen, not removed from the file.')}
-        </span>
-        {!focusOn && (
-          <span className="text-ink-3">
-            {t('Want a first look about skills only?')}{' '}
-            <button className="text-link underline" onClick={() => void setFocusPref(true)}>
-              {t('Try Focus on skills')}
-            </button>
-          </span>
-        )}
-      </div>
-
       {marked('shortlist') + marked('hold') + marked('reject') > 0 && (
         <div
           className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-edge p-3 text-sm"
@@ -722,14 +631,11 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             r={r}
             band={bandOf.get(r.documentId)!}
             name={nameOf(r)}
-            isRevealed={revealed.has(r.documentId)}
             selected={selected === r.documentId}
             detail={details[r.documentId]}
             proof={proof?.doc === r.documentId ? proof.req : null}
             onSelect={() => select(r.documentId)}
             onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
-            onReveal={() => void reveal([r])}
-            onHide={() => void hide(r)}
             onMarked={() => void load()}
             assistantName={assistant?.name}
             onAsk={() => askAbout(r.documentId)}
@@ -757,14 +663,11 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   r={r}
                   band="limited"
                   name={nameOf(r)}
-                  isRevealed={revealed.has(r.documentId)}
                   selected={selected === r.documentId}
                   detail={details[r.documentId]}
                   proof={proof?.doc === r.documentId ? proof.req : null}
                   onSelect={() => select(r.documentId)}
                   onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
-                  onReveal={() => void reveal([r])}
-                  onHide={() => void hide(r)}
                   onMarked={() => void load()}
                   assistantName={assistant?.name}
                   onAsk={() => askAbout(r.documentId)}

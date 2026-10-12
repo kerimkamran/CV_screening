@@ -147,8 +147,6 @@ export interface MarkResult {
 export interface ReportAnchor {
   start: number;
   end: number;
-  os: number;
-  oe: number;
   quote: string;
   page: number | null;
   block: number;
@@ -167,7 +165,6 @@ export interface ReportRequirement {
 export interface CandidateReportData {
   matchId: string;
   documentId: string;
-  namesShown: boolean;
   label: string;
   name: string | null;
   pseudonym: string;
@@ -196,13 +193,10 @@ export interface CandidateReportData {
   requirements: ReportRequirement[];
 }
 export interface ResumeData {
-  view: 'original' | 'anonymised';
   text: string;
   truncated: boolean;
   pageStarts: number[] | null;
   blocks: { start: number; end: number; page: number | null }[];
-  hidden: Record<string, number>;
-  notice: string | null;
 }
 
 // ------------------------------------------------------------------ small helpers

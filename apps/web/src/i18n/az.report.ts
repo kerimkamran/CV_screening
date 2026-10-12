@@ -71,6 +71,7 @@ export const AZ_REPORT: Record<string, string> = {
   'Run {id} · scan started {date} · report date {today}':
     'Qiymətləndirmə {id} · skan {date} tarixində başlayıb · hesabat tarixi {today}',
   'prepared for {name}': '{name} üçün hazırlanıb',
+  'Candidates are shown with their real names.': 'Namizədlər real adları ilə göstərilir.',
   'Candidates appear as numbers; names stay out of the report.':
     'Namizədlər nömrə ilə göstərilir; adlar hesabata daxil edilmir.',
   '{found} of {total} must-haves found': '{total} vacib tələbdən {found} tapıldı',

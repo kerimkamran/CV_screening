@@ -456,4 +456,75 @@ describe('Assistant settings (admin)', () => {
     render(<AssistantSettings />);
     expect(await screen.findByText(/passed 80% of a limit/)).toBeInTheDocument();
   });
+
+  it('adds an API for the assistant and chooses its model, without touching scoring', async () => {
+    let added = false;
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/admin/assistant/audit')) return { body: { turns: [] } };
+      if (url.endsWith('/admin/assistant/payloads'))
+        return {
+          body: {
+            allowed: ['band', 'candidate'],
+            calls: [
+              {
+                at: '2026-10-08T09:00:00Z',
+                intent: 'why',
+                model: 'Anthropic / m',
+                fields: { band: { type: 'string', maxLength: 4 } },
+                violations: [],
+                bytes: 1200,
+              },
+            ],
+          },
+        };
+      if (url.endsWith('/admin/ai/catalog'))
+        return {
+          body: {
+            companies: [
+              {
+                id: 'google',
+                name: 'Google',
+                keyHelp: 'A Gemini API key.',
+                dataNote: 'Google data note.',
+                extraFields: [],
+                knownModels: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' }],
+              },
+            ],
+          },
+        };
+      if (url.endsWith('/admin/ai')) return { body: { active: null, connections: [] } };
+      if (url.endsWith('/admin/ai/connections') && init?.method === 'POST') {
+        added = true;
+        return { body: { id: 'C1' } };
+      }
+      const o = overview();
+      if (added)
+        o.models.push({
+          id: '0000000000000000000000MD02',
+          modelId: 'gemini-3.8-flash',
+          label: 'Gemini 3.8 Flash',
+          provider: 'Google',
+        });
+      return { body: o };
+    });
+    render(<AssistantSettings />);
+    expect(await screen.findByText(/Add an API for Elon/)).toBeInTheDocument();
+    expect(await screen.findByText(/1200 bytes/)).toBeInTheDocument();
+    expect(screen.getByText(/all allowed/)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/gemini-3.8-flash/));
+    await userEvent.type(screen.getByLabelText(/API key/), 'AIza-test-key-123');
+    await userEvent.click(screen.getByRole('button', { name: /Save company and model/ }));
+    expect(
+      await screen.findByText(/now chosen as the model for the assistant/),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /^Model/ })).toHaveValue(
+        '0000000000000000000000MD02',
+      ),
+    );
+    const post = calls.find((c) => c.url.endsWith('/admin/ai/connections'))!;
+    expect(JSON.parse(String(post.init!.body))).toMatchObject({ company: 'google' });
+    // Nothing was made the screening model.
+    expect(calls.some((c) => c.url.endsWith('/admin/ai/active'))).toBe(false);
+  });
 });

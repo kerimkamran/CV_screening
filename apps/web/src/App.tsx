@@ -25,7 +25,6 @@ import { VacancyList } from './pages/VacancyList';
 import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
 import { Shell } from './Shell';
 import { useRoute } from './route';
-import { setFocus } from './focus';
 import { applyBackground, isBackground } from './theme';
 import { go } from './route';
 import { Notice } from './ui';
@@ -91,7 +90,6 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       setMe(m);
       rememberUser(m.userId);
       applyBackground(isBackground(m.background) ? m.background : null);
-      setFocus(m.focusOnSkills === true);
       // A saved language follows the person across devices; none saved follows the browser.
       if (isLang(m.language)) applyLang(m.language);
     } catch (e) {

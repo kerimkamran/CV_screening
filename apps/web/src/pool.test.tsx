@@ -504,7 +504,6 @@ describe('Candidate report', () => {
   const report = {
     matchId: MID,
     documentId: 'D1',
-    namesShown: true,
     label: 'Aysel Mammadova',
     name: 'Aysel Mammadova',
     pseudonym: 'Candidate 01',
@@ -683,43 +682,24 @@ describe('Candidate report', () => {
     expect(screen.getByText(/Python became a must-have/)).toBeInTheDocument();
   });
 
-  it('with names hidden, reveals the name and the original only when asked', async () => {
-    const calls = open((url, init) => {
-      if (url.endsWith(`/candidates/${MID}/report`))
+  it('shows the real name and the resume as written, with no Reveal or Hide buttons', async () => {
+    open((url) => {
+      if (url.includes(`/candidates/${MID}/resume`))
         return {
           body: {
-            ...report,
-            namesShown: false,
-            label: 'Candidate 01',
-            name: null,
-            email: null,
-            filename: null,
-          },
-        };
-      if (url.includes(`/candidates/${MID}/resume`) && !url.includes('view=original'))
-        return {
-          body: {
-            view: 'anonymised',
-            text: '[name] Network engineer.',
+            text: 'Aysel Mammadova. Network engineer.',
             truncated: false,
             pageStarts: null,
             blocks: [],
-            hidden: { names: 1 },
-            notice:
-              'Names, contact details and personal details are hidden here. This is hidden on screen, not a guarantee.',
           },
         };
-      if (url.endsWith(`/candidates/${MID}/reveal`) && init?.method === 'POST')
-        return { body: { name: 'Aysel Mammadova', kind: 'name' } };
       return undefined;
     });
     render(<App check={up} />);
-    expect(await screen.findByRole('heading', { name: 'Candidate 01' })).toBeInTheDocument();
-    await userEvent.click(await screen.findByRole('button', { name: 'Reveal name' }));
-    expect(await screen.findByRole('heading', { name: 'Aysel Mammadova' })).toBeInTheDocument();
-    expect(calls.find((c) => c.url.endsWith('/reveal'))!.body).toEqual({ kind: 'name' });
-    await userEvent.click(screen.getByRole('button', { name: 'Show original' }));
-    await waitFor(() => expect(calls.some((c) => c.url.includes('view=original'))).toBe(true));
+    expect(await screen.findByText(/Aysel Mammadova\. Network engineer\./)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Reveal name|Hide name|Show original/ }),
+    ).toBeNull();
   });
 });
 
@@ -882,7 +862,6 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
             body: {
               matchId: MID,
               documentId: 'D1',
-              namesShown: true,
               label: 'Aysel Mammadova',
               name: 'Aysel Mammadova',
               pseudonym: 'Candidate 01',

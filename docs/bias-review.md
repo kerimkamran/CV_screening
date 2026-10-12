@@ -5,7 +5,7 @@ statistical fairness study and not legal advice. The DPO and Legal own the concl
 
 ## What the product does to reduce bias risk
 
-1. **Names are shown to recruiters (decision of 8 October 2026), and never given to a model.** Screens show the name found in the resume. What the scoring model and SenAI receive is still a pseudonym ("Candidate NN") with the name, contact details and protected signals removed; a name typed in a question is taken out before the model is called. This trades a reduction of bias in the human step for usability: a recruiter who sees a name can be influenced by it. The switch `CANDIDATE_NAMES=hidden` restores "Candidate NN" with an audited per-person reveal, and the Excel export and shared reports follow the same switch. The paired-CV test measures the model; it cannot measure the recruiter. The DPO should decide whether to keep names shown after the trial.
+1. **Names are shown to recruiters (decision of 8 October 2026), and never given to a model.** Screens show the name found in the resume. What the scoring model and SenAI receive is still a pseudonym ("Candidate NN") with the name, contact details and protected signals removed; a name typed in a question is taken out before the model is called. This trades a reduction of bias in the human step for usability: a recruiter who sees a name can be influenced by it. There is no hide or reveal mode: the screens, the Excel export, shared reports and SenAI's answers to the recruiter all show the real name (SenAI's reply has the pseudonym swapped for the name on the way out, after the model has answered). The paired-CV test measures the model; it cannot measure the recruiter. The DPO should decide whether to keep names shown after the trial.
 2. **The score is a formula over job evidence only.** `computeScore` takes requirement text, class, weight and status. It has no field for name, age, gender, family, nationality or photo. The same evidence always gives the same score (test: `bias.integration.spec.ts`).
 3. **Six different people with identical job evidence** (Azerbaijani, English, Russian names; female, male; age, marital, nationality, religion and pregnancy details in the text) get identical scores, bands and ranks through the whole pipeline (same test). Ties break by upload order, not by anything about the person.
 4. **No reject band and no automatic rejection.** The bands are labelled as sorting aids; every decision is a named person with a written reason.
@@ -18,7 +18,7 @@ statistical fairness study and not legal advice. The DPO and Legal own the concl
 - **Scoring now sees a masked CV.** `pipeline/scoring-redaction.ts` replaces e-mail, phone, links, the candidate's own name and the value of labelled personal fields (date of birth, age, gender, marital or family status, nationality, religion, health, photo, address; English, Azerbaijani, Russian) with placeholders before the model is called. The name and e-mail shown to recruiters are read by code, not by the model. Quotations are located in the masked text and mapped back to the original; a quote that touches a masked place is dropped as evidence. Tests: `scoring-redaction.spec.ts`, `pipeline.integration.spec.ts`.
 - **Paired-CV test built in** (Admin > Monitoring). Synthetic CVs that differ only in a name, a personal detail or a career-break line go through the real scoring path, with identity masking on (as the tool works) and off (for comparison). The result shows how many pairs moved by more than 5 points plus the model's own noise. Code: `monitoring/paired.ts`, `eval.service.ts`.
 - **Outcome monitoring** (Admin > Monitoring, also for Governance). Aggregated by CV language, file format and length, with the four-fifths rule, minimum 20 scored files overall and groups under 5 files suppressed. No protected attribute is collected or inferred.
-- **Excel export is pseudonymised** like the screen: "Candidate NN" and no file names unless the name was revealed by that recruiter or the person is shortlisted.
+- **Excel export shows names** like the screen: the candidate's name (the pseudonym only when no name was found in the resume) and the file name.
 
 ## What changed on 8 October 2026
 
@@ -44,7 +44,7 @@ statistical fairness study and not legal advice. The DPO and Legal own the concl
 
 - Read the evidence for every "Not now"; never reject on the band alone.
 - Use the ranking to decide what to read first, not whom to skip.
-- Names are shown. Read the evidence first, decide on the evidence, and write the reason for every "Not now". "Focus on skills" still hides file names and e-mails, and `CANDIDATE_NAMES=hidden` hides names too.
+- Names are shown. Read the evidence first, decide on the evidence, and write the reason for every "Not now". The old "Focus on skills" switch was removed from the screens (decision of 12 October 2026).
 - Record any case where a result looks wrong or unfair; these feed the evaluation.
 
 ## Tests that keep this honest

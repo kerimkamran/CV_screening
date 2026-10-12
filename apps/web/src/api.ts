@@ -117,8 +117,6 @@ export interface Me {
   mustChangePassword?: boolean;
   /** Chosen page background; null or absent means follow the device. */
   background?: 'white' | 'grey' | 'sky' | 'dark' | null;
-  /** The recruiter's own "Focus on skills" switch (spec 6.2.6). */
-  focusOnSkills?: boolean;
   language?: string | null;
 }
 export interface Session {

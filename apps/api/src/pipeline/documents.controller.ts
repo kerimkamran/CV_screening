@@ -596,17 +596,7 @@ export class DocumentsController {
     const vid = parse(ulidSchema, id);
     const vac = await this.scope.assert(p, vid);
     const rows = await this.candidatesSvc.rows(vid);
-    const revealed = new Set(await this.candidatesSvc.revealedBy(vid, p.userId));
-    const shown = new Set(
-      rows
-        .filter(
-          (r) =>
-            !r.erased &&
-            ((r.screeningId && revealed.has(r.screeningId)) || r.decision?.outcome === 'shortlist'),
-        )
-        .map((r) => r.documentId),
-    );
-    const buf = await this.xlsx.build(vac.title, vid, rows, p, shown);
+    const buf = await this.xlsx.build(vac.title, vid, rows, p);
     await this.db.withTx((tx) =>
       this.audit.record(tx, {
         actorId: p.userId,

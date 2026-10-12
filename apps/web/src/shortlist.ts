@@ -19,7 +19,7 @@ export interface ShortlistEntry {
   note: string;
 }
 
-/** Only the shortlisted, in the same order as Results. Names are the on-screen ones (pseudonyms unless revealed). */
+/** Only the shortlisted, in the same order as Results. Names are the on-screen ones (real names). */
 export function shortlistEntries(
   ordered: CandidateRow[],
   nameOf: (r: CandidateRow) => string,

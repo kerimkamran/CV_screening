@@ -175,11 +175,7 @@ export class CandidatePoolController {
         case 'updated':
           return a.updatedAt.localeCompare(b.updatedAt) || PoolService.byMatch(b, a);
         case 'candidate':
-          return this.pool.namesShown
-            ? azCollator.compare(a.label, b.label) || a.documentId.localeCompare(b.documentId)
-            : azCollator.compare(a.vacancyTitle, b.vacancyTitle) ||
-                a.ordinal - b.ordinal ||
-                a.documentId.localeCompare(b.documentId);
+          return azCollator.compare(a.label, b.label) || a.documentId.localeCompare(b.documentId);
         case 'vacancy':
           return azCollator.compare(a.vacancyTitle, b.vacancyTitle) || PoolService.byMatch(a, b);
         case 'decision':
@@ -331,71 +327,9 @@ export class CandidatePoolController {
   }
 
   @Get(':matchId/resume')
-  async resume(
-    @Param('matchId') matchId: string,
-    @Query('view') viewParam: string | undefined,
-    @CurrentPrincipal() p: Principal,
-    @Req() req: FastifyRequest,
-  ) {
+  async resume(@Param('matchId') matchId: string, @CurrentPrincipal() p: Principal) {
     const row = await this.resolve(p, parse(ulidSchema, matchId));
-    // With names shown (the default) the original is the normal view. With names hidden, the
-    // original is a recorded reveal for recruiters only.
-    const hidden = !this.pool.namesShown;
-    const mode: 'original' | 'anonymised' =
-      hidden && viewParam !== 'original' ? 'anonymised' : hidden ? 'original' : 'original';
-    if (
-      hidden &&
-      mode === 'original' &&
-      !p.roles.some((r) => r === 'TA_PARTNER' || r === 'TA_LEAD')
-    ) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-    const out = await this.view.resume(row, mode);
-    if (hidden && mode === 'original') {
-      await this.db.withTx((tx) =>
-        this.audit.record(tx, {
-          actorId: p.userId,
-          actorType: p.actorType,
-          sourceIp: req.ip,
-          action: 'candidate.original_revealed',
-          entityType: 'screening',
-          entityId: row.matchId,
-        }),
-      );
-    }
-    return out;
-  }
-
-  /** Two separate reveals: the name, and the original resume. Both are recorded; neither is remembered. */
-  @Post(':matchId/reveal')
-  @Roles('TA_PARTNER', 'TA_LEAD')
-  @HttpCode(200)
-  async reveal(
-    @Param('matchId') matchId: string,
-    @Body() body: unknown,
-    @CurrentPrincipal() p: Principal,
-    @Req() req: FastifyRequest,
-  ) {
-    const b = parse(
-      z.object({ kind: z.enum(['name', 'original']), hide: z.boolean().optional() }),
-      body,
-    );
-    if (p.actorType !== 'human')
-      throw new BadRequestException('Only a person can reveal a candidate.');
-    const row = await this.resolve(p, parse(ulidSchema, matchId));
-    const action = `candidate.${b.kind === 'name' ? 'name' : 'original'}_${b.hide ? 'hidden' : 'revealed'}`;
-    await this.db.withTx((tx) =>
-      this.audit.record(tx, {
-        actorId: p.userId,
-        actorType: 'human',
-        sourceIp: req.ip,
-        action,
-        entityType: 'screening',
-        entityId: row.matchId,
-      }),
-    );
-    if (b.kind === 'name' && !b.hide) return { name: await this.view.name(row), kind: b.kind };
-    return { kind: b.kind, hidden: !!b.hide };
+    return this.view.resume(row);
   }
 
   // ----------------------------------------------------------------------------------------
