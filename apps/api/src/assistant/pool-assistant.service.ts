@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { BAND_LABEL, MARK_LABEL, newId, type Mark } from '@cv/shared';
+import { BAND_LABEL, MARK_LABEL, foldText, newId, type Mark } from '@cv/shared';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { DbService } from '../db/db.service';
@@ -10,9 +10,13 @@ import { AssistantOff, AssistantService } from './assistant.service';
 import {
   SUGGESTIONS,
   detectLanguage,
+  mentions,
   parseQuestion,
   resolveVacancy,
   say,
+  skillFold,
+  skillQuery,
+  type SkillQuery,
   type Lang,
   type VacancyRef,
 } from './pool-assistant';
@@ -32,6 +36,10 @@ export interface PoolAnswerRow {
   /** Requirement wording only (recruiter-written), never resume text. */
   strengths: string[];
   missing: string[];
+  /** Skill search only: the vacancy the resume was analyzed for. */
+  vacancyTitle?: string;
+  /** Skill search only: how many times each asked skill is mentioned in the resume. */
+  skillHits?: { skill: string; count: number }[];
 }
 
 export interface PoolAnswer {
@@ -54,6 +62,8 @@ export interface PoolAnswer {
     needsLook: number;
   } | null;
   rows: PoolAnswerRow[];
+  /** Skill search only: the skills that were looked for. */
+  skills?: string[];
   /** Candidates that exist beyond the ones shown. */
   more: number;
   asOf: string;
@@ -72,6 +82,10 @@ export interface PoolAskInput {
   showAll?: boolean;
   language?: Lang;
 }
+
+/** "All vacancies": the skill search leaves the current page and looks everywhere. */
+const WIDE =
+  /((all|every) vacanc|(butun|hamisi)\s+vakansiya|(vse|vsem|vsex)\s+vakans|(все|всем|всех)\s+вакан)/;
 
 const empty = (language: Lang, now: string): PoolAnswer => ({
   kind: 'help',
@@ -203,7 +217,28 @@ export class PoolAssistantService {
         }
       }
       void confirmed;
-      if (vacancy) await this.answerFor(a, vacancy, parsed, input.showAll === true);
+      // No vacancy was settled, and the answer so far is only "I don't know which": a skill
+      // question can still be answered over the pool.
+      const open =
+        !vacancy &&
+        (a.kind === 'help' || a.kind === 'no_match') &&
+        !a.flags.includes('archived_excluded');
+      const sq = skillQuery(text, vacancy?.title);
+      if (sq && (vacancy || open)) {
+        // The question asks for a skill: look in the resumes, not in the vacancy titles.
+        const page = input.vacancyId ? live.find((v) => v.id === input.vacancyId) : undefined;
+        const everywhere = WIDE.test(foldText(text));
+        const scope = vacancy ? [vacancy] : page && !everywhere ? [page] : live;
+        Object.assign(a, empty(lang, now), { flags: [] });
+        await this.answerSkills(
+          a,
+          scope,
+          sq,
+          parsed,
+          input.showAll === true,
+          !vacancy && !!page && !everywhere,
+        );
+      } else if (vacancy) await this.answerFor(a, vacancy, parsed, input.showAll === true);
     }
 
     return this.save(p, input, text, a, ip);
@@ -305,6 +340,80 @@ export class PoolAssistantService {
     a.notes = notes;
   }
 
+  /**
+   * "Who knows Excel?": the resumes of the analyzed candidates are searched for the skill. The
+   * order is the pool's order; the resume text is read here and never stored or sent anywhere.
+   */
+  private async answerSkills(
+    a: PoolAnswer,
+    scope: VacancyRef[],
+    sq: SkillQuery,
+    parsed: ReturnType<typeof parseQuestion>,
+    showAll: boolean,
+    pageOnly: boolean,
+  ) {
+    const lang = a.language;
+    const ids = scope.map((v) => v.id);
+    const pool = (await this.pool.rows(ids)).sort(PoolService.byMatch);
+    const { rows: stat } = await this.db.query<{ docs: number }>(
+      `SELECT count(*)::int AS docs FROM cv_document
+        WHERE vacancy_id = ANY($1::char(26)[]) AND erased_at IS NULL`,
+      [ids],
+    );
+    const unsearched = Math.max(0, (stat[0]?.docs ?? 0) - pool.length);
+
+    const hits = new Map<string, { skill: string; count: number }[]>();
+    for (let i = 0; i < pool.length; i += 40) {
+      const batch = pool.slice(i, i + 40);
+      const { rows } = await this.db.query<{ id: string; text: string | null }>(
+        `SELECT id, text FROM cv_document WHERE id = ANY($1::char(26)[]) AND erased_at IS NULL`,
+        [batch.map((r) => r.documentId)],
+      );
+      for (const r of rows) {
+        const folded = skillFold(r.text ?? '');
+        const per = sq.groups.map((g, k) => ({ skill: sq.labels[k]!, count: mentions(folded, g) }));
+        const ok = sq.any ? per.some((x) => x.count > 0) : per.every((x) => x.count > 0);
+        if (ok)
+          hits.set(
+            r.id,
+            per.filter((x) => x.count > 0),
+          );
+      }
+    }
+    const matched = pool.filter((r) => hits.has(r.documentId));
+    const skills = sq.labels.join(sq.any ? ' / ' : ' + ');
+    const one = scope.length === 1 ? scope[0]! : null;
+    const place = one ? one.title : say(lang, 'scopeAll');
+
+    a.kind = 'pool';
+    a.vacancy = one ? { id: one.id, title: one.title, status: one.status } : null;
+    a.flags = ['skill_search'];
+    a.skills = sq.labels;
+    a.headline = matched.length
+      ? say(lang, 'skillFound', { skills, n: matched.length, scope: place })
+      : say(lang, 'skillNone', { skills, scope: place });
+    if (matched.length) {
+      const limit = parsed.all || showAll ? 50 : parsed.topGiven ? parsed.top : 10;
+      const list =
+        parsed.ask === 'shortlist' ? matched.filter((r) => r.decision === 'shortlist') : matched;
+      if (parsed.ask !== 'count') await this.fill(a, list, limit);
+      for (const row of a.rows) {
+        const src = matched.find((r) => r.matchId === row.matchId)!;
+        row.vacancyTitle = src.vacancyTitle;
+        row.skillHits = hits.get(src.documentId) ?? [];
+      }
+    }
+    const notes: string[] = [];
+    if (matched.length) notes.push(say(lang, 'skillNote'));
+    if (pageOnly && one) notes.push(say(lang, 'skillScopePage', { title: one.title }));
+    if (unsearched) {
+      notes.push(say(lang, 'skillUnsearched', { n: unsearched }));
+      a.flags.push('unanalyzed');
+    }
+    a.notes = notes;
+    a.counts = null;
+  }
+
   /** The rows shown, each with the requirement wording that explains it. */
   private async fill(a: PoolAnswer, list: PoolRow[], limit: number) {
     const shown = list.slice(0, limit);
@@ -396,6 +505,7 @@ export class PoolAssistantService {
           flags: a.flags,
           language: a.language,
           counts: a.counts,
+          skills: a.skills ?? null,
           // Pseudonyms only: names are never written to the audit trail.
           shown: a.rows.map((r) => r.pseudonym),
         },

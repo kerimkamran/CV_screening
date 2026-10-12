@@ -762,6 +762,60 @@ describe('SenAI Ask bar', () => {
     expect(within(panel).getByRole('button', { name: /Show all \(3 more\)/ })).toBeInTheDocument();
     expect(within(panel).getByText(/As of/)).toBeInTheDocument();
   });
+
+  it('shows what a skill search found: the vacancy and how often the skill is written', async () => {
+    mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline: 'Candidates whose resume mentions Excel: 1 (all vacancies).',
+                notes: [],
+                vacancy: null,
+                options: [],
+                counts: null,
+                skills: ['Excel'],
+                rows: [
+                  {
+                    matchId: MID,
+                    label: 'Aysel Mammadova',
+                    score: 61,
+                    band: 'partial',
+                    mustFound: 1,
+                    mustTotal: 2,
+                    decision: 'new',
+                    decisionLabel: 'New',
+                    outOfDate: false,
+                    strengths: [],
+                    missing: [],
+                    vacancyTitle: 'Finance Analyst',
+                    skillHits: [{ skill: 'Excel', count: 3 }],
+                  },
+                ],
+                more: 0,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: ['skill_search'],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'Who knows Excel?{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    expect(await within(panel).findByText(/Excel ×3/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Finance Analyst/)).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------- accessibility of the new screens

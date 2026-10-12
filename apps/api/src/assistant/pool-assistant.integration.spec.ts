@@ -140,6 +140,74 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
     expect(named.vacancy.id).toBe(other);
   });
 
+  it('finds candidates by a skill written in their resumes, in three languages, without a vacancy name', async () => {
+    const a = await h.recruiter('pa-skill@azerconnect.test');
+    const skillCvs = [
+      { name: 'Dana Tf', lines: ['Zorbaflux automation.', 'Kubernetes.'] },
+      { name: 'Emil Tf', lines: ['Zorbaflux pipelines for the core.'] },
+      { name: 'Farid Other', lines: ['Cooking.'] },
+    ];
+    const vid = await h.scenario(a.api, skillCvs, 'Skill Search Role');
+    const calls = h.modelCalls.length;
+    // On the vacancy page: the page is searched, and the answer says so.
+    const page = (
+      await a.api.post('/assistant/ask', {
+        message: 'mənə zorbaflux bilən namizədləri çıxart',
+        vacancyId: vid,
+      })
+    ).json().answer;
+    expect(page.kind).toBe('pool');
+    expect(page.language).toBe('az');
+    expect(page.flags).toContain('skill_search');
+    expect(page.skills).toEqual(['Zorbaflux']);
+    expect(page.rows).toHaveLength(2);
+    expect(page.rows.every((r: any) => r.skillHits[0].skill === 'Zorbaflux')).toBe(true);
+    expect(page.rows.every((r: any) => r.vacancyTitle === 'Skill Search Role')).toBe(true);
+    expect(page.headline).toMatch(/Zorbaflux/);
+    // Pool order, not alphabetical.
+    const pool = (await a.api.get(`/candidates?vacancy=${vid}`))
+      .json()
+      .rows.map((x: any) => x.matchId)
+      .filter((m: string) => page.rows.some((r: any) => r.matchId === m));
+    expect(page.rows.map((x: any) => x.matchId)).toEqual(pool);
+    // From anywhere (no page): every live vacancy is searched.
+    const any = (await a.api.post('/assistant/ask', { message: 'Who knows Zorbaflux?' })).json()
+      .answer;
+    expect(any.vacancy).toBeNull();
+    expect(any.rows.length).toBeGreaterThanOrEqual(2);
+    // Two skills must both be mentioned; "or" needs only one.
+    const both = (
+      await a.api.post('/assistant/ask', {
+        message: 'candidates with Zorbaflux and Kubernetes',
+        vacancyId: vid,
+      })
+    ).json().answer;
+    expect(both.rows).toHaveLength(1);
+    const either = (
+      await a.api.post('/assistant/ask', {
+        message: 'candidates with Zorbaflux or Kubernetes',
+        vacancyId: vid,
+      })
+    ).json().answer;
+    expect(either.rows).toHaveLength(2);
+    // Nobody: said plainly, not an error.
+    const none = (
+      await a.api.post('/assistant/ask', {
+        message: 'Найди кандидатов, знающих Quuxbarzed',
+        vacancyId: vid,
+      })
+    ).json().answer;
+    expect(none.rows).toEqual([]);
+    expect(none.headline).toMatch(/Quuxbarzed/);
+    expect(none.language).toBe('ru');
+    // Still no model call, and the audit trail holds the skill but no name.
+    expect(h.modelCalls.length).toBe(calls);
+    const audit = JSON.stringify(
+      (await h.admin.get('/admin/audit?action=assistant.pool_turn')).json(),
+    );
+    expect(audit).not.toMatch(/Dana Tf|Emil Tf/);
+  });
+
   it('writes the unusual cases plainly: nothing analyzed, out of date, running', async () => {
     const a = await h.recruiter('pa6@azerconnect.test');
     const empty = await a.api.post('/vacancies', { title: 'Lonely Empty Role' });

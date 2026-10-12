@@ -1,4 +1,13 @@
-import { detectLanguage, parseQuestion, resolveVacancy, tierOf, say } from './pool-assistant';
+import {
+  detectLanguage,
+  mentions,
+  parseQuestion,
+  resolveVacancy,
+  say,
+  skillFold,
+  skillQuery,
+  tierOf,
+} from './pool-assistant';
 
 const V = (id: string, title: string) => ({ id, title, status: 'open' });
 
@@ -83,5 +92,57 @@ describe('say', () => {
     expect(
       say('az', 'found', { n: 3, title: 'X', strong: 1, good: 1, partial: 1, limited: 0 }),
     ).toContain('3 namizəd');
+  });
+});
+
+describe('skillQuery: a skill in the question, read by rules', () => {
+  it('the example from the recruiters: "mənə excel bilən namizədləri çıxart"', () => {
+    const q = skillQuery('mənə excel bilən namizədləri çıxart');
+    expect(q?.labels).toEqual(['Excel']);
+    expect(q?.any).toBe(false);
+  });
+  it('English and Russian', () => {
+    expect(skillQuery('Who knows Excel?')?.labels).toEqual(['Excel']);
+    expect(skillQuery('Show candidates with SQL and Python')?.labels).toEqual(['SQL', 'Python']);
+    expect(skillQuery('Найди кандидатов, знающих Excel')?.labels).toEqual(['Excel']);
+    expect(skillQuery('кто владеет английским')?.labels).toEqual(['English']);
+  });
+  it('"or" means any of them', () => {
+    const q = skillQuery('SQL və ya Python bilən namizədlər');
+    expect(q?.any).toBe(true);
+    expect(q?.labels).toEqual(['SQL', 'Python']);
+  });
+  it('an unknown skill is searched as the words written', () => {
+    const q = skillQuery('mənə terraform bilən namizədləri tap');
+    expect(q?.labels).toEqual(['Terraform']);
+    expect(q?.groups).toEqual([['terraform']]);
+  });
+  it('is not a skill question when no skill is asked for', () => {
+    expect(skillQuery('Find the right candidate for Network Engineer')).toBeNull();
+    expect(skillQuery('How many candidates for Network Engineer?')).toBeNull();
+    expect(skillQuery('Show the Shortlist for Network Engineer')).toBeNull();
+    expect(skillQuery('şəbəkə mühəndisi üçün uyğun namizədi tap')).toBeNull();
+  });
+  it('words of the vacancy title are not skills', () => {
+    const q = skillQuery('Network Engineer candidates who know BGP', 'Network Engineer');
+    expect(q?.labels).toEqual(['BGP']);
+  });
+});
+
+describe('mentions: whole words, with Azerbaijani suffixes', () => {
+  const g = ['sap'];
+  it('counts a skill in resume text', () => {
+    const t = skillFold('Skills: MS Excel (pivot, VLOOKUP), Word. Excel-də hesabatlar.');
+    expect(mentions(t, ['excel', 'vlookup', 'pivot'])).toBeGreaterThanOrEqual(3);
+  });
+  it('short words stand alone', () => {
+    expect(mentions(skillFold('Worked with SAP and Oracle'), g)).toBe(1);
+    expect(mentions(skillFold('A sapphire ring'), g)).toBe(0);
+    expect(mentions(skillFold('JavaScript developer'), ['java'])).toBe(0);
+  });
+  it('keeps C#, C++ and .NET apart', () => {
+    expect(mentions(skillFold('C# and .NET, no C++'), ['csharp'])).toBe(1);
+    expect(mentions(skillFold('C# and .NET'), ['cpp'])).toBe(0);
+    expect(mentions(skillFold('ASP.NET'), ['dotnet'])).toBe(1);
   });
 });

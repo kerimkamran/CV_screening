@@ -34,6 +34,9 @@ export interface PoolAnswer {
     outOfDate: boolean;
     strengths: string[];
     missing: string[];
+    /** Skill search: the vacancy the resume was analyzed for, and how often each skill is written. */
+    vacancyTitle?: string;
+    skillHits?: { skill: string; count: number }[];
   }[];
   more: number;
   asOf: string;
@@ -442,7 +445,16 @@ function PoolAnswerView({
                   </span>
                 )}
                 {r.outOfDate && <span className="text-xs text-warn-text">{t('Out of date')}</span>}
+                {r.vacancyTitle && !a.vacancy && (
+                  <span className="text-xs text-ink-2">· {r.vacancyTitle}</span>
+                )}
               </div>
+              {r.skillHits && r.skillHits.length > 0 && (
+                <p className="ml-7 text-xs font-medium text-ink">
+                  {t('In the resume')}:{' '}
+                  {r.skillHits.map((h) => `${h.skill} ×${h.count}`).join(', ')}
+                </p>
+              )}
               <p className="ml-7 text-xs text-ink-2">
                 {t('{found} of {total} must-haves found', {
                   found: r.mustFound,

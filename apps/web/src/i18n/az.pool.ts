@@ -209,6 +209,7 @@ export const AZ_POOL: Record<string, string> = {
   Missing: 'Yoxdur',
   Unclear: 'Aydın deyil',
   'Not found': 'Tapılmadı',
+  'In the resume': 'CV-də',
   'Show in resume': 'CV-də göstərin',
   'Hide in resume': 'CV-də gizlədin',
   'Nothing to show in the resume.': 'CV-də göstəriləcək yer yoxdur.',
