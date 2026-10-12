@@ -8,14 +8,21 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
   let h: Harness;
   beforeAll(async () => {
     h = await boot('poolai', (system, user) =>
-      system.includes('second reader')
-        ? JSON.stringify({
-            headline: 'The stored match shows a tally.',
-            claims: [{ text: 'See the tally.', source: 'MATCH' }],
-            cant_see: "The CV doesn't mention everything; that is not evidence of a gap.",
-            outcome: 'held',
+      system.includes('ONE JSON query')
+        ? // The model reads what the rules could not: "fluent in the language of Shakespeare".
+          JSON.stringify({
+            intent: 'skills',
+            followUp: 'new',
+            skills: [{ id: 'english', text: 'language of Shakespeare' }],
           })
-        : scriptedModel(system, user),
+        : system.includes('second reader')
+          ? JSON.stringify({
+              headline: 'The stored match shows a tally.',
+              claims: [{ text: 'See the tally.', source: 'MATCH' }],
+              cant_see: "The CV doesn't mention everything; that is not evidence of a gap.",
+              outcome: 'held',
+            })
+          : scriptedModel(system, user),
     );
     const cur = (await h.admin.get('/admin/assistant')).json().settings;
     expect((await h.admin.post('/admin/assistant/test', {})).json().ok).toBe(true);
@@ -206,6 +213,94 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
       (await h.admin.get('/admin/audit?action=assistant.pool_turn')).json(),
     );
     expect(audit).not.toMatch(/Dana Tf|Emil Tf/);
+  });
+
+  it('follows a conversation: Excel, then "ingilis dili", then "həm də Excel", then "only Strong"', async () => {
+    const a = await h.recruiter('pa-follow@azerconnect.test');
+    const cv = [
+      { name: 'Gunel Both', lines: ['Excel and pivot reports.', 'İngilis dili: C1.'] },
+      { name: 'Hasan Excel', lines: ['Excel dashboards.'] },
+      { name: 'Ilkin English', lines: ['Fluent English, IELTS 7.', 'Cooking.'] },
+    ];
+    const vid = await h.scenario(a.api, cv, 'Follow Up Role');
+    const first = (
+      await a.api.post('/assistant/ask', {
+        message: 'mənə excel bilən namizədləri çıxart',
+        vacancyId: vid,
+      })
+    ).json();
+    expect(first.answer.skills).toEqual(['Excel']);
+    expect(first.answer.rows).toHaveLength(2);
+    // Proof: the line of the resume where Excel is written, read again at display time.
+    const p0 = first.answer.rows.flatMap((r: any) => r.passages);
+    expect(p0.length).toBeGreaterThan(0);
+    expect(p0.every((p: any) => typeof p.text === 'string' && /excel/i.test(p.hit))).toBe(true);
+    expect(JSON.stringify(first.answer.rows.map((r: any) => r.passages[0].text))).toMatch(/Excel/);
+
+    const ask = (message: string, extra: object = {}) =>
+      a.api
+        .post('/assistant/ask', {
+          message,
+          conversationId: first.conversationId,
+          vacancyId: vid,
+          ...extra,
+        })
+        .then((r) => r.json().answer);
+
+    // The failing case of 12 Oct: a bare "ingilis dili" must search English in the same scope.
+    const en = await ask('ingilis dili');
+    expect(en.skills).toEqual(['English']);
+    expect(en.language).toBe('az');
+    expect(en.rows).toHaveLength(2);
+    expect(en.vacancy.id).toBe(vid);
+    expect(en.suggestions.join(' ')).toMatch(/Excel/); // "Həm də Excel"
+
+    const both = await ask('həm də Excel');
+    expect(both.skills).toEqual(['English', 'Excel']);
+    expect(both.rows).toHaveLength(1);
+    expect(both.rows[0].label).toMatch(/Gunel/);
+
+    const strong = await ask('only strong ones');
+    expect(strong.skills).toEqual(['English', 'Excel']);
+    expect(strong.notes.join(' ')).toMatch(/Strong/);
+
+    // Reopening the conversation reads the passages again; nothing of the resume was stored.
+    const back = (await a.api.get(`/assistant/conversations/${first.conversationId}`)).json();
+    const stored = JSON.stringify(
+      (
+        await h.db.owner.query(
+          `SELECT content FROM assistant_pool_message WHERE conversation_id = $1`,
+          [first.conversationId],
+        )
+      ).rows,
+    );
+    expect(stored).not.toMatch(/dashboards|pivot reports/);
+    expect(JSON.stringify(back)).toMatch(/Excel/);
+  });
+
+  it('asks a model to read what the rules cannot, checks its answer, and counts it', async () => {
+    const a = await h.recruiter('pa-model@azerconnect.test');
+    const vid = await h.scenario(
+      a.api,
+      [{ name: 'Jale Eng', lines: ['IELTS 8. Fluent English.'] }],
+      'Model Read Role',
+    );
+    const before = h.modelCalls.length;
+    const r = (
+      await a.api.post('/assistant/ask', {
+        message: 'hmm, anyone fluent in the tongue of Shakespeare?',
+        vacancyId: vid,
+      })
+    ).json();
+    expect(h.modelCalls.length).toBe(before + 1);
+    const call = h.modelCalls[h.modelCalls.length - 1]!;
+    // The model saw the question and the vacancy titles, never a resume.
+    expect(call.user).toMatch(/Shakespeare/);
+    expect(call.user).not.toMatch(/IELTS|Jale/);
+    expect(r.answer.skills).toEqual(['English']);
+    expect(r.answer.rows).toHaveLength(1);
+    const usage = (await h.admin.get('/admin/assistant')).json().usage;
+    expect(usage.today).toBeGreaterThan(0);
   });
 
   it('writes the unusual cases plainly: nothing analyzed, out of date, running', async () => {

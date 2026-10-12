@@ -153,8 +153,10 @@ export class AssistantService {
     const { rows } = await this.db.query<{ today: string; month: string }>(
       `SELECT count(*) FILTER (WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Baku') AT TIME ZONE 'Asia/Baku') AS today,
               count(*) AS month
-         FROM assistant_message
-        WHERE counted AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Baku') AT TIME ZONE 'Asia/Baku'`,
+         FROM (SELECT created_at FROM assistant_message WHERE counted
+               UNION ALL
+               SELECT created_at FROM assistant_pool_message WHERE counted) m
+        WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Baku') AT TIME ZONE 'Asia/Baku'`,
     );
     return { today: Number(rows[0]!.today), month: Number(rows[0]!.month) };
   }
@@ -486,7 +488,7 @@ export class AssistantService {
       .filter((h) => h.text);
   }
 
-  private async capReached(s: Settings): Promise<string | null> {
+  async capReached(s: Settings): Promise<string | null> {
     if (s.dailyCap === null && s.monthlyCap === null) return null;
     const u = await this.usage();
     if (s.dailyCap !== null && u.today >= s.dailyCap)

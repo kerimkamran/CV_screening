@@ -1,10 +1,10 @@
 /**
  * SenAI over the Candidate pool (Development Plan WP 4.3 and 4.4, design spec 6.6.9 to 6.6.11).
  *
- * The question is read by rules, not by a model: which vacancy is meant, and whether the person
- * wants the best matches, a count, or the Shortlist. The numbers and the order come from the pool
- * (the server's rows), and the sentences are written here, so nothing in an answer can be invented
- * and nothing about a person leaves the server. The model is not called for these answers.
+ * Here: language detection, which vacancy a question names, and the sentences of every answer.
+ * What the question means is read in senai/understand.ts (rules, then a model for what the rules
+ * cannot read). The numbers and the order come from the pool (the server's rows) and the sentences
+ * are written here, so nothing in an answer can be invented and no resume text goes to a model.
  */
 import { foldText } from '@cv/shared';
 
@@ -23,6 +23,17 @@ export function detectLanguage(text: string): Lang | null {
     return 'az';
   return /[a-z]/.test(f) ? 'en' : null;
 }
+
+const ENGLISH = new Set(
+  'the a an of for in on at to and or who what which how find show list give get best top all with that have has is are do does can you me my candidates candidate resume resumes vacancy vacancies know knows skill skills experience shortlist count many only also more less this those these them it its from by about please'.split(
+    ' ',
+  ),
+);
+/** Does the text hold a common English word? A bare "ingilis dili" does not, so the conversation's language wins. */
+export const looksEnglish = (text: string): boolean =>
+  foldText(text)
+    .split(' ')
+    .some((w) => ENGLISH.has(w));
 
 // ----------------------------------------------------------------------------- vacancy resolution
 
@@ -161,493 +172,6 @@ export function resolveVacancy(question: string, vacancies: VacancyRef[]): Resol
   return { tier: 'none', matches: [] };
 }
 
-// ----------------------------------------------------------------------------- the question
-
-export type Ask = 'find' | 'count' | 'shortlist' | 'unknown';
-export interface Parsed {
-  ask: Ask;
-  top: number;
-  /** True when the question named a number ("top 3"). */
-  topGiven: boolean;
-  all: boolean;
-}
-
-const COUNT = /(how many|number of|count|necə|nece|сколько|количество)/;
-const SHORT = /(shortlist|short list|qisa siyahi|шорт|избранн)/;
-const FIND =
-  /(find|best|top|right|fits?|fitting|suit\w*|match\w*|who|show|list|candidate|namized|uygun|en yaxsi|tap\b|tapin|goster|лучш|подход|кандидат|найд|покаж)/;
-const ALL = /(\ball\b|every|hamisi|bütün|butun|все|всех)/;
-
-export function parseQuestion(q: string): Parsed {
-  const f = foldText(q);
-  const n = /(?:top|ilk|en yaxsi|first|лучших|топ)\s*(\d{1,2})\b/.exec(f)?.[1];
-  const top = n ? Math.min(Math.max(parseInt(n, 10), 1), 50) : 5;
-  const all = ALL.test(f);
-  const ask: Ask = COUNT.test(f)
-    ? 'count'
-    : SHORT.test(f)
-      ? 'shortlist'
-      : FIND.test(f)
-        ? 'find'
-        : 'unknown';
-  return { ask, top, topGiven: !!n, all };
-}
-
-// ----------------------------------------------------------------------------- skills in the question
-
-/**
- * "Candidates who know Excel": a skill or keyword in the question, searched in the resumes
- * themselves (not in the vacancy titles). Read by rules, in English, Azerbaijani and Russian.
- */
-export interface SkillQuery {
-  /** One group per skill; the words in a group mean the same thing (folded). */
-  groups: string[][];
-  /** How each skill is shown in the answer. */
-  labels: string[];
-  /** "Excel or SQL": any skill is enough. Otherwise every skill must be mentioned. */
-  any: boolean;
-}
-
-const KNOWN_SKILLS: { label: string; words: string[] }[] = [
-  { label: 'Excel', words: ['excel', 'eksel', 'эксель', 'ексель', 'vlookup', 'pivot'] },
-  { label: 'Word', words: ['word', 'ворд'] },
-  { label: 'PowerPoint', words: ['powerpoint', 'пауэрпоинт'] },
-  { label: 'Power BI', words: ['powerbi'] },
-  { label: 'SQL', words: ['sql', 'mysql', 'postgresql', 'postgres', 'mssql', 'plsql'] },
-  { label: 'Python', words: ['python', 'питон', 'пайтон'] },
-  { label: 'Java', words: ['java', 'джава'] },
-  { label: 'JavaScript', words: ['javascript', 'js', 'typescript', 'джаваскрипт'] },
-  { label: 'C#', words: ['csharp'] },
-  { label: 'C++', words: ['cpp'] },
-  { label: '.NET', words: ['dotnet'] },
-  { label: 'Linux', words: ['linux', 'линукс'] },
-  { label: 'Oracle', words: ['oracle', 'оракл'] },
-  { label: 'SAP', words: ['sap'] },
-  { label: 'Cisco', words: ['cisco', 'cisko', 'циско'] },
-  { label: 'BGP', words: ['bgp'] },
-  { label: 'OSPF', words: ['ospf'] },
-  { label: 'Docker', words: ['docker'] },
-  { label: 'Kubernetes', words: ['kubernetes', 'k8s'] },
-  { label: 'Tableau', words: ['tableau'] },
-  { label: 'AutoCAD', words: ['autocad'] },
-  { label: 'Photoshop', words: ['photoshop'] },
-  { label: 'Figma', words: ['figma'] },
-  { label: 'English', words: ['english', 'ingilis', 'английск'] },
-  { label: 'Russian', words: ['russian', 'rusca', 'русск'] },
-  { label: 'Azerbaijani', words: ['azerbaijani', 'azerbaycanca', 'азербайджанск'] },
-];
-
-/** Joins words the way resumes write them, so "Power BI", "C#" and ".NET" stay one word. */
-const prep = (s: string) =>
-  s
-    .replace(/c\+\+/gi, ' cpp ')
-    .replace(/c#/gi, ' csharp ')
-    .replace(/\.net\b/gi, ' dotnet ')
-    .replace(/node\.?js/gi, ' nodejs ')
-    .replace(/power\s*bi\b/gi, ' powerbi ')
-    .replace(/power\s*point/gi, ' powerpoint ')
-    .replace(/t-?sql|pl\/sql/gi, ' sql ');
-export const skillFold = (s: string): string => foldText(prep(s));
-
-const fset = (xs: string[]) => new Set(xs.map(skillFold));
-/** Words that ask for something but name no skill. */
-const FILLER = fset([
-  // English
-  'find',
-  'show',
-  'list',
-  'give',
-  'get',
-  'extract',
-  'pull',
-  'pick',
-  'search',
-  'who',
-  'whom',
-  'which',
-  'what',
-  'candidate',
-  'candidates',
-  'people',
-  'person',
-  'applicant',
-  'applicants',
-  'resume',
-  'resumes',
-  'cv',
-  'cvs',
-  'with',
-  'that',
-  'have',
-  'has',
-  'having',
-  'had',
-  'the',
-  'a',
-  'an',
-  'of',
-  'for',
-  'in',
-  'on',
-  'at',
-  'from',
-  'me',
-  'my',
-  'all',
-  'any',
-  'every',
-  'best',
-  'top',
-  'good',
-  'right',
-  'how',
-  'many',
-  'much',
-  'number',
-  'count',
-  'please',
-  'can',
-  'you',
-  'could',
-  'would',
-  'do',
-  'does',
-  'is',
-  'are',
-  'was',
-  'be',
-  'it',
-  'there',
-  'their',
-  'them',
-  'us',
-  'we',
-  'i',
-  'to',
-  'by',
-  'about',
-  'among',
-  'out',
-  'only',
-  'also',
-  'both',
-  'know',
-  'knows',
-  'knowing',
-  'knowledge',
-  'skill',
-  'skills',
-  'skilled',
-  'experience',
-  'experienced',
-  'proficient',
-  'familiar',
-  'using',
-  'use',
-  'uses',
-  'shortlist',
-  'vacancy',
-  'vacancies',
-  'role',
-  'job',
-  'need',
-  'want',
-  'looking',
-  'someone',
-  'anyone',
-  'who',
-  'able',
-  'ability',
-  'work',
-  'works',
-  'working',
-  // Azerbaijani (folded by skillFold)
-  'mene',
-  'men',
-  'bize',
-  'cixart',
-  'cixar',
-  'cixarin',
-  'tap',
-  'tapin',
-  'taparsan',
-  'goster',
-  'gosterin',
-  'ver',
-  'verin',
-  'sec',
-  'secin',
-  'bax',
-  'axtar',
-  'axtarin',
-  'siyahi',
-  'siyahisi',
-  'namized',
-  'namizedi',
-  'namizedler',
-  'namizedleri',
-  'namizedlerin',
-  'namizede',
-  'cvler',
-  'cvlerde',
-  'cvsi',
-  'bilen',
-  'bilir',
-  'bilenler',
-  'bilenleri',
-  'bilenlerin',
-  'malik',
-  'sahib',
-  'sahibi',
-  'sahibleri',
-  'tecrube',
-  'tecrubesi',
-  'tecrubeli',
-  'bacariq',
-  'bacariqli',
-  'bacariqlari',
-  'ile',
-  'ucun',
-  'uzre',
-  'uzere',
-  'haqqinda',
-  'nece',
-  'say',
-  'sayi',
-  'var',
-  'yox',
-  'hansi',
-  'hansilar',
-  'kim',
-  'kimler',
-  'kimlerdir',
-  'hamisi',
-  'butun',
-  'bu',
-  'o',
-  'en',
-  'yaxsi',
-  'uygun',
-  'ideal',
-  'lazim',
-  'lazimdir',
-  'olan',
-  'olanlar',
-  'olanlari',
-  'qeyd',
-  'edir',
-  'edilib',
-  'edenler',
-  'istifade',
-  'bilirlermi',
-  'varmi',
-  'vakansiya',
-  'vakansiyalar',
-  'vakansiyada',
-  'vakansiyalarda',
-  'qisa',
-  'mutexessis',
-  'xahis',
-  'edirem',
-  'ede',
-  'bilersen',
-  'sira',
-  'siraya',
-  'hazirda',
-  'indi',
-  'movcud',
-  'yalniz',
-  'daha',
-  'cox',
-  'az',
-  'da',
-  'de',
-  // Russian
-  'найди',
-  'найти',
-  'покажи',
-  'выведи',
-  'дай',
-  'выбери',
-  'кандидат',
-  'кандидата',
-  'кандидаты',
-  'кандидатов',
-  'кто',
-  'знает',
-  'знают',
-  'знающие',
-  'знающих',
-  'владеет',
-  'владеют',
-  'владеющие',
-  'владеющих',
-  'опыт',
-  'опытом',
-  'навык',
-  'навыки',
-  'навыками',
-  'умеет',
-  'умеют',
-  'работающих',
-  'с',
-  'со',
-  'и',
-  'или',
-  'для',
-  'все',
-  'всех',
-  'всё',
-  'лучших',
-  'лучшие',
-  'сколько',
-  'резюме',
-  'у',
-  'которых',
-  'которые',
-  'есть',
-  'пожалуйста',
-  'мне',
-  'нам',
-  'по',
-  'в',
-  'на',
-  'из',
-  'вакансия',
-  'вакансии',
-  'вакансиям',
-  'вакансиях',
-  'список',
-  'короткий',
-]);
-/** Words that point at a skill ("who KNOWS Excel", "with experience in"). */
-const SKILL_TRIGGER = fset([
-  'bilen',
-  'bilir',
-  'bilenler',
-  'bilenleri',
-  'bilenlerin',
-  'malik',
-  'sahib',
-  'sahibi',
-  'tecrube',
-  'tecrubesi',
-  'tecrubeli',
-  'bacariq',
-  'bacariqli',
-  'bacariqlari',
-  'know',
-  'knows',
-  'knowing',
-  'knowledge',
-  'skill',
-  'skills',
-  'skilled',
-  'experience',
-  'experienced',
-  'proficient',
-  'familiar',
-  'using',
-  'with',
-  'ile',
-  'знает',
-  'знают',
-  'знающие',
-  'знающих',
-  'владеет',
-  'владеют',
-  'владеющие',
-  'владеющих',
-  'опыт',
-  'опытом',
-  'навык',
-  'навыки',
-  'навыками',
-  'умеет',
-  'умеют',
-  'с',
-  'со',
-]);
-const AND_WORDS = fset(['ve', 'and', 'и', 'hem', 'eyni zamanda']);
-const OR_WORDS = fset(['veya', 'ya', 'yaxud', 'or', 'или', 'либо']);
-
-/** A known skill by its word; longer words also match with a suffix ("excelde", "английским"). */
-const skillGroupOf = (token: string) =>
-  KNOWN_SKILLS.find((k) => k.words.some((w) => skillFold(w) === token)) ??
-  KNOWN_SKILLS.find((k) =>
-    k.words.some((w) => {
-      const f = skillFold(w);
-      return f.length >= 5 && token.startsWith(f);
-    }),
-  );
-
-const titleCase = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
-
-/**
- * The skills the question asks about, or null when it asks for nothing of the kind (then it is a
- * question about a vacancy). Words that belong to the vacancy's own title are not skills.
- */
-export function skillQuery(question: string, vacancyTitle?: string | null): SkillQuery | null {
-  const tokens = skillFold(question).split(' ').filter(Boolean);
-  const titleWords = vacancyTitle ? words(vacancyTitle) : [];
-  const groups: string[][] = [];
-  const labels: string[] = [];
-  let any = false;
-  let trigger = false;
-  let known = false;
-  let buffer: string[] = [];
-  const flush = () => {
-    if (!buffer.length) return;
-    const phrase = buffer.join(' ');
-    groups.push([phrase]);
-    labels.push(titleCase(phrase));
-    buffer = [];
-  };
-  for (const tok of tokens) {
-    if (SKILL_TRIGGER.has(tok)) trigger = true;
-    if (OR_WORDS.has(tok)) {
-      any = true;
-      flush();
-      continue;
-    }
-    const kg = skillGroupOf(tok);
-    if (kg) {
-      flush();
-      known = true;
-      if (!groups.some((g) => g[0] === skillFold(kg.words[0]!))) {
-        groups.push(kg.words.map(skillFold));
-        labels.push(kg.label);
-      }
-      continue;
-    }
-    if (FILLER.has(tok) || AND_WORDS.has(tok) || /^\d+$/.test(tok) || tok.length < 2) {
-      flush();
-      continue;
-    }
-    if (titleWords.some((w) => same(tok, w)) || GROUP.has(tok)) {
-      flush();
-      continue;
-    }
-    buffer.push(tok);
-  }
-  flush();
-  if (!groups.length || !(trigger || known)) return null;
-  return { groups: groups.slice(0, 5), labels: labels.slice(0, 5), any };
-}
-
-/** How many times a skill (any of its words) appears in a resume text that was already folded. */
-export function mentions(foldedText: string, group: string[]): number {
-  let n = 0;
-  for (const w of group) {
-    const esc = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Short words must stand alone ("sap", "java" are not "sapphire", "javascript"); longer words
-    // may carry an Azerbaijani suffix ("excelde", "excel-i").
-    const re = new RegExp(w.length >= 5 ? `(^| )${esc}` : `(^| )${esc}( |$)`, 'g');
-    n += (foldedText.match(re) ?? []).length;
-  }
-  return n;
-}
-
 // ----------------------------------------------------------------------------- wording
 
 type Dict = Record<Lang, string>;
@@ -772,6 +296,31 @@ const D = {
     az: 'bütün vakansiyalar',
     ru: 'все вакансии',
   },
+  filtered: {
+    en: 'Showing {n} of {analyzed} analyzed for {title}.',
+    az: '{title} üçün təhlil olunmuş {analyzed} namizədin {n}-i göstərilir.',
+    ru: 'Показано {n} из {analyzed} проанализированных для «{title}».',
+  },
+  filterNote: {
+    en: 'Only: {filters}.',
+    az: 'Yalnız: {filters}.',
+    ru: 'Только: {filters}.',
+  },
+  followReplace: {
+    en: 'Searching {skills} in the same scope as before.',
+    az: 'Əvvəlki axtarışın əhatəsində {skills} axtarıram.',
+    ru: 'Ищу {skills} в той же области, что и раньше.',
+  },
+  alsoChip: {
+    en: 'Also {skill}',
+    az: 'Həm də {skill}',
+    ru: 'Ещё и {skill}',
+  },
+  clarify: {
+    en: 'I am not sure what you want to see. Is it one of these?',
+    az: 'Nə görmək istədiyinizi dəqiq başa düşmədim. Bunlardan biridir?',
+    ru: 'Не уверен, что вы хотите увидеть. Это что-то из этого?',
+  },
   help: {
     en: 'I can find the best matches for a vacancy, search the resumes for a skill, count candidates, or list the Shortlist. Try: Who knows Excel?',
     az: 'Vakansiya üçün ən yaxşı uyğunları tapa, CV-lərdə bacarıq axtara, namizədləri say və qısa siyahını göstərə bilərəm. Məsələn: Excel bilən namizədləri çıxart.',
@@ -803,4 +352,21 @@ export const SUGGESTIONS: Record<Lang, string[]> = {
     'Покажи короткий список для {vacancy}',
     'Найди кандидатов, знающих Excel',
   ],
+};
+
+/** Names of the bands and marks in the language of the answer (for notes; the screen has its own). */
+export const BAND_WORD: Record<Lang, Record<string, string>> = {
+  en: { strong: 'Strong', good: 'Good', partial: 'Partial', limited: 'Limited' },
+  az: { strong: 'Güclü', good: 'Yaxşı', partial: 'Qismən', limited: 'Məhdud' },
+  ru: { strong: 'Сильное', good: 'Хорошее', partial: 'Частичное', limited: 'Слабое' },
+};
+export const MARK_WORD: Record<Lang, Record<string, string>> = {
+  en: { shortlist: 'Shortlist', maybe: 'Maybe', not_now: 'Not now', new: 'No decision yet' },
+  az: { shortlist: 'Qısa siyahı', maybe: 'Bəlkə', not_now: 'İndi yox', new: 'Hələ qərar yoxdur' },
+  ru: {
+    shortlist: 'Короткий список',
+    maybe: 'Возможно',
+    not_now: 'Не сейчас',
+    new: 'Решения ещё нет',
+  },
 };

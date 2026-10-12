@@ -37,7 +37,15 @@ export interface PoolAnswer {
     /** Skill search: the vacancy the resume was analyzed for, and how often each skill is written. */
     vacancyTitle?: string;
     skillHits?: { skill: string; count: number }[];
+    /** Skill search: the line of the resume where the skill is written, with the word itself. */
+    passages?: { skill: string; text?: string; hit?: string }[];
   }[];
+  /** Compare, doctor, changes, what-if, recall: a small table written by the server. */
+  table?: { head: string[]; rows: { cells: string[]; tag?: 'must' | 'nice' }[] };
+  /** Where to go next: a candidate or a vacancy. */
+  actions?: { label: string; href: string }[];
+  /** What the answer is about (vacancy, skills, filters), shown as chips so a wrong reading is visible. */
+  used?: { kind: string; text: string }[];
   more: number;
   asOf: string;
   suggestions: string[];
@@ -400,11 +408,67 @@ function PoolAnswerView({
           </a>
         </p>
       )}
+      {a.used && a.used.length > 0 && a.kind === 'pool' && (
+        <ul className="flex flex-wrap gap-1" aria-label={t('Used for this answer')}>
+          {a.used.map((u) => (
+            <li
+              key={`${u.kind}:${u.text}`}
+              className="rounded-full bg-page px-2 py-0.5 text-xs text-ink-2"
+              data-chip={u.kind}
+            >
+              {u.text}
+            </li>
+          ))}
+        </ul>
+      )}
       {a.notes.map((n) => (
         <p key={n} className="text-ink-2">
           {n}
         </p>
       ))}
+      {a.table && (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr>
+                {a.table.head.map((h, i) => (
+                  <th key={i} scope="col" className="border-b border-line px-2 py-1 font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {a.table.rows.map((r, i) => (
+                <tr key={i} className="border-b border-line last:border-0">
+                  {r.cells.map((c, j) => (
+                    <td key={j} className="px-2 py-1 align-top">
+                      {c}
+                      {j === 0 && r.tag === 'must' && (
+                        <span className="ml-1 rounded bg-page px-1 text-ink-3">{t('must')}</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {a.actions && a.actions.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {a.actions.map((x) => (
+            <li key={x.href}>
+              <a
+                className="inline-block rounded-md border border-edge px-3 py-1 text-link hover:bg-page"
+                href={x.href}
+              >
+                {x.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
       {a.options.length > 0 && (
         <ul className="flex flex-col gap-1" aria-label={t('Vacancies')}>
           {a.options.map((o) => (
@@ -455,6 +519,16 @@ function PoolAnswerView({
                   {r.skillHits.map((h) => `${h.skill} ×${h.count}`).join(', ')}
                 </p>
               )}
+              {r.passages
+                ?.filter((p) => p.text)
+                .map((p, k) => (
+                  <blockquote
+                    key={k}
+                    className="ml-7 mt-1 border-l-2 border-line pl-2 text-xs text-ink-2"
+                  >
+                    <HighlightedPassage text={p.text!} hit={p.hit} />
+                  </blockquote>
+                ))}
               <p className="ml-7 text-xs text-ink-2">
                 {t('{found} of {total} must-haves found', {
                   found: r.mustFound,
@@ -489,5 +563,20 @@ function PoolAnswerView({
       )}
       <p className="text-xs text-ink-3">{t('As of {time}', { time: ago(a.asOf) })}</p>
     </div>
+  );
+}
+
+/** A line of a resume with the word that matched in bold. Text is plain: no markup is ever rendered. */
+function HighlightedPassage({ text, hit }: { text: string; hit?: string }) {
+  const i = hit ? text.toLowerCase().indexOf(hit.toLowerCase()) : -1;
+  if (!hit || i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="rounded bg-warn px-0.5 font-medium text-ink">
+        {text.slice(i, i + hit.length)}
+      </mark>
+      {text.slice(i + hit.length)}
+    </>
   );
 }

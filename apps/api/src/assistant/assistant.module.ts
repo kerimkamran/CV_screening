@@ -5,11 +5,13 @@ import { AssistantAdminController } from './assistant-admin.controller';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { PoolAssistantService } from './pool-assistant.service';
+import { PoolSearch } from './senai/search';
+import { PoolTools } from './senai/tools';
 
 @Module({
   imports: [VacancyModule, PipelineModule],
   controllers: [AssistantController, AssistantAdminController],
-  providers: [AssistantService, PoolAssistantService],
+  providers: [AssistantService, PoolAssistantService, PoolSearch, PoolTools],
   exports: [AssistantService, PoolAssistantService],
 })
 export class AssistantModule {}

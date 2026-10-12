@@ -1,13 +1,4 @@
-import {
-  detectLanguage,
-  mentions,
-  parseQuestion,
-  resolveVacancy,
-  say,
-  skillFold,
-  skillQuery,
-  tierOf,
-} from './pool-assistant';
+import { detectLanguage, looksEnglish, resolveVacancy, say, tierOf } from './pool-assistant';
 
 const V = (id: string, title: string) => ({ id, title, status: 'open' });
 
@@ -68,22 +59,6 @@ describe('resolveVacancy: three tiers, synonyms, Azerbaijani folding', () => {
   });
 });
 
-describe('parseQuestion', () => {
-  it('finds what is asked and how many', () => {
-    expect(parseQuestion('Find the right candidate for X')).toMatchObject({
-      ask: 'find',
-      top: 5,
-      all: false,
-    });
-    expect(parseQuestion('How many candidates for X?').ask).toBe('count');
-    expect(parseQuestion('Show the shortlist for X').ask).toBe('shortlist');
-    expect(parseQuestion('top 3 for X')).toMatchObject({ ask: 'find', top: 3 });
-    expect(parseQuestion('show all candidates for X').all).toBe(true);
-    expect(parseQuestion('neçə namizəd var').ask).toBe('count');
-    expect(parseQuestion('hello').ask).toBe('unknown');
-  });
-});
-
 describe('say', () => {
   it('fills the wording in the three languages', () => {
     expect(
@@ -95,54 +70,10 @@ describe('say', () => {
   });
 });
 
-describe('skillQuery: a skill in the question, read by rules', () => {
-  it('the example from the recruiters: "mənə excel bilən namizədləri çıxart"', () => {
-    const q = skillQuery('mənə excel bilən namizədləri çıxart');
-    expect(q?.labels).toEqual(['Excel']);
-    expect(q?.any).toBe(false);
-  });
-  it('English and Russian', () => {
-    expect(skillQuery('Who knows Excel?')?.labels).toEqual(['Excel']);
-    expect(skillQuery('Show candidates with SQL and Python')?.labels).toEqual(['SQL', 'Python']);
-    expect(skillQuery('Найди кандидатов, знающих Excel')?.labels).toEqual(['Excel']);
-    expect(skillQuery('кто владеет английским')?.labels).toEqual(['English']);
-  });
-  it('"or" means any of them', () => {
-    const q = skillQuery('SQL və ya Python bilən namizədlər');
-    expect(q?.any).toBe(true);
-    expect(q?.labels).toEqual(['SQL', 'Python']);
-  });
-  it('an unknown skill is searched as the words written', () => {
-    const q = skillQuery('mənə terraform bilən namizədləri tap');
-    expect(q?.labels).toEqual(['Terraform']);
-    expect(q?.groups).toEqual([['terraform']]);
-  });
-  it('is not a skill question when no skill is asked for', () => {
-    expect(skillQuery('Find the right candidate for Network Engineer')).toBeNull();
-    expect(skillQuery('How many candidates for Network Engineer?')).toBeNull();
-    expect(skillQuery('Show the Shortlist for Network Engineer')).toBeNull();
-    expect(skillQuery('şəbəkə mühəndisi üçün uyğun namizədi tap')).toBeNull();
-  });
-  it('words of the vacancy title are not skills', () => {
-    const q = skillQuery('Network Engineer candidates who know BGP', 'Network Engineer');
-    expect(q?.labels).toEqual(['BGP']);
-  });
-});
-
-describe('mentions: whole words, with Azerbaijani suffixes', () => {
-  const g = ['sap'];
-  it('counts a skill in resume text', () => {
-    const t = skillFold('Skills: MS Excel (pivot, VLOOKUP), Word. Excel-də hesabatlar.');
-    expect(mentions(t, ['excel', 'vlookup', 'pivot'])).toBeGreaterThanOrEqual(3);
-  });
-  it('short words stand alone', () => {
-    expect(mentions(skillFold('Worked with SAP and Oracle'), g)).toBe(1);
-    expect(mentions(skillFold('A sapphire ring'), g)).toBe(0);
-    expect(mentions(skillFold('JavaScript developer'), ['java'])).toBe(0);
-  });
-  it('keeps C#, C++ and .NET apart', () => {
-    expect(mentions(skillFold('C# and .NET, no C++'), ['csharp'])).toBe(1);
-    expect(mentions(skillFold('C# and .NET'), ['cpp'])).toBe(0);
-    expect(mentions(skillFold('ASP.NET'), ['dotnet'])).toBe(1);
+describe('looksEnglish: a bare "ingilis dili" is not English, so the conversation keeps its language', () => {
+  it('tells apart', () => {
+    expect(looksEnglish('who knows Excel')).toBe(true);
+    expect(looksEnglish('ingilis dili')).toBe(false);
+    expect(looksEnglish('həm də SQL')).toBe(false);
   });
 });
