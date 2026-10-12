@@ -105,7 +105,7 @@ describeDb('Assistant (design spec 6.6)', () => {
   it('is off until an administrator turns it on, and says so', async () => {
     const { ayla, by } = await setup('off');
     const cfg = (await ayla.api.get('/assistant/config')).json();
-    expect(cfg).toMatchObject({ enabled: false, name: 'Elon' });
+    expect(cfg).toMatchObject({ enabled: false, name: 'SenAI' });
     const r = await ask(ayla, by('Alice').screeningId, { intent: 'why' });
     expect(r.statusCode).toBe(404);
     expect(r.json().code).toBe('ASSISTANT_OFF');
@@ -160,6 +160,44 @@ describeDb('Assistant (design spec 6.6)', () => {
     expect(t.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant']);
     const turns = (await h.admin.get('/admin/assistant/audit')).json().turns as { label: string }[];
     expect(turns.length).toBeGreaterThan(0);
+  });
+
+  it('the payload log shows only allowed fields, shapes and a hash, never resume text', async () => {
+    await switchOn();
+    const { ayla, by } = await setup('payload');
+    const alice = by('Alice');
+    h.modelCalls.length = 0;
+    expect((await ask(ayla, alice.screeningId, { intent: 'why' })).statusCode).toBe(200);
+    const log = (await h.admin.get('/admin/assistant/payloads')).json() as {
+      allowed: string[];
+      calls: {
+        intent: string;
+        fields: Record<string, { type: string; maxLength: number }>;
+        violations: string[];
+        bytes: number;
+        sha256: string;
+      }[];
+    };
+    const call = log.calls[0]!;
+    expect(call.intent).toBe('why');
+    expect(call.violations).toEqual([]);
+    expect(call.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(call.bytes).toBeGreaterThan(100);
+    for (const f of Object.keys(call.fields)) expect(log.allowed).toContain(f);
+    const raw = JSON.stringify(log);
+    for (const n of ['Alice', 'BGP routing', 'Kubernetes', alice.screeningId])
+      expect(raw).not.toContain(n);
+    // The compliance reviewer can read it; a recruiter cannot.
+    expect((await ayla.api.get('/admin/assistant/payloads')).statusCode).toBeGreaterThanOrEqual(
+      403,
+    );
+    // It goes with the resume.
+    expect((await ayla.api.post(`/documents/${alice.documentId}/erase`)).statusCode).toBe(200);
+    const left = await h.db.owner.query(
+      `SELECT count(*)::int AS n FROM assistant_payload WHERE screening_id = $1`,
+      [alice.screeningId],
+    );
+    expect(left.rows[0].n).toBe(0);
   });
 
   it('a name typed or revealed on screen is never fed back to the model', async () => {
@@ -487,14 +525,14 @@ describeDb('Assistant (design spec 6.6)', () => {
     const sid = by('Bob').screeningId;
     h.modelCalls.length = 0;
     const refused = (
-      await ask(ayla, sid, { intent: 'ask', message: 'How old is she?', language: 'az' })
+      await ask(ayla, sid, { intent: 'ask', message: 'Onun yaşı neçədir?', language: 'az' })
     ).json().answer;
     expect(refused.flags).toContain('refused:protected_attribute');
     expect(refused.headline).toBe(
       'Bu, vəzifənin tələbləri ilə əlaqəli deyil, ona görə onu istifadə edə bilmirəm.',
     );
     const hold = (
-      await ask(ayla, sid, { intent: 'ask', message: 'Are you sure?', language: 'az' })
+      await ask(ayla, sid, { intent: 'ask', message: 'Əminsiniz?', language: 'az' })
     ).json().answer;
     expect(hold.headline).toBe('Qiymətləndirmə dəyişmir, çünki qeydlərdə heç nə dəyişməyib.');
     expect(hold.facts[0]).toMatch(/vacib tələbdən \d+ tapıldı/);

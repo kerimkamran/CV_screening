@@ -158,6 +158,7 @@ describeDb('Screening pipeline', () => {
       BOOTSTRAP_ADMIN_PASSWORD: PW,
       SETTINGS_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
       WORKER_ENABLED: 'false',
+      VACANCY_VISIBILITY: 'granted',
       LOG_LEVEL: 'silent',
     });
     const mod = await Test.createTestingModule({ imports: [AppModule] })

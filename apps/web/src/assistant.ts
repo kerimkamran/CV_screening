@@ -62,21 +62,71 @@ export interface Starter {
 /** Starter chips by band (spec 6.6.1). "Challenge this match" is a separate, optional action. */
 export function startersFor(band: MatchBand): Starter[] {
   const always: Starter[] = [
-    { intent: 'why', label: 'Why this band?' },
-    { intent: 'weakest', label: 'What is the weakest point?' },
-    { intent: 'change', label: 'What would change the band?' },
-    { intent: 'interview', label: 'What should I ask in the interview?' },
+    { intent: 'why', label: 'Explain more' },
+    { intent: 'missing', label: 'Deeper evaluation' },
+    { intent: 'weakest', label: 'Weakest point' },
+    { intent: 'interview', label: 'Interview questions' },
     { intent: 'compare', label: 'Compare with…' },
   ];
-  if (band === 'strong' || band === 'good') {
-    return [...always, { intent: 'missing', label: 'What could I be missing?' }];
+  if (band === 'partial' || band === 'limited') {
+    return [...always, { intent: 'strongest', label: 'What is the strongest case for this one?' }];
   }
-  return [
-    ...always,
-    { intent: 'strongest', label: 'What is the strongest case for this one?' },
-    { intent: 'check', label: 'What should I check by hand?' },
-  ];
+  return always;
 }
+
+/** The product line shown with the assistant's name (Ask bar hint, panel greeting). */
+export const SLOGAN = 'Sən istə, Senai tapsın';
+
+// ------------------------------------------------------------------ the Ask bar and the panel
+
+const bus = {
+  pending: '',
+  target: null as AssistantRegistration | null,
+  scope: null as { id: string; title: string } | null,
+  listeners: new Set<() => void>(),
+};
+const ping = () => bus.listeners.forEach((l) => l());
+const useBus = <T>(read: () => T) =>
+  useSyncExternalStore(
+    (l) => {
+      bus.listeners.add(l);
+      return () => bus.listeners.delete(l);
+    },
+    read,
+    read,
+  );
+
+/** What a report page tells the panel: who is being discussed, and what it may offer. */
+export interface AssistantRegistration {
+  target: { screeningId: string; label: string; band: MatchBand };
+  others: { screeningId: string; label: string }[];
+  onEditRequirement: (requirementId: string, text: string) => void;
+}
+export function registerAssistantTarget(r: AssistantRegistration | null): void {
+  bus.target = r;
+  ping();
+}
+export const useAssistantRegistration = () => useBus(() => bus.target);
+
+/** The vacancy page the person is on: the Ask bar searches inside it unless the question names another. */
+export function setAssistantScope(s: { id: string; title: string } | null): void {
+  bus.scope = s;
+  ping();
+}
+export const useAssistantScope = () => useBus(() => bus.scope);
+
+/** The Ask bar hands a question to the panel, which opens and sends it. */
+export function askSenAI(question: string): void {
+  bus.pending = question;
+  setAssistantOpen(true);
+  ping();
+}
+export function takePendingQuestion(): string {
+  const q = bus.pending;
+  bus.pending = '';
+  return q;
+}
+export const usePendingQuestion = () => useBus(() => bus.pending);
 
 export const SKILL_MARK: Record<RequirementRef['state'], string> = {
   Found: '✓',

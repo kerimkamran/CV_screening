@@ -1,0 +1,6 @@
+Name: Farid Qasimov
+Email: farid.q@example.com  linkedin.com/in/faridq  https://github.com/faridq
+Site reliability engineer, 2017 to 2024.
+Kubernetes platform owner for forty clusters.
+BGP peering with two upstream providers.
+Python tooling for incident response.

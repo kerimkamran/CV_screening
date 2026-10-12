@@ -1,0 +1,8 @@
+Ad: Rəşad Əliyev Elçin oğlu
+E-poçt: rashad.aliyev@example.az  Telefon: +994 55 765 43 21
+Doğum tarixi: 12.05.1990. Ailə vəziyyəti: subay. Cins: kişi.
+Şəbəkə mühəndisi, 2015-2024.
+BGP marşrutlaşdırma üzrə təcrübə, magistral şəbəkənin idarə olunması.
+Kubernetes klasterlərinin istehsalda istismarı.
+Python ilə avtomatlaşdırma skriptləri.
+Milliyyət: azərbaycanlı. Şəkil əlavə olunub: photo.

@@ -75,28 +75,20 @@ describe('starter chips by band (spec 6.6.1)', () => {
     for (const b of ['strong', 'good', 'partial', 'limited'] as const) {
       expect(labels(b)).toEqual(
         expect.arrayContaining([
-          'Why this band?',
-          'What is the weakest point?',
-          'What would change the band?',
-          'What should I ask in the interview?',
+          'Explain more',
+          'Deeper evaluation',
+          'Weakest point',
+          'Interview questions',
           'Compare with…',
         ]),
       );
     }
   });
-  it('adds "could be missing" for strong and good, and "strongest case"/"check by hand" below', () => {
-    expect(labels('strong')).toContain('What could I be missing?');
-    expect(labels('good')).toContain('What could I be missing?');
+  it('adds "strongest case" for Partial and Limited only', () => {
+    expect(labels('strong')).not.toContain('What is the strongest case for this one?');
     expect(labels('good')).not.toContain('What is the strongest case for this one?');
-    for (const b of ['partial', 'limited'] as const) {
-      expect(labels(b)).toEqual(
-        expect.arrayContaining([
-          'What is the strongest case for this one?',
-          'What should I check by hand?',
-        ]),
-      );
-      expect(labels(b)).not.toContain('What could I be missing?');
-    }
+    for (const b of ['partial', 'limited'] as const)
+      expect(labels(b)).toContain('What is the strongest case for this one?');
   });
 });
 
@@ -148,7 +140,7 @@ describe('assistant panel', () => {
     render(
       <AssistantPanel config={config} target={target} others={[]} onEditRequirement={noEdit} />,
     );
-    await userEvent.click(await screen.findByRole('button', { name: 'Why this band?' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Explain more' }));
     expect(await screen.findByText('Routing is the clear strength.')).toBeInTheDocument();
     const post = calls.find((c) => c.init?.method === 'POST')!;
     expect(post.url).toContain(`/screenings/${target.screeningId}/assistant`);
@@ -203,7 +195,7 @@ describe('assistant panel', () => {
                 claims: [],
                 cantSee: '',
                 flags: ['refused:protected_attribute'],
-                offer: ['Why this band?'],
+                offer: ['Explain more'],
               }),
             },
           }
@@ -216,7 +208,7 @@ describe('assistant panel', () => {
     await userEvent.type(await screen.findByRole('textbox'), 'How old is she?{Enter}');
     expect(await screen.findByText(/isn't related to the job requirements/)).toBeInTheDocument();
     // The offer under the answer sits next to the starter chip.
-    expect(screen.getAllByRole('button', { name: 'Why this band?' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Explain more' })).toHaveLength(2);
   });
 
   it('hands off to the requirements drawer instead of changing anything itself', async () => {
@@ -244,9 +236,7 @@ describe('assistant panel', () => {
     render(
       <AssistantPanel config={config} target={target} others={[]} onEditRequirement={onEdit} />,
     );
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'What would change the band?' }),
-    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Deeper evaluation' }));
     await userEvent.click(
       await screen.findByRole('button', { name: 'Edit requirement: Kubernetes' }),
     );
@@ -317,11 +307,9 @@ describe('assistant panel', () => {
     setAssistantOpen(true);
     const off = { ...config, features: { ...config.features, challenge: false, interview: false } };
     render(<AssistantPanel config={off} target={target} others={[]} onEditRequirement={noEdit} />);
-    await screen.findByRole('button', { name: 'Why this band?' });
+    await screen.findByRole('button', { name: 'Explain more' });
     expect(screen.queryByRole('button', { name: 'Challenge this match' })).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: 'What should I ask in the interview?' }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Interview questions' })).toBeNull();
   });
 
   it('shows the configured message when the assistant is unavailable, and the error when the call fails', async () => {
@@ -345,7 +333,7 @@ describe('assistant panel', () => {
     render(
       <AssistantPanel config={config} target={target} others={[]} onEditRequirement={noEdit} />,
     );
-    await userEvent.click(await screen.findByRole('button', { name: 'Why this band?' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Explain more' }));
     expect(await screen.findByText('Elon is unavailable right now.')).toBeInTheDocument();
   });
 
@@ -360,7 +348,7 @@ describe('assistant panel', () => {
               {
                 id: 'a',
                 role: 'user',
-                content: { text: 'Why this band?', intent: 'why' },
+                content: { text: 'Explain more', intent: 'why' },
                 at: '2026-10-02T10:00:00Z',
               },
               {

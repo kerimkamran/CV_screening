@@ -114,6 +114,8 @@ export async function boot(
     BOOTSTRAP_ADMIN_PASSWORD: PW,
     SETTINGS_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
     WORKER_ENABLED: 'false',
+    VACANCY_VISIBILITY: process.env['TEST_VISIBILITY'] ?? 'granted',
+    CANDIDATE_NAMES: process.env['TEST_NAMES'] ?? 'shown',
     LOG_LEVEL: 'silent',
   });
   const sent: { to: string; text: string }[] = [];

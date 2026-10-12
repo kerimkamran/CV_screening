@@ -86,6 +86,8 @@ export const api = {
     (await raw('POST', path, body ?? {})).json() as Promise<T>,
   put: async <T>(path: string, body: unknown): Promise<T> =>
     (await raw('PUT', path, body)).json() as Promise<T>,
+  patch: async <T>(path: string, body: unknown): Promise<T> =>
+    (await raw('PATCH', path, body)).json() as Promise<T>,
   del: async <T>(path: string): Promise<T> => (await raw('DELETE', path)).json() as Promise<T>,
   upload: async <T>(path: string, files: File[]): Promise<T> => {
     const form = new FormData();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
 import {
@@ -20,8 +20,7 @@ import { setFocus, useFocus } from '../focus';
 import { useIntake } from '../intake';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
-import { useAssistantConfig, useAssistantOpen, setAssistantOpen } from '../assistant';
-import { AssistantPanel } from './AssistantPanel';
+import { registerAssistantTarget, useAssistantConfig, setAssistantOpen } from '../assistant';
 import { RequirementsDrawer } from './RequirementsDrawer';
 
 /**
@@ -74,7 +73,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [adjBusy, setAdjBusy] = useState(false);
   const [drawerFocus, setDrawerFocus] = useState<string | null>(null);
   const assistant = useAssistantConfig();
-  const assistantOpen = useAssistantOpen();
 
   const load = useCallback(async () => {
     try {
@@ -311,6 +309,23 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     setSelected(documentId);
     setAssistantOpen(true);
   };
+  // The Shell shows the assistant panel; this page says who is being discussed.
+  const editRef = useRef(openEdit);
+  useEffect(() => {
+    editRef.current = openEdit;
+  });
+  const targetKey = target ? `${target.screeningId}:${target.band}` : '';
+  const othersKey = compareChoices.map((c) => c.screeningId).join(',');
+  useEffect(() => {
+    if (!target) return;
+    registerAssistantTarget({
+      target,
+      others: compareChoices,
+      onEditRequirement: (id, text) => void editRef.current(id, text),
+    });
+    return () => registerAssistantTarget(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey, othersKey]);
   const missedByOne = scored.filter((r) => r.score?.breakdown.mandatoryGaps === 1);
 
   const mapRows = scored.slice(0, mapAll ? MAP_MAX : MAP_TOP);
@@ -323,17 +338,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   if (data.counts.total === 0) {
     return (
       <Notice kind="info">
-        {t('No resumes yet. Start a screening from')}{' '}
-        <a className="underline" href="#/">
-          {t('New screening')}
-        </a>
-        {t(', or upload on the Table tab.')}
+        {t(
+          'No resumes yet. Add resumes on the Resumes card above, then choose “Find the best fit”.',
+        )}
       </Notice>
     );
   }
 
   return (
-    <div className={`space-y-5 ${assistantOpen && assistant ? 'xl:pr-[26rem]' : ''}`}>
+    <div className="space-y-5">
       {error && <Notice kind="error">{error}</Notice>}
       {!data.aiActive && (
         <Notice kind="warn">
@@ -380,14 +393,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             setDrawer(false);
             setDrawerFocus(null);
           }}
-        />
-      )}
-      {assistant && (
-        <AssistantPanel
-          config={assistant}
-          target={target}
-          others={compareChoices}
-          onEditRequirement={(id, text) => void openEdit(id, text)}
         />
       )}
       {adj && adj.changeCount > 0 && (

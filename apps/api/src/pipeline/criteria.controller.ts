@@ -12,9 +12,8 @@ import {
   Put,
   Req,
 } from '@nestjs/common';
-import { newId } from '@cv/shared';
+import { EXPERIENCE_LINE, type ExperienceRange } from '@cv/shared';
 import type { FastifyRequest } from 'fastify';
-import type { PoolClient } from 'pg';
 import { AiGateway } from '../ai/ai-gateway.service';
 import { ProviderError } from '../ai/providers';
 import { AuditService } from '../audit/audit.service';
@@ -23,16 +22,10 @@ import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
+import { CriteriaSets, type ReqInput } from './criteria-sets';
 import { EXTRACT_SYSTEM, extractUser } from './prompts';
-import {
-  extractionOutput,
-  parseJsonLoose,
-  requirementsInput,
-  type requirementInput,
-} from './schemas';
+import { extractionOutput, parseJsonLoose, requirementsInput } from './schemas';
 import { z } from 'zod';
-
-type ReqInput = z.infer<typeof requirementInput>;
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
 
@@ -45,6 +38,7 @@ export class CriteriaController {
     private readonly audit: AuditService,
     private readonly scope: VacancyScope,
     private readonly ai: AiGateway,
+    private readonly sets: CriteriaSets,
   ) {}
 
   private async view(vid: string) {
@@ -94,13 +88,21 @@ export class CriteriaController {
         [vid],
       )
     ).rows[0]!;
+    // The experience range is a chip on the Role card, not part of the pasted text: add it here.
+    const exp = (
+      await this.db.query<{ r: ExperienceRange }>(
+        `SELECT experience_range AS r FROM vacancy WHERE id = $1`,
+        [vid],
+      )
+    ).rows[0]!.r;
+    const jdBody = [jd.body.trim(), EXPERIENCE_LINE[exp]].filter(Boolean).join('\n\n');
 
     let proposed: ReqInput[];
     let used: { provider: string; model: string };
     try {
       const out = await this.ai.complete({
         system: EXTRACT_SYSTEM,
-        user: extractUser(jd.body),
+        user: extractUser(jdBody),
         json: true,
         maxTokens: 4000,
       });
@@ -139,8 +141,12 @@ export class CriteriaController {
     }
 
     await this.db.withTx(async (tx) => {
-      const setId = await this.draftSet(tx, vid, p.userId, jd.id, true);
-      await this.replaceRequirements(tx, setId, proposed);
+      const prev = await this.sets.latest(tx, vid);
+      const before = prev ? await this.sets.requirements(tx, prev.id) : [];
+      const setId = await this.sets.draftSet(tx, vid, p.userId, jd.id, true);
+      await this.sets.replaceRequirements(tx, setId, proposed);
+      const changes = this.sets.diff(before, proposed);
+      if (changes.length) await this.sets.bump(tx, vid, p.userId, 'edit', changes, jd.body, null);
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -166,13 +172,19 @@ export class CriteriaController {
     const { requirements } = parse(z.object({ requirements: requirementsInput }), body);
     await this.scope.assert(p, vid);
     await this.db.withTx(async (tx) => {
-      const latest = await this.latest(tx, vid);
+      const latest = await this.sets.latest(tx, vid);
       if (!latest || latest.frozen) {
         throw new ConflictException(
           'Criteria are frozen or not started. Create a new version first.',
         );
       }
-      await this.replaceRequirements(tx, latest.id, requirements);
+      const before = await this.sets.requirements(tx, latest.id);
+      await this.sets.replaceRequirements(tx, latest.id, requirements);
+      const changes = this.sets.diff(before, requirements);
+      if (changes.length) {
+        const jd = await this.sets.latestJd(tx, vid);
+        await this.sets.bump(tx, vid, p.userId, 'edit', changes, jd?.body ?? null, null);
+      }
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -198,7 +210,7 @@ export class CriteriaController {
     await this.scope.assert(p, vid);
     await this.db.withTx(async (tx) => {
       await tx.query(`SELECT 1 FROM vacancy WHERE id = $1 FOR UPDATE`, [vid]);
-      const latest = await this.latest(tx, vid);
+      const latest = await this.sets.latest(tx, vid);
       if (latest && !latest.frozen) throw new ConflictException('A draft already exists');
       const jd = (
         await tx.query<{ id: string }>(
@@ -206,8 +218,8 @@ export class CriteriaController {
           [vid],
         )
       ).rows[0]!;
-      const setId = await this.draftSet(tx, vid, p.userId, jd.id, false);
-      if (latest) await this.copyRequirements(tx, latest.id, setId);
+      const setId = await this.sets.draftSet(tx, vid, p.userId, jd.id, false);
+      if (latest) await this.sets.copyRequirements(tx, latest.id, setId);
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -231,7 +243,7 @@ export class CriteriaController {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
     await this.db.withTx(async (tx) => {
-      const latest = await this.latest(tx, vid);
+      const latest = await this.sets.latest(tx, vid);
       if (!latest || latest.frozen) throw new ConflictException('There is no draft to freeze');
       const n = await tx.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM requirement
@@ -243,7 +255,12 @@ export class CriteriaController {
           'Add at least one mandatory or preferred criterion to score against',
         );
       }
-      await tx.query(`UPDATE requirement_set SET frozen_at = now() WHERE id = $1`, [latest.id]);
+      await tx.query(
+        `UPDATE requirement_set SET frozen_at = now(),
+                requirements_version = (SELECT requirements_version FROM vacancy WHERE id = $2)
+          WHERE id = $1`,
+        [latest.id, vid],
+      );
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -255,94 +272,5 @@ export class CriteriaController {
       });
     });
     return this.view(vid);
-  }
-
-  // ------------------------------------------------------------------ helpers
-
-  private async latest(tx: PoolClient, vid: string) {
-    const r = await tx.query<{ id: string; version: number; frozen: boolean }>(
-      `SELECT id, version, frozen_at IS NOT NULL AS frozen FROM requirement_set
-        WHERE vacancy_id = $1 ORDER BY version DESC LIMIT 1 FOR UPDATE`,
-      [vid],
-    );
-    return r.rows[0];
-  }
-
-  /** The editable set: reuse the open draft, or open the next version. */
-  private async draftSet(
-    tx: PoolClient,
-    vid: string,
-    userId: string,
-    jdVersionId: string,
-    reuse: boolean,
-  ): Promise<string> {
-    await tx.query(`SELECT 1 FROM vacancy WHERE id = $1 FOR UPDATE`, [vid]);
-    const latest = await this.latest(tx, vid);
-    if (latest && !latest.frozen && reuse) {
-      await tx.query(`UPDATE requirement_set SET jd_version_id = $2 WHERE id = $1`, [
-        latest.id,
-        jdVersionId,
-      ]);
-      return latest.id;
-    }
-    const id = newId();
-    await tx.query(
-      `INSERT INTO requirement_set (id, vacancy_id, version, jd_version_id, created_by)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [id, vid, (latest?.version ?? 0) + 1, jdVersionId, userId],
-    );
-    return id;
-  }
-
-  private async replaceRequirements(tx: PoolClient, setId: string, reqs: ReqInput[]) {
-    await tx.query(`DELETE FROM requirement WHERE requirement_set_id = $1`, [setId]);
-    for (const [i, r] of reqs.entries()) {
-      await tx.query(
-        `INSERT INTO requirement (id, requirement_set_id, text, classification, weight, extraction_conf, rule, position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          newId(),
-          setId,
-          r.text,
-          r.classification,
-          r.classification === 'mandatory' || r.classification === 'preferred'
-            ? (r.weight ?? (r.classification === 'mandatory' ? 10 : 5))
-            : null,
-          r.confidence ?? null,
-          r.rule ? JSON.stringify(r.rule) : null,
-          i,
-        ],
-      );
-    }
-  }
-
-  private async copyRequirements(tx: PoolClient, from: string, to: string) {
-    const { rows } = await tx.query<{
-      text: string;
-      classification: string;
-      weight: string | null;
-      extraction_conf: string | null;
-      rule: unknown;
-      position: number;
-    }>(
-      `SELECT text, classification, weight, extraction_conf, rule, position FROM requirement WHERE requirement_set_id = $1`,
-      [from],
-    );
-    for (const r of rows) {
-      await tx.query(
-        `INSERT INTO requirement (id, requirement_set_id, text, classification, weight, extraction_conf, rule, position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          newId(),
-          to,
-          r.text,
-          r.classification,
-          r.weight,
-          r.extraction_conf,
-          r.rule ? JSON.stringify(r.rule) : null,
-          r.position,
-        ],
-      );
-    }
   }
 }

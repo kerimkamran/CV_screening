@@ -19,6 +19,19 @@ verbatim evidence → deterministic score with breakdown → named-human decisio
 Local run: `docker compose up -d`, copy `.env.example` to `.env`, `npm ci`, `npm run db:migrate`, `npm run dev:api`, `npm run dev:web`.
 Needs `pdftotext` (poppler-utils) on the machine for PDF CVs.
 
+## Vacancies, the candidate pool and SenAI
+
+The product is organised around the vacancy: the Vacancy pool lists them; a vacancy page holds the role card, the resumes card and the tabs (Candidates, Star map, Report, Runs, Skills); the Candidate pool lists everyone across vacancies with decision marks; a report shows the result beside the original resume. **SenAI** (name editable in Admin) answers questions about one candidate or the whole pool, in the language of the question, and never decides. Recorded decisions: [`docs/decisions.md`](docs/decisions.md). Names are shown by default (`CANDIDATE_NAMES=hidden` hides them).
+
+Useful commands:
+
+| Command                                    | What it does                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `npm run gates:assistant`                  | The SenAI release gates (swap, red team, pushback, quote accuracy, consistency)                  |
+| `npm run gates:assistant:lock`             | Reruns the gates and, only if they pass, refreshes `docs/eval/assistant-release-lock.json`       |
+| `npm run load:pool`                        | Seeds 300 and 5,000 resumes in a test database and measures the pool (`docs/performance-run.md`) |
+| `npm run uat:seed -- accounts` / `-- data` | Creates the UAT accounts and loads the vacancy and ten invented resumes (`docs/uat/README.md`)   |
+
 ## Status: Sprint 0 + S1 foundation (R1a.0, in progress)
 
 | Story                                                     | State                                                                         |

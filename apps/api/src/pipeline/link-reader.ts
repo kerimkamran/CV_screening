@@ -150,8 +150,8 @@ export class LinkReader {
     this.o = {
       allowLoopback: o.allowLoopback ?? false,
       timeoutMs: o.timeoutMs ?? 10_000,
-      maxBytes: o.maxBytes ?? 1_500_000,
-      maxRedirects: o.maxRedirects ?? 4,
+      maxBytes: o.maxBytes ?? 2_000_000,
+      maxRedirects: o.maxRedirects ?? 3,
       userAgent: o.userAgent ?? UA,
     };
   }

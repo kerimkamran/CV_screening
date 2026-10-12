@@ -1,0 +1,7 @@
+Ad / Имя: Elçin Hüseynov
+E-poçt: elchin.h@example.az  Tel: +994 12 400 00 00
+Doğum ili 1978. Семейное положение: Женат. evli.
+Baş şəbəkə mühəndisi / Главный сетевой инженер, 2008-2024.
+BGP marşrutlaşdırma və qlobal şəbəkə dizaynı.
+Kubernetes platformasının tətbiqi.
+Python avtomatlaşdırma.

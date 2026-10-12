@@ -22,6 +22,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import { ENV, type Env } from '../config/env';
+import { hashText } from './vacancy.service';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
@@ -119,7 +120,7 @@ export class DocumentsController {
         entityId: newId(),
         after: { host: r.host, words: r.words },
       });
-      return r;
+      return { ...r, hash: hashText(r.text) };
     } catch (e) {
       if (!(e instanceof LinkProblem)) throw e;
       if (e.kind === 'invalid') throw new BadRequestException(e.message);
@@ -350,6 +351,10 @@ export class DocumentsController {
         `INSERT INTO screening (id, document_id, requirement_set_id, state) VALUES ($1,$2,$3,$4)`,
         [newId(), docId, setId, readable ? 'queued' : 'manual'],
       );
+      // Spec 6.7: a vacancy becomes Open when its first screening starts.
+      await tx.query(`UPDATE vacancy SET status = 'open' WHERE id = $1 AND status = 'draft'`, [
+        vid,
+      ]);
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,

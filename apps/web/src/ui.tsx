@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ReqStatus } from './api';
 import { locale, tr } from './i18n';
 
@@ -114,3 +114,66 @@ export function when(iso: string | null | undefined) {
 
 /** Server messages are English; the common ones have an Azerbaijani entry, the rest show as sent. */
 export const errMsg = (e: unknown) => tr(e instanceof Error ? e.message : 'Something went wrong');
+
+// ------------------------------------------------------------------ undo toast
+
+/**
+ * A line at the bottom of the screen that offers "Undo" for ten seconds after an action
+ * (Development Plan: marks, archive). One at a time; a new one replaces the old.
+ */
+export interface UndoToast {
+  id: number;
+  text: string;
+  undo: () => void | Promise<void>;
+}
+export function useUndoToast(ms = 10_000) {
+  const [toast, setToast] = useState<UndoToast | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const seq = useRef(0);
+  const dismiss = useCallback(() => {
+    clearTimeout(timer.current);
+    setToast(null);
+  }, []);
+  const show = useCallback(
+    (text: string, undo: UndoToast['undo']) => {
+      clearTimeout(timer.current);
+      const id = ++seq.current;
+      setToast({ id, text, undo });
+      timer.current = setTimeout(() => setToast((t) => (t?.id === id ? null : t)), ms);
+    },
+    [ms],
+  );
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return { toast, show, dismiss };
+}
+
+export function UndoBar({
+  toast,
+  onDone,
+  label,
+}: {
+  toast: UndoToast | null;
+  onDone: () => void;
+  label: string;
+}) {
+  if (!toast) return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-20 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-card px-4 py-2 text-sm shadow-lg sm:bottom-6"
+    >
+      <span>{toast.text}</span>
+      <button
+        type="button"
+        className="font-medium text-link underline"
+        onClick={() => {
+          onDone();
+          void toast.undo();
+        }}
+      >
+        {label}
+      </button>
+    </div>
+  );
+}

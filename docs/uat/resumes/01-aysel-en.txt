@@ -1,0 +1,8 @@
+Name: Aysel Mammadova
+Email: aysel.m@example.com  Phone: +994 50 123 45 67
+Date of birth: 12 May 1985. Married, two children. Female.
+Senior network engineer at a national carrier, 2012 to 2024.
+Designed and ran BGP routing for the national backbone.
+Operated Kubernetes clusters in production for internal platforms.
+Wrote Python scripts for provisioning and monitoring.
+Nationality: Azerbaijani. Photo attached.

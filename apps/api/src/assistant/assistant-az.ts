@@ -98,7 +98,7 @@ export function azText(s: string): string {
 }
 
 /** The answer with the server-written sentences in Azerbaijani; everything else unchanged. */
-export function localiseAnswer(a: Answer, lang: 'en' | 'az' | undefined): Answer {
+export function localiseAnswer(a: Answer, lang: 'en' | 'az' | 'ru' | undefined): Answer {
   if (lang !== 'az') return a;
   return {
     ...a,

@@ -1,7 +1,7 @@
 import { describeDb } from '../testing/pg-harness';
 import { boot, type Harness } from '../testing/app-harness';
 
-describeDb('Names, Focus on skills and Past scans (design spec 6.2.6, 6.4)', () => {
+describeDb('Names, Focus on skills and the vacancy list (design spec 6.2.6, 6.4)', () => {
   let h: Harness;
   beforeAll(async () => {
     h = await boot('names');
@@ -77,7 +77,7 @@ describeDb('Names, Focus on skills and Past scans (design spec 6.2.6, 6.4)', () 
     expect(rows.rowCount).toBe(0); // nothing left to store
   });
 
-  it('lists past scans with how far each one got', async () => {
+  it('lists vacancies with how far each one got', async () => {
     const a = await h.recruiter('history@azerconnect.test');
     const vid = await h.scenario(
       a.api,
@@ -88,11 +88,12 @@ describeDb('Names, Focus on skills and Past scans (design spec 6.2.6, 6.4)', () 
     const v = list.find((x: { id: string }) => x.id === vid);
     expect(v).toMatchObject({
       title: 'History role',
-      documentCount: 1,
-      scoredCount: 1,
-      pendingCount: 0,
-      stoppedCount: 0,
-      criteriaVersion: 1,
+      documents: 1,
+      analyzed: 1,
+      running: 0,
+      stopped: 0,
+      status: 'open',
+      outOfDate: 0,
     });
   });
 });

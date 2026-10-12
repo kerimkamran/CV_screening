@@ -1,0 +1,7 @@
+Name: Miss Sevinj Rzayeva
+Email: sevinj.r@example.com
+Religion: Muslim. Uses a wheelchair.
+Network engineer, 2013 to 2024.
+BGP routing design for a data-centre fabric.
+Kubernetes networking (CNI) in production.
+Python scripts for network automation.

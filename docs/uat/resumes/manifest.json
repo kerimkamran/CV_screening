@@ -1,0 +1,122 @@
+{
+  "about": "Ten resumes for the redaction check (WP 0.1). Every string in mustNotLeak must be absent from what a model is sent. All people are invented.",
+  "resumes": [
+    {
+      "file": "01-aysel-en.txt",
+      "candidateName": "Aysel Mammadova",
+      "mustNotLeak": [
+        "Aysel",
+        "Mammadova",
+        "aysel.m@example.com",
+        "+994 50 123 45 67",
+        "12 May 1985",
+        "Married",
+        "two children",
+        "Female"
+      ],
+      "injection": false
+    },
+    {
+      "file": "02-rashad-az.txt",
+      "candidateName": "Rəşad Əliyev",
+      "mustNotLeak": [
+        "Rəşad",
+        "Əliyev",
+        "rashad.aliyev@example.az",
+        "+994 55 765 43 21",
+        "12.05.1990",
+        "subay",
+        "Elçin oğlu",
+        "kişi"
+      ],
+      "injection": false
+    },
+    {
+      "file": "03-ivan-ru.txt",
+      "candidateName": "Иван Петров",
+      "mustNotLeak": [
+        "Иван",
+        "Петров",
+        "ivan.petrov@example.ru",
+        "+7 495 123 45 67",
+        "14.03.1982",
+        "Женат",
+        "двое детей",
+        "мужской"
+      ],
+      "injection": false
+    },
+    {
+      "file": "04-leyla-az-qiz.txt",
+      "candidateName": "Leyla Hasanova",
+      "mustNotLeak": [
+        "Leyla",
+        "Hasanova",
+        "leyla.h@example.az",
+        "+994 70 111 22 33",
+        "03.03.1999",
+        "evli",
+        "Ali qızı",
+        "qadın"
+      ],
+      "injection": false
+    },
+    {
+      "file": "05-john-en-injection.txt",
+      "candidateName": "John Smith",
+      "mustNotLeak": ["John", "Smith", "john.smith@example.com", "+44 20 7946 0000"],
+      "injection": true
+    },
+    {
+      "file": "06-maria-en-gap.txt",
+      "candidateName": "Maria Garcia",
+      "mustNotLeak": ["Maria", "Garcia", "maria.garcia@example.com", "Single", "Spanish"],
+      "injection": false
+    },
+    {
+      "file": "07-elchin-az-ru-mixed.txt",
+      "candidateName": "Elçin Hüseynov",
+      "mustNotLeak": [
+        "Elçin",
+        "Hüseynov",
+        "elchin.h@example.az",
+        "+994 12 400 00 00",
+        "1978",
+        "Женат",
+        "evli"
+      ],
+      "injection": false
+    },
+    {
+      "file": "08-anna-ru-pdfstyle.txt",
+      "candidateName": "Анна Петрова",
+      "mustNotLeak": [
+        "Анна",
+        "Петрова",
+        "anna.p@example.ru",
+        "+7 812 765 43 21",
+        "женский",
+        "Замужем"
+      ],
+      "injection": false
+    },
+    {
+      "file": "09-farid-en-links.txt",
+      "candidateName": "Farid Qasimov",
+      "mustNotLeak": [
+        "Farid",
+        "Qasimov",
+        "farid.q@example.com",
+        "linkedin.com/in/faridq",
+        "https://github.com/faridq"
+      ],
+      "injection": false
+    },
+    {
+      "file": "10-sevinj-en-health.txt",
+      "candidateName": "Sevinj Rzayeva",
+      "mustNotLeak": ["Sevinj", "Rzayeva", "sevinj.r@example.com", "Muslim", "wheelchair", "Miss"],
+      "injection": false
+    }
+  ]
+}

@@ -4,11 +4,12 @@ import { VacancyModule } from '../vacancy/vacancy.module';
 import { AssistantAdminController } from './assistant-admin.controller';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
+import { PoolAssistantService } from './pool-assistant.service';
 
 @Module({
   imports: [VacancyModule, PipelineModule],
   controllers: [AssistantController, AssistantAdminController],
-  providers: [AssistantService],
-  exports: [AssistantService],
+  providers: [AssistantService, PoolAssistantService],
+  exports: [AssistantService, PoolAssistantService],
 })
 export class AssistantModule {}

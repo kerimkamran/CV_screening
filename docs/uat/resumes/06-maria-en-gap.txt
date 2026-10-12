@@ -1,0 +1,6 @@
+Name: Maria Garcia
+Email: maria.garcia@example.com
+Marital status: Single. Nationality: Spanish.
+Customer support lead, 2016 to 2024.
+Managed a team of twelve agents.
+Python scripting for reports.

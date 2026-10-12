@@ -62,6 +62,7 @@ d('IAM against Postgres', () => {
       OIDC_AUDIENCE: AUDIENCE,
       OIDC_JWKS_URI: 'https://idp.test/jwks',
       BOOTSTRAP_ADMIN_SUBJECT: ADMIN_SUB,
+      VACANCY_VISIBILITY: 'granted',
       LOG_LEVEL: 'silent',
     });
     idp = await createTestIdp(ISSUER, AUDIENCE);

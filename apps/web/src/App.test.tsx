@@ -5,7 +5,6 @@ import { App } from './App';
 import { fetchReadiness, session } from './api';
 import { AiSettings, Users } from './pages/Admin';
 import { setFocus } from './focus';
-import { Candidate } from './pages/Candidate';
 import { Report } from './pages/Report';
 import { Results } from './pages/Results';
 
@@ -54,7 +53,7 @@ describe('sign-in and gates', () => {
         return {
           body: { userId: 'u', displayName: 'Ayla', email: 'a@x.az', roles: ['TA_PARTNER'] },
         };
-      if (url.endsWith('/vacancies'))
+      if (url.includes('/vacancies?'))
         return {
           body: [
             {
@@ -62,11 +61,20 @@ describe('sign-in and gates', () => {
               title: 'Backend Engineer',
               department: 'IT',
               location: 'Baku',
+              status: 'open',
+              archived: false,
+              owner: { id: 'u', name: 'Ayla' },
+              canEdit: true,
+              documents: 3,
+              analyzed: 2,
+              outOfDate: 1,
+              strong: 1,
+              decisions: { shortlist: 1, maybe: 0, notNow: 0 },
+              running: 0,
+              stopped: 0,
+              version: 1,
+              updatedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
-              documentCount: 3,
-              scoredCount: 2,
-              pendingCount: 1,
-              criteriaVersion: 2,
             },
           ],
         };
@@ -76,13 +84,15 @@ describe('sign-in and gates', () => {
     await userEvent.type(await screen.findByLabelText('Email'), 'a@x.az');
     await userEvent.type(screen.getByLabelText('Password'), 'secret-secret');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByText('Who fits this role?')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('link', { name: 'Past scans' }));
-    expect(await screen.findByText('Backend Engineer')).toBeInTheDocument();
-    expect(screen.getByText(/3 resumes · 2 scored · 1 still being read/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Change requirements and re-run' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Backend Engineer' })).toHaveAttribute(
       'href',
-      '#/vacancies/V/criteria',
+      '#/vacancies/V',
+    );
+    expect(screen.getByRole('heading', { name: 'Vacancies' })).toBeInTheDocument();
+    expect(screen.getByText('1 out of date')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'New vacancy' })).toHaveAttribute(
+      'href',
+      '#/vacancies/new',
     );
     // The token is sent only in the Authorization header, never in a URL.
     const authed = calls.filter((c) => c.url.endsWith('/me'));
@@ -125,131 +135,6 @@ describe('sign-in and gates', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vacancies' })).not.toBeInTheDocument();
-  });
-});
-
-describe('candidate review', () => {
-  const detail = {
-    id: 'S',
-    vacancyId: 'V',
-    state: 'completed',
-    band: 'possible_match',
-    candidateName: 'Dilara',
-    candidateEmail: null,
-    summary: 'Backend engineer.',
-    knockout: [],
-    knockoutTriggered: false,
-    injectionSuspected: false,
-    score: {
-      value: 50,
-      breakdown: { formula: 'f', earned: 5, possible: 10, mandatoryGaps: 1, items: [] },
-    },
-    aiProvider: 'anthropic',
-    aiModel: 'm',
-    error: null,
-    criteriaVersion: 1,
-    documentId: 'D',
-    ordinal: 7,
-    documentCount: 12,
-    filename: 'cv.txt',
-    uploadedAt: new Date().toISOString(),
-    parseStatus: 'parsed',
-    text: 'Built payment systems in Java.',
-    textTruncated: false,
-    erased: false,
-    assessments: [
-      {
-        requirementId: 'R',
-        text: 'Java',
-        classification: 'mandatory',
-        weight: 10,
-        status: 'met',
-        confidence: 'high',
-        evidence: [{ start: 6, end: 29, quote: 'payment systems in Java' }],
-        evidenceDropped: 0,
-        rationale: 'Stated.',
-      },
-    ],
-    decisions: [],
-  };
-
-  it('highlights verified evidence in the CV text and labels AI output', async () => {
-    session.set('tok');
-    mockFetch((url) =>
-      url.endsWith('/revealed') ? { body: { screeningIds: [] } } : { body: detail },
-    );
-    render(<Candidate id="S" />);
-    expect(await screen.findByText('AI summary')).toBeInTheDocument();
-    const marks = document.querySelectorAll('mark');
-    expect(marks).toHaveLength(1);
-    expect(marks[0]!.textContent).toBe('payment systems in Java');
-  });
-
-  it('shows the pseudonym and a plain band first; the name and file name wait for Reveal', async () => {
-    session.set('tok');
-    const calls = mockFetch((url, init) => {
-      if (url.endsWith('/revealed')) return { body: { screeningIds: [] } };
-      if (url.endsWith('/reveal-names') && init?.method === 'POST')
-        return { body: { revealed: 1 } };
-      if (url.endsWith('/hide-names')) return { body: { hidden: 1 } };
-      return { body: detail };
-    });
-    render(<Candidate id="S" />);
-    expect(await screen.findByRole('heading', { name: 'Candidate 07' })).toBeInTheDocument();
-    expect(screen.getByText('Partial')).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/Dilara|cv\.txt/);
-    await userEvent.click(screen.getByRole('button', { name: 'Reveal name' }));
-    expect(await screen.findByRole('heading', { name: 'Dilara' })).toBeInTheDocument();
-    expect(calls.some((c) => c.url.endsWith('/reveal-names'))).toBe(true);
-    await userEvent.click(screen.getByRole('button', { name: 'Hide name' }));
-    expect(await screen.findByRole('heading', { name: 'Candidate 07' })).toBeInTheDocument();
-    expect(calls.some((c) => c.url.endsWith('/hide-names'))).toBe(true);
-  });
-
-  it('keeps a name already shown in this run, and Focus on skills hides the file name and the CV text until asked', async () => {
-    session.set('tok');
-    mockFetch((url) =>
-      url.endsWith('/revealed') ? { body: { screeningIds: ['S'] } } : { body: detail },
-    );
-    setFocus(true);
-    try {
-      render(<Candidate id="S" />);
-      expect(await screen.findByRole('heading', { name: 'Dilara' })).toBeInTheDocument();
-      expect(document.body.textContent).not.toMatch(/cv\.txt/);
-      expect(document.querySelectorAll('mark')).toHaveLength(0);
-      await userEvent.click(screen.getByRole('button', { name: 'Show the CV text' }));
-      expect(document.querySelectorAll('mark')).toHaveLength(1);
-    } finally {
-      setFocus(false);
-    }
-  });
-
-  it('records a "Not now" mark only with a note and the evidence check; nothing is pre-selected', async () => {
-    session.set('tok');
-    const calls = mockFetch((url, init) => {
-      if (url.endsWith('/revealed')) return { body: { screeningIds: [] } };
-      return init?.method === 'POST' ? { status: 201, body: { id: 'x' } } : { body: detail };
-    });
-    render(<Candidate id="S" />);
-    const group = await screen.findByRole('group', { name: 'Choose a mark' });
-    for (const b of within(group).getAllByRole('button'))
-      expect(b).toHaveAttribute('aria-pressed', 'false');
-    await userEvent.click(within(group).getByRole('button', { name: /Not now/ }));
-    await userEvent.type(
-      screen.getByLabelText(/One line/),
-      'Missing the licence and the required experience',
-    );
-    const submit = screen.getByRole('button', { name: 'Save my mark' });
-    expect(submit).toBeDisabled();
-    await userEvent.click(screen.getByRole('checkbox'));
-    expect(submit).toBeEnabled();
-    await userEvent.click(submit);
-    await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
-    const post = calls.find((c) => c.init?.method === 'POST')!;
-    expect(JSON.parse(post.init!.body as string)).toMatchObject({
-      outcome: 'reject',
-      evidenceReviewed: true,
-    });
   });
 });
 
@@ -567,138 +452,6 @@ describe('page background', () => {
     await userEvent.click(screen.getByLabelText('Match my device'));
     await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
     expect(saved).toEqual([{ background: 'sky' }, { background: null }]);
-  });
-});
-
-describe('Home: resumes and role', () => {
-  const recruiter = { userId: 'u', displayName: 'Ayla', email: 'a@x.az', roles: ['TA_PARTNER'] };
-  const JD =
-    'We need a network engineer with strong routing, BGP and Kubernetes experience. SQL is a plus.';
-  const req = (text: string, classification: string) => ({
-    text,
-    classification,
-    weight: classification === 'mandatory' ? 10 : 5,
-    rule: null,
-  });
-  afterEach(() => localStorage.clear());
-
-  it('reads the requirements into chips, lets the recruiter flip one, and starts the screening', async () => {
-    session.set('t');
-    const calls = mockFetch((url, init) => {
-      const m = init?.method ?? 'GET';
-      if (url.endsWith('/me')) return { body: recruiter };
-      if (url.endsWith('/vacancies') && m === 'POST') return { body: { id: 'VAC1' } };
-      if (url.endsWith('/criteria/extract'))
-        return {
-          body: {
-            versions: [],
-            current: {
-              id: 's',
-              version: 1,
-              frozen: false,
-              requirements: [
-                req('Routing and BGP', 'mandatory'),
-                req('Kubernetes', 'mandatory'),
-                req('SQL', 'preferred'),
-                req('Based in Baku', 'informational'),
-              ],
-            },
-          },
-        };
-      if (url.endsWith('/criteria') && m === 'PUT') return { body: {} };
-      if (url.endsWith('/criteria/freeze')) return { body: {} };
-      if (url.endsWith('/notice-confirm')) return { body: { confirmed: true } };
-      if (url.endsWith('/documents')) return { body: { results: [] } };
-      return { body: [] };
-    });
-    render(<App check={up} />);
-
-    await userEvent.type(await screen.findByLabelText('Position'), 'Network Engineer');
-    await userEvent.type(screen.getByLabelText(/^Requirements/), JD);
-    const pdf = new File(['%PDF-1.7 cv'], 'cv_aysel.pdf', { type: 'application/pdf' });
-    await userEvent.upload(screen.getByLabelText('Choose resume files'), pdf);
-    expect(screen.getByText('1 resume added')).toBeInTheDocument();
-    expect(screen.getByText(/1 resume · 0 key skills/)).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: 'Read requirements' }));
-    const bgp = await screen.findByRole('button', { name: /^Routing and BGP, must-have/ });
-    expect(screen.getByRole('button', { name: /^SQL, nice-to-have/ })).toBeInTheDocument();
-    expect(screen.getByText(/1 other requirement kept as text/)).toBeInTheDocument();
-    expect(screen.getByText(/1 resume · 3 key skills/)).toBeInTheDocument();
-
-    await userEvent.click(bgp); // must-have becomes nice-to-have
-    expect(
-      screen.getByRole('button', { name: /^Routing and BGP, nice-to-have/ }),
-    ).toBeInTheDocument();
-
-    await userEvent.type(screen.getByLabelText('Add another skill'), 'Python{Enter}');
-    expect(screen.getByRole('button', { name: /^Python, must-have/ })).toBeInTheDocument();
-
-    // Without the candidate notice the button explains what is missing and sends nothing.
-    await userEvent.click(screen.getByRole('button', { name: /Find the best fit/ }));
-    expect(await screen.findByText('Confirm the candidate notice.')).toBeInTheDocument();
-    expect(calls.some((c) => c.url.endsWith('/criteria/freeze'))).toBe(false);
-
-    await userEvent.click(screen.getByRole('checkbox'));
-    await userEvent.click(screen.getByRole('button', { name: /Find the best fit/ }));
-    await waitFor(() => expect(window.location.hash).toBe('#/vacancies/VAC1'));
-    const sent = calls
-      .filter((c) => !c.url.endsWith('/me'))
-      .map((c) => c.url.replace(/^.*\/api/, ''));
-    expect(sent.slice(-4)).toEqual([
-      '/vacancies/VAC1/criteria',
-      '/vacancies/VAC1/criteria/freeze',
-      '/vacancies/VAC1/notice-confirm',
-      '/vacancies/VAC1/documents',
-    ]);
-    const put = calls.find((c) => c.url.endsWith('/criteria') && c.init?.method === 'PUT')!;
-    const body = JSON.parse(String(put.init!.body)).requirements as {
-      text: string;
-      classification: string;
-    }[];
-    expect(body.find((r) => r.text === 'Routing and BGP')!.classification).toBe('preferred');
-    expect(body.find((r) => r.text === 'Python')!.classification).toBe('mandatory');
-    const created = calls.find((c) => c.url.endsWith('/vacancies') && c.init?.method === 'POST')!;
-    expect(JSON.parse(String(created.init!.body)).title).toBe('Network Engineer');
-  });
-
-  it('says what is missing instead of failing silently, and refuses files it cannot read', async () => {
-    session.set('t');
-    mockFetch((url) => (url.endsWith('/me') ? { body: recruiter } : { body: [] }));
-    render(<App check={up} />);
-    await userEvent.click(await screen.findByRole('button', { name: /Find the best fit/ }));
-    expect(await screen.findAllByText('Add at least one resume.')).not.toHaveLength(0);
-    expect(screen.getAllByText('Add the position title.').length).toBeGreaterThan(0);
-
-    await userEvent.upload(
-      screen.getByLabelText('Choose resume files'),
-      new File(['x'], 'photo.png', { type: 'image/png' }),
-      { applyAccept: false },
-    );
-    expect(screen.getByRole('alert')).toHaveTextContent('photo.png: only PDF, DOCX and TXT');
-    expect(screen.queryByText(/resume added|resumes added/)).not.toBeInTheDocument();
-  });
-
-  it('reads a Word file into the requirements box, and shows one clear line when it cannot', async () => {
-    session.set('t');
-    let fail = false;
-    mockFetch((url) => {
-      if (url.endsWith('/me')) return { body: recruiter };
-      if (url.endsWith('/vacancies/read-document'))
-        return fail
-          ? { status: 400, body: { message: 'This file is locked with a password' } }
-          : { body: { filename: 'vacancy.docx', text: 'Needs Python and SQL daily.', words: 5 } };
-      return { body: [] };
-    });
-    render(<App check={up} />);
-    const word = new File(['PK'], 'vacancy.docx');
-    await userEvent.upload(await screen.findByLabelText('Attach a Word file'), word);
-    expect(await screen.findByText('Read vacancy.docx · 5 words')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Requirements/)).toHaveValue('Needs Python and SQL daily.');
-
-    fail = true;
-    await userEvent.upload(screen.getByLabelText('Attach a Word file'), word);
-    expect(await screen.findByText('This file is locked with a password')).toBeInTheDocument();
   });
 });
 

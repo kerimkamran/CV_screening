@@ -4,7 +4,9 @@ import {
   setAssistantOpen,
   SKILL_MARK,
   startersFor,
+  takePendingQuestion,
   useAssistantOpen,
+  usePendingQuestion,
   type Answer,
   type AssistantConfig,
   type Intent,
@@ -45,8 +47,11 @@ export function AssistantPanel(props: {
   /** Other candidates in this scan that "Compare with…" can offer (pseudonyms). */
   others: { screeningId: string; label: string }[];
   onEditRequirement: (requirementId: string, text: string) => void;
+  /** The slim rail that opens the panel. The Shell turns it off: the Ask bar opens the panel there. */
+  launcher?: boolean;
 }) {
   const { config, target } = props;
+  const queued = usePendingQuestion();
   const t = useT();
   const open = useAssistantOpen();
   const [items, setItems] = useState<Item[]>([]);
@@ -125,6 +130,13 @@ export function AssistantPanel(props: {
     [sid, busy, config.name],
   );
 
+  // A question typed in the Ask bar while a candidate is open goes to this candidate's thread.
+  useEffect(() => {
+    if (!open || !queued || !sid || busy) return;
+    const q = takePendingQuestion();
+    if (q) void send('ask', q);
+  }, [open, queued, sid, busy, send]);
+
   const stop = () => {
     turn.current++;
     setBusy(false);
@@ -160,6 +172,7 @@ export function AssistantPanel(props: {
   }
 
   if (!open) {
+    if (props.launcher === false) return null;
     return (
       <button
         type="button"

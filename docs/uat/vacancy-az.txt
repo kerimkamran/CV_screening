@@ -1,0 +1,7 @@
+Baş şəbəkə mühəndisi
+
+Operator şəbəkəsinin nüvəsini və avtomatlaşdırılmasını idarə edəcəksiniz.
+
+Tələb olunur: operator və ya iri korporativ şəbəkədə BGP marşrutlaşdırma təcrübəsi. İstehsalda Kubernetes təcrübəsi.
+Üstünlük: şəbəkə avtomatlaşdırması üçün Python skriptləri.
+Yer: Bakı. Tam ştat.

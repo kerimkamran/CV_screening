@@ -23,6 +23,7 @@ import {
   holdAnswer,
   PACKAGE_VERSION,
   parseModel,
+  payloadShape,
   PROMPT_VERSION,
   pushesBack,
   QUESTION_FOR,
@@ -78,7 +79,7 @@ export interface AskInput {
   compareWith?: string[];
   /** The recruiter's own read, for "Challenge this match". */
   read?: string;
-  language?: 'en' | 'az';
+  language?: 'en' | 'az' | 'ru';
 }
 
 export interface StoredMessage {
@@ -147,13 +148,13 @@ export class AssistantService {
     };
   }
 
-  /** Answers given today and this month (UTC), counted only when a model was called. */
+  /** Answers given today and this month (Asia/Baku days), counted only when a model was called. */
   async usage() {
     const { rows } = await this.db.query<{ today: string; month: string }>(
-      `SELECT count(*) FILTER (WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc') AS today,
+      `SELECT count(*) FILTER (WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Baku') AT TIME ZONE 'Asia/Baku') AS today,
               count(*) AS month
          FROM assistant_message
-        WHERE counted AND created_at >= date_trunc('month', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc'`,
+        WHERE counted AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Baku') AT TIME ZONE 'Asia/Baku'`,
     );
     return { today: Number(rows[0]!.today), month: Number(rows[0]!.month) };
   }
@@ -338,24 +339,48 @@ export class AssistantService {
         const modelIntent: ModelIntent =
           input.intent === 'ask' ? 'ask' : (input.intent as ModelIntent);
         try {
+          const system = systemPrompt(
+            s.name,
+            modelIntent,
+            input.language ?? 'en',
+            s.features.challengeRecruiter,
+          );
+          const user = userPrompt(
+            packages.map((b) => b.pkg),
+            text,
+            history,
+            read,
+          );
+          const shape = payloadShape(
+            packages.map((b) => b.pkg),
+            system,
+            user,
+          );
+          if (shape.violations.length > 0) {
+            // A field outside the whitelist: nothing is sent.
+            this.log.error(`assistant payload refused: ${shape.violations.join(', ')}`);
+            throw new Error('payload outside the allowed fields');
+          }
           const res = await this.gateway.complete(
-            {
-              system: systemPrompt(
-                s.name,
-                modelIntent,
-                input.language ?? 'en',
-                s.features.challengeRecruiter,
-              ),
-              user: userPrompt(
-                packages.map((b) => b.pkg),
-                text,
-                history,
-                read,
-              ),
-              json: true,
-              maxTokens: 900,
-            },
+            { system, user, json: true, maxTokens: 900 },
             s.modelRowId ?? undefined,
+          );
+          await this.db.query(
+            `INSERT INTO assistant_payload
+               (id, screening_id, vacancy_id, intent, model, prompt_version, fields, violations, bytes, sha256)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            [
+              newId(),
+              screeningId,
+              vacancyId,
+              input.intent,
+              `${res.provider} / ${res.model}`,
+              PROMPT_VERSION,
+              JSON.stringify(shape.fields),
+              shape.violations,
+              shape.bytes,
+              shape.sha256,
+            ],
           );
           model = `${res.provider} / ${res.model}`;
           counted = true;

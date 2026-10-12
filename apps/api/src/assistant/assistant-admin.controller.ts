@@ -17,7 +17,14 @@ import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
-import { buildPackage, parseModel, systemPrompt, userPrompt, verify } from './assistant-rules';
+import {
+  ALLOWED_PAYLOAD_FIELDS,
+  buildPackage,
+  parseModel,
+  systemPrompt,
+  userPrompt,
+  verify,
+} from './assistant-rules';
 import { AssistantService } from './assistant.service';
 
 /** A fixed, valid id for the audit trail of the one settings row. */
@@ -295,7 +302,10 @@ export class AssistantAdminController {
     return { ok, detail, ms: Date.now() - t0 };
   }
 
-  /** Turns the assistant has answered, for the compliance review (flags and model, not CV text). */
+  /**
+   * Turns the assistant has answered, for the compliance review (flags and model, not CV text):
+   * questions about one candidate and questions over the whole pool, newest first.
+   */
   @Get('audit')
   @Roles('ADMIN', 'GOVERNANCE')
   async turns() {
@@ -308,13 +318,49 @@ export class AssistantAdminController {
       prompt: string | null;
       kind: string | null;
       counted: boolean;
+      source: 'candidate' | 'pool';
     }>(
-      `SELECT m.created_at AS at, u.display_name AS "user", m.label, m.flags, m.model,
-              m.prompt_version AS prompt, m.content->>'kind' AS kind, m.counted
-         FROM assistant_message m JOIN assistant_thread t ON t.id = m.thread_id
-         LEFT JOIN app_user u ON u.id = t.user_id
-        WHERE m.role = 'assistant' ORDER BY m.created_at DESC, m.id DESC LIMIT 200`,
+      `SELECT * FROM (
+         SELECT m.created_at AS at, u.display_name AS "user", m.label, m.flags, m.model,
+                m.prompt_version AS prompt, m.content->>'kind' AS kind, m.counted, 'candidate' AS source
+           FROM assistant_message m JOIN assistant_thread t ON t.id = m.thread_id
+           LEFT JOIN app_user u ON u.id = t.user_id
+          WHERE m.role = 'assistant'
+         UNION ALL
+         SELECT m.created_at, u.display_name, v.title, m.flags, NULL, NULL,
+                m.content->>'kind', false, 'pool'
+           FROM assistant_pool_message m JOIN assistant_conversation c ON c.id = m.conversation_id
+           LEFT JOIN app_user u ON u.id = c.user_id
+           LEFT JOIN vacancy v ON v.id = c.vacancy_id
+          WHERE m.role = 'assistant'
+       ) x ORDER BY at DESC LIMIT 200`,
     );
     return { turns: rows.map((r) => ({ ...r, at: new Date(r.at).toISOString() })) };
+  }
+
+  /**
+   * What each model call carried, as field shapes only (WP 4.2). Open to the compliance reviewer as
+   * well: it shows the fields that left the system, not a single word of a resume.
+   */
+  @Get('payloads')
+  @Roles('ADMIN', 'GOVERNANCE')
+  async payloads() {
+    const { rows } = await this.db.query<{
+      at: Date;
+      intent: string;
+      model: string | null;
+      prompt: string;
+      fields: Record<string, { type: string; maxLength: number }>;
+      violations: string[];
+      bytes: number;
+      sha256: string;
+    }>(
+      `SELECT created_at AS at, intent, model, prompt_version AS prompt, fields, violations, bytes, sha256
+         FROM assistant_payload ORDER BY created_at DESC, id DESC LIMIT 200`,
+    );
+    return {
+      allowed: [...ALLOWED_PAYLOAD_FIELDS].sort(),
+      calls: rows.map((r) => ({ ...r, at: new Date(r.at).toISOString() })),
+    };
   }
 }

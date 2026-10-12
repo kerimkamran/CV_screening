@@ -9,23 +9,25 @@ import {
   type Me,
   type Session,
 } from './api';
-import { Appearance, LanguageSwitch } from './Appearance';
+import { LanguageSwitch } from './Appearance';
 import { applyLang, tr, useT, type Lang } from './i18n';
 import { AiSettings, AssistantSettings, Users } from './pages/Admin';
 import { rememberUser } from './assistant';
-import { Candidate } from './pages/Candidate';
-import { Home } from './pages/Home';
+import { CandidatePool } from './pages/CandidatePool';
+import { CandidateReport } from './pages/CandidateReport';
 import { Monitoring } from './pages/Monitoring';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
 import { Retention } from './pages/Retention';
 import { Security } from './pages/Security';
 import { SharedList, SharedReport } from './pages/SharedReport';
-import { Vacancies } from './pages/Vacancies';
-import { Vacancy, type Tab } from './pages/Vacancy';
+import { VacancyList } from './pages/VacancyList';
+import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
+import { Shell } from './Shell';
 import { useRoute } from './route';
 import { setFocus } from './focus';
 import { applyBackground, isBackground } from './theme';
+import { go } from './route';
 import { Notice } from './ui';
 
 const IDLE_MS = 30 * 60 * 1000; // IAM-06: idle sign-out
@@ -60,6 +62,11 @@ function AdminNav({ route }: { route: string }) {
       ))}
     </nav>
   );
+}
+
+function Redirect({ to }: { to: string }) {
+  useEffect(() => go(to), [to]);
+  return null;
 }
 
 export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealth> }) {
@@ -209,20 +216,53 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       </Notice>
     );
   } else {
-    const vm = /^\/vacancies\/([0-9A-Z]{26})(?:\/(results|report|candidates|criteria))?$/.exec(
-      route,
-    );
+    const tabs = TABS.join('|');
+    const vm = new RegExp(`^/vacancies/([0-9A-Z]{26})(?:/(${tabs}))?$`).exec(route);
+    const cm = /^\/candidates\/([0-9A-Z]{26})$/.exec(route);
     const sm = /^\/screenings\/([0-9A-Z]{26})$/.exec(route);
     body = vm ? (
-      <Vacancy id={vm[1]!} key={vm[1]} initialTab={(vm[2] as Tab | undefined) ?? 'results'} />
+      <VacancyPage id={vm[1]!} key={vm[1]} tab={(vm[2] as Tab | undefined) ?? 'candidates'} />
+    ) : route === '/vacancies/new' ? (
+      <VacancyPage id="new" tab="candidates" key="new" />
+    ) : cm ? (
+      <CandidateReport id={cm[1]!} key={cm[1]} canMark={isTa} />
     ) : sm ? (
-      <Candidate id={sm[1]!} key={sm[1]} />
-    ) : isTa && route !== '/vacancies' ? (
-      <Home />
+      <Redirect to={`/candidates/${sm[1]!}`} />
+    ) : route === '/candidates' ? (
+      <CandidatePool canMark={isTa} />
     ) : (
-      <Vacancies canCreate={isTa} />
+      <VacancyList canCreate={isTa} />
     );
   }
+
+  const footer = (
+    <>
+      <p>
+        {t(
+          'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.',
+        )}
+      </p>
+      <p role="status" aria-live="polite" className="mt-1">
+        {t(HEALTH_LABEL[health.state])}
+      </p>
+    </>
+  );
+
+  if (me && !me.mustChangePassword && !setupToken)
+    return (
+      <Shell
+        me={me}
+        isTa={isTa}
+        isAdmin={isAdmin}
+        isGov={isGov}
+        route={route}
+        footer={footer}
+        onSignOut={() => signOut()}
+        onMe={setMe}
+      >
+        {body}
+      </Shell>
+    );
 
   return (
     <div className="min-h-screen bg-page text-ink">
@@ -232,66 +272,10 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
             <Brand />
           </a>
           {!me && <LanguageSwitch signedIn={false} />}
-          {me && !me.mustChangePassword && (
-            <nav className="flex flex-wrap items-center gap-4 text-sm" aria-label={t('Main')}>
-              {isTa && (
-                <>
-                  <a href="#/" className="hover:underline">
-                    {t('New screening')}
-                  </a>
-                  <a href="#/vacancies" className="hover:underline">
-                    {t('Past scans')}
-                  </a>
-                </>
-              )}
-              <a href="#/reports" className="hover:underline">
-                {t('Shared with me')}
-              </a>
-              {isGov && !isAdmin && (
-                <a href="#/admin/monitoring" className="hover:underline">
-                  {t('Monitoring')}
-                </a>
-              )}
-              {isAdmin && (
-                <a href="#/admin" className="hover:underline">
-                  {t('Admin')}
-                </a>
-              )}
-              <LanguageSwitch signedIn />
-              <Appearance
-                value={isBackground(me.background) ? me.background : null}
-                onChange={(background) => setMe((m) => (m ? { ...m, background } : m))}
-                focusOnSkills={me.focusOnSkills === true}
-                onFocusChange={(focusOnSkills) => {
-                  setFocus(focusOnSkills);
-                  setMe((m) => (m ? { ...m, focusOnSkills } : m));
-                }}
-              />
-              <a href="#/password" className="hover:underline">
-                {t('Password')}
-              </a>
-              <a href="#/security" className="hover:underline">
-                {t('Security')}
-              </a>
-              <span className="text-ink-2">{me.displayName ?? me.email}</span>
-              <button className="text-link hover:underline" onClick={() => signOut()}>
-                {t('Sign out')}
-              </button>
-            </nav>
-          )}
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-ink-3">
-        <p>
-          {t(
-            'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.',
-          )}
-        </p>
-        <p role="status" aria-live="polite" className="mt-1">
-          {t(HEALTH_LABEL[health.state])}
-        </p>
-      </footer>
+      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>
     </div>
   );
 }

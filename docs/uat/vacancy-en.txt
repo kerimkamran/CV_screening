@@ -1,0 +1,7 @@
+Senior Network Engineer
+
+You will run the carrier core network and its automation.
+
+Required: BGP routing experience in a carrier or large-enterprise network. Kubernetes experience in production.
+Nice to have: Python scripting for network automation.
+Location: Baku. Full time.

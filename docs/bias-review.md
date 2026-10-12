@@ -1,11 +1,11 @@
 # Bias review (design spec 6.6 and plan sections on fairness)
 
-Status: second review, 7 October 2026 (first review 6 October), by the build team. It is a technical review of the product, not a
+Status: third review, 8 October 2026 (earlier reviews 6 and 7 October), by the build team. It is a technical review of the product, not a
 statistical fairness study and not legal advice. The DPO and Legal own the conclusions.
 
 ## What the product does to reduce bias risk
 
-1. **Names hidden by default.** Candidates appear as "Candidate NN" in upload order. Revealing a name is an audited, per-person action; the revealed name is never fed back to the assistant.
+1. **Names are shown to recruiters (decision of 8 October 2026), and never given to a model.** Screens show the name found in the resume. What the scoring model and SenAI receive is still a pseudonym ("Candidate NN") with the name, contact details and protected signals removed; a name typed in a question is taken out before the model is called. This trades a reduction of bias in the human step for usability: a recruiter who sees a name can be influenced by it. The switch `CANDIDATE_NAMES=hidden` restores "Candidate NN" with an audited per-person reveal, and the Excel export and shared reports follow the same switch. The paired-CV test measures the model; it cannot measure the recruiter. The DPO should decide whether to keep names shown after the trial.
 2. **The score is a formula over job evidence only.** `computeScore` takes requirement text, class, weight and status. It has no field for name, age, gender, family, nationality or photo. The same evidence always gives the same score (test: `bias.integration.spec.ts`).
 3. **Six different people with identical job evidence** (Azerbaijani, English, Russian names; female, male; age, marital, nationality, religion and pregnancy details in the text) get identical scores, bands and ranks through the whole pipeline (same test). Ties break by upload order, not by anything about the person.
 4. **No reject band and no automatic rejection.** The bands are labelled as sorting aids; every decision is a named person with a written reason.
@@ -20,7 +20,17 @@ statistical fairness study and not legal advice. The DPO and Legal own the concl
 - **Outcome monitoring** (Admin > Monitoring, also for Governance). Aggregated by CV language, file format and length, with the four-fifths rule, minimum 20 scored files overall and groups under 5 files suppressed. No protected attribute is collected or inferred.
 - **Excel export is pseudonymised** like the screen: "Candidate NN" and no file names unless the name was revealed by that recruiter or the person is shortlisted.
 
+## What changed on 8 October 2026
+
+- **Release gates for SenAI** (`apps/api/src/assistant/release-gates.spec.ts`, run with `npm run gates:assistant`): a swap suite (name, gender markers, patronymic, age, marital status, nationality, photo, in English, Azerbaijani and Russian), a red-team set, a pushback suite, quote accuracy and consistency. A prompt lock (`docs/eval/assistant-release-lock.json`, `release-lock.spec.ts`) fails when a system prompt changed without a clean rerun; `npm run gates:assistant:lock` reruns the gates and only then refreshes the lock.
+- **The gates found two gaps, now closed:** a line such as "Picture of the applicant enclosed" was not treated as a photo signal, and a mention of a wheelchair (or similar health words) in a CV sentence or reason could reach the model. Both are now removed from what the model sees.
+- **Redaction fixture pack** (`docs/uat/resumes`, ten invented resumes in English, Azerbaijani and Russian): for each, none of the listed names, e-mails, phones, birth dates, marital status, patronymics, nationality, religion or health words appear in the model request, and the one resume with a hidden instruction sends no passages.
+- **Payload log** (`GET /admin/assistant/payloads`, admin and compliance): for every model call the fields sent, their types and longest length, a hash and the size. Never the text. A field outside the whitelist stops the call. Rows go when the resume is erased.
+- **Compliance review** (`GET /admin/assistant/audit`) now lists questions over the whole pool as well as per candidate.
+
 ## Gaps (honest list)
+
+0. **The gates run against the rules and a scripted model, not a live one.** They prove that what a model is sent and what is shown from its answer follow the rules. They cannot prove a live model will behave; run the paired-CV test and a hand check of twenty SenAI answers after the first deploy and for every model change.
 
 1. **Real-model results do not exist yet.** The paired test runs only when an administrator starts it against the active model. Run it after the first deploy and for every model change; agree the acceptable difference up front (suggestion: no band changes in more than 2 percent of pairs and no systematic direction). A "Review" verdict is a prompt to look, not a finding.
 2. **Names written inside sentences are not detected.** Masking covers the name found at the top of the CV or in a "Name:" line, wherever the full name repeats, and labelled personal fields. A name that appears only inside a sentence ("Reference from Elena Petrova"), a person's name in a referee list under another label, and free-text signals such as "digital native" or "recently married" remain visible to the model. The paired test includes a free-text maternity line so the residual effect is measured, not assumed.
@@ -34,12 +44,13 @@ statistical fairness study and not legal advice. The DPO and Legal own the concl
 
 - Read the evidence for every "Not now"; never reject on the band alone.
 - Use the ranking to decide what to read first, not whom to skip.
-- Keep names hidden until the shortlist stage; use "Focus on skills" to hide file names and e-mails too.
+- Names are shown. Read the evidence first, decide on the evidence, and write the reason for every "Not now". "Focus on skills" still hides file names and e-mails, and `CANDIDATE_NAMES=hidden` hides names too.
 - Record any case where a result looks wrong or unfair; these feed the evaluation.
 
 ## Tests that keep this honest
 
 - `apps/api/src/pipeline/bias.integration.spec.ts`: score formula purity; six-person swap; tie-break by upload order; protected details do not change which requirements are met.
+- `apps/api/src/assistant/release-gates.spec.ts`, `release-lock.spec.ts`, `redaction-fixtures.spec.ts`: the five release gates, the prompt lock and the ten-resume redaction pack.
 - `apps/api/src/assistant/assistant-rules.spec.ts`: package counterfactuals (names, patronymic, year), protected signals removed, red-team questions, pushback.
 - `apps/api/src/assistant/assistant.integration.spec.ts`: end-to-end, names never reach the model, identical packages for swapped names and years, assistant cannot change a score, band, rank or decision.
 - `apps/api/src/pipeline/scoring-redaction.spec.ts`: identity and personal fields masked, professional text untouched, quotes map back, quotes touching masked text refused.

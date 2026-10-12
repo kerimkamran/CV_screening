@@ -9,6 +9,10 @@ export async function eraseAssistantForDocument(tx: Queryable, documentId: strin
     [documentId],
   );
   await tx.query(
+    `DELETE FROM assistant_payload WHERE screening_id IN (SELECT id FROM screening WHERE document_id = $1)`,
+    [documentId],
+  );
+  await tx.query(
     `DELETE FROM assistant_thread WHERE screening_id IN (SELECT id FROM screening WHERE document_id = $1)`,
     [documentId],
   );

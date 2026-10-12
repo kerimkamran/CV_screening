@@ -40,3 +40,18 @@ and code-level audit; it has **not** been checked with a screen reader on real d
 ## Added 7 October 2026 (not yet screen-reader tested)
 
 New screens: Monitoring, Security (two-step sign-in), Data retention, the code field at sign-in. All use labelled inputs, named buttons, table captions and the shared colour tokens; the recovery codes are a labelled list. The one-time code field uses `autocomplete="one-time-code"` and numeric input mode.
+
+## Added 8 October 2026 (Development Plan WP 5.1; not yet screen-reader tested)
+
+New screens: the frame (rail, Ask bar, account menu, phone bottom bar), the Vacancy pool, the vacancy page with the Role card and Resumes card, the Candidate pool, the report with the resume beside it, and the SenAI panel. Checked by `apps/web/src/pool.test.tsx` ("Accessibility of the new screens") and the older `a11y.test.tsx`:
+
+- One `main`, a navigation named "Main", a search landmark for the Ask bar, one level-one heading per page.
+- Every button, link, field, select, summary and separator has a spoken name (computed with the same algorithm browsers use). Checkboxes and decision selects name the person ("Select Aysel Mammadova", "Decision for Aysel Mammadova").
+- The decision control is a native select, so it works with the keyboard and with screen-reader pickers without extra code; its colour is never the only signal (the word is in it).
+- The divider between the report and the resume is a focusable separator with a label and a range; arrow keys move it by 2, Home and End jump to the limits.
+- "Show in resume" marks text with a real `<mark>`; the button says what it does.
+- Previous and Next are links named with their keys (J and K); disabled ones say so with `aria-disabled`.
+- `/` focuses the Ask bar when no text field has focus. The 10-second Undo is a status message with a button, and stays long enough to reach by keyboard.
+- On a phone the report and the resume are tabs, not two columns.
+
+Not done by tests: a walk-through with NVDA and VoiceOver; the order of focus after Undo; Windows high contrast. The Azerbaijani wording of the new screens has not been reviewed by a native editor.

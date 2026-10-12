@@ -67,15 +67,77 @@ describe('intake grouping and sending (spec 6.1.4)', () => {
   });
 });
 
-describe('Home: folders, ZIPs, long lists and the vacancy link', () => {
-  const home = async () => {
-    mockFetch((url) => (url.endsWith('/me') ? { body: recruiter } : { body: [] }));
+const VID = '0'.repeat(25) + 'V';
+const vacancyView = {
+  id: VID,
+  title: 'Network Engineer',
+  status: 'draft',
+  archived: false,
+  department: null,
+  location: null,
+  experienceRange: 'any',
+  openings: null,
+  closingDate: null,
+  hiringManager: null,
+  notes: null,
+  description: '',
+  sourceType: 'typed',
+  sourceFileName: null,
+  link: null,
+  requirementsVersion: 1,
+  version: 1,
+  owner: { id: 'u', name: 'Ayla' },
+  canEdit: true,
+  candidateNoticeConfirmedAt: null,
+  createdAt: '2026-10-01T10:00:00Z',
+  updatedAt: '2026-10-01T10:00:00Z',
+  updatedBy: null,
+  requirements: [],
+  hasDraft: false,
+  hasFrozen: false,
+  counts: {
+    documents: 0,
+    analyzed: 0,
+    outOfDate: 0,
+    strong: 0,
+    running: 0,
+    stopped: 0,
+    failed: 0,
+    needsLook: 0,
+  },
+};
+const emptyPool = {
+  rows: [],
+  total: 0,
+  counts: { byMark: { new: 0, shortlist: 0, maybe: 0, not_now: 0 }, outOfDate: 0, strong: 0 },
+  nextCursor: null,
+  asOf: '2026-10-01T10:00:00Z',
+};
+/** The answers the vacancy page needs; `extra` answers first for the call under test. */
+type Extra = (url: string, init?: RequestInit) => ReturnType<Handler> | undefined;
+const vacancyPage =
+  (extra?: Extra): Handler =>
+  (url, init) => {
+    const e = extra?.(url, init);
+    if (e) return e;
+    if (url.endsWith('/me')) return { body: recruiter };
+    if (url.endsWith('/assistant/config')) return { body: { enabled: false } };
+    if (url.includes('/candidates')) return { body: emptyPool };
+    if (url.endsWith(`/vacancies/${VID}`)) return { body: vacancyView };
+    return { body: [] };
+  };
+
+describe('Vacancy page: folders, ZIPs, long lists and the vacancy link', () => {
+  const open = async (extra?: Extra) => {
+    window.location.hash = `/vacancies/${VID}`;
+    const calls = mockFetch(vacancyPage(extra));
     render(<App check={up} />);
     await screen.findByLabelText('Position');
+    return calls;
   };
 
   it('takes a whole folder, ignores operating-system litter, and folds a long list into one line', async () => {
-    await home();
+    await open();
     const folder = [
       ...Array.from({ length: 12 }, (_, i) => pdf(`cv${i}.pdf`, `batch/cv${i}.pdf`)),
       pdf('.DS_Store', 'batch/.DS_Store'),
@@ -93,7 +155,7 @@ describe('Home: folders, ZIPs, long lists and the vacancy link', () => {
   });
 
   it('accepts a ZIP, and says "N skipped, see which" instead of dropping files silently', async () => {
-    await home();
+    await open();
     const zip = new File(['PK'], 'resumes.zip', { type: 'application/zip' });
     const junk = ['a.png', 'b.jpg', 'c.xlsx', 'd.pptx'].map((n) => new File(['x'], n));
     await userEvent.upload(screen.getByLabelText('Choose resume files'), [zip, ...junk], {
@@ -115,22 +177,20 @@ describe('Home: folders, ZIPs, long lists and the vacancy link', () => {
   });
 
   it('reads a vacancy link into the requirements box and shows where it was read from', async () => {
-    const calls = mockFetch((url) => {
-      if (url.endsWith('/me')) return { body: recruiter };
-      if (url.endsWith('/vacancies/read-link'))
-        return {
-          body: {
-            host: 'jobs.example.com',
-            title: 'Engineer',
-            text: 'Needs Python and SQL daily.',
-            words: 5,
-            truncated: false,
-          },
-        };
-      return { body: [] };
-    });
-    render(<App check={up} />);
-    await screen.findByLabelText('Position');
+    const calls = await open((url) =>
+      url.endsWith('/vacancies/read-link')
+        ? {
+            body: {
+              host: 'jobs.example.com',
+              title: 'Engineer',
+              text: 'Needs Python and SQL daily.',
+              words: 5,
+              truncated: false,
+              hash: 'a'.repeat(64),
+            },
+          }
+        : undefined,
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Add a vacancy link' }));
     await userEvent.type(screen.getByLabelText(/^Vacancy link/), 'https://jobs.example.com/1');
     await userEvent.click(screen.getByRole('button', { name: 'Read the page' }));
@@ -143,21 +203,17 @@ describe('Home: folders, ZIPs, long lists and the vacancy link', () => {
   });
 
   it('shows one plain line when the page cannot be read, and the paste box is still there', async () => {
-    mockFetch((url) =>
-      url.endsWith('/me')
-        ? { body: recruiter }
-        : url.endsWith('/vacancies/read-link')
-          ? {
-              status: 400,
-              body: {
-                message: "Couldn't read that page. Paste the text instead.",
-                code: 'LINK_UNREADABLE',
-              },
-            }
-          : { body: [] },
+    await open((url) =>
+      url.endsWith('/vacancies/read-link')
+        ? {
+            status: 400,
+            body: {
+              message: "Couldn't read that page. Paste the text instead.",
+              code: 'LINK_UNREADABLE',
+            },
+          }
+        : undefined,
     );
-    render(<App check={up} />);
-    await screen.findByLabelText('Position');
     await userEvent.click(screen.getByRole('button', { name: 'Add a vacancy link' }));
     await userEvent.type(
       screen.getByLabelText(/^Vacancy link/),

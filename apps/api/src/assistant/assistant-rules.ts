@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { BAND_LABEL, type MatchBand } from '@cv/shared';
 import { looksLikeInjection } from '../pipeline/injection';
@@ -134,6 +135,9 @@ const PUSHBACK: RegExp[] = [
   /\b(change|raise|lift|bump|upgrade|move|increase) (it|the band|her|him|them|this)\b/,
   /\b(just|please) (put|rank|mark|make|move|set)\b/,
   /\b(trust me|i know (her|him|them)|i have a feeling)\b/,
+  // Azerbaijani (folded) and Russian
+  /\b(eminsiniz|yanilirsiniz|razi deyilem|buna inanmiram)\b/,
+  /(вы уверены|ты уверен|вы ошибаетесь|не согласен)/,
 ];
 export const pushesBack = (q: string): boolean => {
   const f = fold(q);
@@ -167,8 +171,10 @@ const PROTECTED_IN_CV: RegExp[] = [
   uw(
     'nationalit*|citizen*|ethnic*|race|religio*|muslim|christian|jewish|orthodox|atheist|vetendas*|milliyyet*|национальн*|гражданств*|религи*',
   ),
-  uw('disab*|handicap*|illness|health condition|elil*|инвалид*'),
-  uw('photo|photograph|height|weight|appearance'),
+  uw(
+    'disab*|handicap*|illness|health condition|elil*|инвалид*|wheelchair|deaf|blind|autis*|diabet*|cancer|chronic|medical condition|sick leave|mobility aid|əlillik|эллил*|коляск*|слеп*|глух*',
+  ),
+  uw('photo|photograph|picture of|portrait|selfie|height|weight|appearance|foto*|sekil|фото*'),
   uw("women in tech|girls who code|men's|women's|ladies|fraternity|sorority"),
 ];
 const protectedInCv = (t: string) => {
@@ -356,7 +362,7 @@ OUTPUT. Return ONLY a JSON object:
       ? '\n- If the recruiter\'s message contradicts the package, say so once, neutrally, with the fact: "The CV does show X, so it is not missing." or "That isn\'t part of the requirements, so I can\'t use it."'
       : ''
   }
-- Write in ${language === 'az' ? 'Azerbaijani' : 'English'}. Quotes stay in the CV's own language.
+- Write in ${language === 'az' ? 'Azerbaijani' : language === 'ru' ? 'Russian' : 'English'}. Quotes stay in the CV's own language.
 
 TASK. ${INTENT_BRIEF[intent]}`;
 }
@@ -788,5 +794,78 @@ export function checkAnswer(b: BuiltPackage): Answer {
     facts: [factsLine(p)],
     flags: [],
     about: [p.candidate],
+  };
+}
+
+// ----------------------------------------------------------------------------- payload log
+
+/** The only fields a model call may carry about a candidate (Development Plan WP 4.2). */
+export const ALLOWED_PAYLOAD_FIELDS: ReadonlySet<string> = new Set([
+  'version',
+  'candidate',
+  'band',
+  'mustHaves',
+  'mustHaves.found',
+  'mustHaves.total',
+  'requirements',
+  'requirements[]',
+  'requirements[].id',
+  'requirements[].text',
+  'requirements[].kind',
+  'requirements[].state',
+  'reason',
+  'passages',
+  'passages[]',
+  'passages[].id',
+  'passages[].requirement',
+  'passages[].text',
+  'passagesWithheld',
+]);
+
+export interface PayloadShape {
+  /** Field path -> JSON type and the longest text seen (never the text itself). */
+  fields: Record<string, { type: string; maxLength: number }>;
+  /** Paths outside the whitelist. Must be empty. */
+  violations: string[];
+  bytes: number;
+  sha256: string;
+}
+
+function walk(v: unknown, path: string, out: PayloadShape['fields']): void {
+  if (Array.isArray(v)) {
+    for (const x of v) walk(x, `${path}[]`, out);
+    return;
+  }
+  const type = v === null ? 'null' : typeof v;
+  const prev = out[path];
+  const len = typeof v === 'string' ? v.length : 0;
+  out[path] = {
+    type: prev && prev.type !== type ? `${prev.type}|${type}` : type,
+    maxLength: Math.max(prev?.maxLength ?? 0, len),
+  };
+  if (v && typeof v === 'object')
+    for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k, out);
+}
+
+/**
+ * What one model call carried, as shapes only: which fields, their types and longest length, plus a
+ * hash and size of the whole request. The text itself is never kept, so the log cannot become a
+ * second copy of the resumes.
+ */
+export function payloadShape(
+  packages: EvidencePackage[],
+  system: string,
+  user: string,
+): PayloadShape {
+  const fields: PayloadShape['fields'] = {};
+  for (const p of packages) walk(p, '', fields);
+  delete fields[''];
+  const violations = Object.keys(fields).filter((f) => !ALLOWED_PAYLOAD_FIELDS.has(f));
+  const body = `${system}\n${user}`;
+  return {
+    fields,
+    violations,
+    bytes: Buffer.byteLength(body),
+    sha256: createHash('sha256').update(body).digest('hex'),
   };
 }

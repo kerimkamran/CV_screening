@@ -1,0 +1,7 @@
+Ad: Leyla Hasanova Ali qızı
+Email: leyla.h@example.az  Mobil: +994 70 111 22 33
+Doğum tarixi: 03.03.1999. Evli. Cins: qadın.
+Junior şəbəkə mühəndisi, 2022-2024.
+BGP routing laboratoriyası və kiçik şəbəkənin qurulması.
+Kubernetes öyrənmə layihəsi.
+Python skriptləri yazıram.
