@@ -142,6 +142,22 @@ export interface MarkResult {
   note: string | null;
   version: number;
   previous: { mark: Mark; note: string | null; version: number };
+  /** The consistency mirror: private to the person, said once, never blocks the mark. */
+  mirror?: { kind: 'pair' | 'reason'; with?: string; mark?: Mark };
+}
+
+/** The sentence for the mirror, or '' when there is nothing to say. */
+export function mirrorNote(
+  t: (k: string, v?: Record<string, string | number>) => string,
+  m: MarkResult['mirror'],
+): string {
+  if (!m) return '';
+  if (m.kind === 'reason')
+    return t('That reason is not one of the requirements. Keep it or edit it?');
+  return t('Same must-have evidence as {name}, who is marked {mark}. Look again?', {
+    name: m.with ?? t('another candidate'),
+    mark: markName(m.mark ?? 'new'),
+  });
 }
 
 export interface ReportAnchor {

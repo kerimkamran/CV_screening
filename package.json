@@ -22,7 +22,7 @@
     "db:rollback": "node scripts/migrate.mjs down",
     "db:status": "node scripts/migrate.mjs status",
     "db:roundtrip": "node scripts/migrate-roundtrip.mjs",
-    "gates:assistant": "npm run build -w packages/shared && npm exec -w apps/api -- jest --coverage=false src/assistant/release-gates",
+    "gates:assistant": "npm run build -w packages/shared && npm exec -w apps/api -- jest --coverage=false src/assistant/release-gates src/assistant/senai/understand.eval src/assistant/senai-gates",
     "gates:assistant:lock": "npm run gates:assistant && UPDATE_GATE_LOCK=1 npm exec -w apps/api -- jest --coverage=false src/assistant/release-lock",
     "uat:seed": "node scripts/uat-seed.mjs",
     "load:pool": "npm run build -w packages/shared && npm exec -w apps/api -- jest --coverage=false src/pipeline/volume",

@@ -157,4 +157,220 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     ).json().answer;
     expect(r.actions[0].href).toBe(`#/candidates/${first.answer.rows[0].matchId}`);
   });
+
+  it('writes an interview kit: the same core question per requirement, probes from the resume', async () => {
+    const { a, first, cid } = await start('t9@azerconnect.test', 'Kit Probe Role');
+    const r = (
+      await a.api.post('/assistant/ask', {
+        message: 'interview questions for the second',
+        conversationId: cid,
+      })
+    ).json().answer;
+    expect(r.flags).toContain('interview_kit');
+    expect(r.table.rows).toHaveLength(3);
+    expect(r.table.rows[0].cells[0]).toMatch(/Tell me about a time you used BGP routing/);
+    expect(r.copyable).toBe(true);
+    expect(r.headline).toContain(first.answer.rows[1].label);
+    // Bob has BGP only: the Kubernetes probe says it is not found.
+    const probes = r.table.rows.map((x: any) => x.cells[2]).join(' ');
+    expect(probes).toMatch(/Not found in the resume/);
+  });
+
+  it('shows pairs with the same evidence and different marks, only from your own marks', async () => {
+    const a = await h.recruiter('t10@azerconnect.test');
+    const twin = [
+      { name: 'Dana One', lines: ['BGP routing.', 'Kubernetes.'] },
+      { name: 'Dana Two', lines: ['BGP routing.', 'Kubernetes.'] },
+    ];
+    const vid = await h.scenario(a.api, twin, 'Twin Probe Role');
+    const rows = (await a.api.get(`/candidates?vacancy=${vid}`)).json().rows;
+    await a.api.put(`/candidates/${rows[0].matchId}/decision`, {
+      mark: 'shortlist',
+      expectedVersion: 0,
+    });
+    await a.api.put(`/candidates/${rows[1].matchId}/decision`, {
+      mark: 'not_now',
+      expectedVersion: 0,
+      note: 'too old for the team',
+    });
+    const r = (
+      await a.api.post('/assistant/ask', { message: 'check my decisions for Twin Probe Role' })
+    ).json().answer;
+    expect(r.flags).toContain('consistency');
+    expect(r.headline).toMatch(/1 pair/);
+    expect(r.notes.join(' ')).toMatch(/not one of the requirements/);
+    // Someone else sees nothing: those are not their marks.
+    const b = await h.recruiter('t11@azerconnect.test');
+    const other = (
+      await b.api.post('/assistant/ask', { message: 'check my decisions for Twin Probe Role' })
+    ).json().answer;
+    expect(other.headline).toMatch(/no pair/);
+  });
+
+  it('flags near copies and thin resumes', async () => {
+    const a = await h.recruiter('t12@azerconnect.test');
+    const body = Array.from(
+      { length: 40 },
+      (_, i) => `Worked on BGP routing project number ${i} for the core network.`,
+    );
+    const vid = await h.scenario(
+      a.api,
+      [
+        { name: 'Copy Alpha', lines: body },
+        { name: 'Copy Beta', lines: body.map((x) => x) },
+        { name: 'Tiny Gamma', lines: ['Hi.'] },
+      ],
+      'Quality Probe Role',
+    );
+    expect(vid).toBeTruthy();
+    const r = (
+      await a.api.post('/assistant/ask', { message: 'data quality for Quality Probe Role' })
+    ).json().answer;
+    expect(r.flags).toContain('data_quality');
+    expect(r.table.rows.map((x: any) => x.cells[1]).join(' ')).toMatch(/copy of/);
+    expect(r.table.rows.map((x: any) => x.cells[1]).join(' ')).toMatch(/Thin resume/);
+  });
+
+  it('checks a job description and only suggests', async () => {
+    const a = await h.recruiter('t13@azerconnect.test');
+    await h.scenario(a.api, [], 'Jd Probe Role');
+    const r = (
+      await a.api.post('/assistant/ask', { message: 'check the JD for Jd Probe Role' })
+    ).json().answer;
+    expect(r.flags).toContain('jd_check');
+    expect(r.headline).toMatch(/Nothing was changed|nothing to suggest/);
+  });
+
+  it('declines web lookups, personality guesses and salary per candidate', async () => {
+    const a = await h.recruiter('t14@azerconnect.test');
+    for (const [q, flag] of [
+      ['look him up on LinkedIn', 'refused:web_lookup'],
+      ['is she loyal and honest?', 'refused:personality'],
+      ['what salary does he expect', 'refused:salary'],
+      ['Facebook-da bu namizədi axtar', 'refused:web_lookup'],
+    ] as const) {
+      const r = (await a.api.post('/assistant/ask', { message: q })).json().answer;
+      expect(r.kind).toBe('decline');
+      expect(r.flags).toContain(flag);
+    }
+  });
+
+  it('keeps the stored state when pushed, and checks the resume for what was said', async () => {
+    const { a, first, cid } = await start('t15@azerconnect.test', 'Push Probe Role');
+    // The second candidate (Bob) has no Kubernetes; the first (Alice) does.
+    const found = (
+      await a.api.post('/assistant/ask', {
+        message: 'but the first does know Kubernetes',
+        conversationId: cid,
+      })
+    ).json().answer;
+    expect(found.flags).toContain('possible_missed_evidence');
+    expect(found.actions[0].href).toBe(`#/candidates/${first.answer.rows[0].matchId}`);
+    const held = (
+      await a.api.post('/assistant/ask', {
+        message: 'but the second does know Kubernetes',
+        conversationId: cid,
+      })
+    ).json().answer;
+    expect(held.flags).toContain('pushback_held');
+    expect(held.headline).toMatch(/stored assessment stands/);
+  });
+
+  it('remembers "always top N" and lets a chip be taken off', async () => {
+    const { a, cid } = await start('t16@azerconnect.test', 'Chip Probe Role');
+    const saved = (
+      await a.api.post('/assistant/ask', { message: 'always top 2', conversationId: cid })
+    ).json().answer;
+    expect(saved.flags).toContain('preference');
+    const list = (
+      await a.api.post('/assistant/ask', { message: 'candidates for Chip Probe Role' })
+    ).json();
+    expect(list.answer.rows).toHaveLength(2);
+    expect(list.answer.more).toBe(1);
+    expect(list.answer.receipt.by).toBe('rules');
+    // Take the "Top 2" chip off: the same question, all five shown.
+    const wide = (
+      await a.api.post('/assistant/ask', {
+        message: '',
+        conversationId: list.conversationId,
+        without: { kind: 'top' },
+      })
+    ).json().answer;
+    expect(wide.rows).toHaveLength(3);
+  });
+
+  it('keeps rediscovery off until the administrator switches it on', async () => {
+    const a = await h.recruiter('t17@azerconnect.test');
+    await h.scenario(a.api, cvs, 'Source Probe Role');
+    const vid2 = await h.scenario(a.api, [], 'Target Probe Role');
+    expect(vid2).toBeTruthy();
+    const off = (
+      await a.api.post('/assistant/ask', {
+        message: 'rediscover candidates from other vacancies for Target Probe Role',
+      })
+    ).json().answer;
+    expect(off.flags).toContain('switch_off:rediscovery');
+    const cur = (await h.admin.get('/admin/assistant')).json().settings;
+    const put = await h.admin.put('/admin/assistant', {
+      ...cur,
+      features: { ...cur.features, rediscovery: true },
+      regionAllowed: 'EU only',
+      dataTerms: 'no_retention',
+      attest: true,
+    });
+    expect(put.statusCode).toBe(200);
+    const on = (
+      await a.api.post('/assistant/ask', {
+        message: 'rediscover candidates from other vacancies for Target Probe Role',
+      })
+    ).json().answer;
+    expect(on.flags).toContain('rediscovery');
+    expect(on.table.rows.length).toBeGreaterThan(0);
+    await h.admin.put('/admin/assistant', {
+      ...cur,
+      features: { ...cur.features, rediscovery: false },
+      regionAllowed: 'EU only',
+      dataTerms: 'no_retention',
+      attest: true,
+    });
+  });
+
+  it('says it once, at the moment of the mark: same evidence, different marks; a reason that is not the job', async () => {
+    const a = await h.recruiter('t20@azerconnect.test');
+    const twin = [
+      { name: 'Eli One', lines: ['BGP routing.', 'Kubernetes.'] },
+      { name: 'Eli Two', lines: ['BGP routing.', 'Kubernetes.'] },
+    ];
+    const vid = await h.scenario(a.api, twin, 'Mirror Probe Role');
+    const rows = (await a.api.get(`/candidates?vacancy=${vid}`)).json().rows;
+    const first = await a.api.put(`/candidates/${rows[0].matchId}/decision`, {
+      mark: 'shortlist',
+      expectedVersion: 0,
+    });
+    expect(first.json().mirror).toBeUndefined();
+    const second = await a.api.put(`/candidates/${rows[1].matchId}/decision`, {
+      mark: 'not_now',
+      expectedVersion: 0,
+    });
+    expect(second.json().mirror).toMatchObject({ kind: 'pair', mark: 'shortlist' });
+    // Once per pair: marking again says nothing more.
+    const again = await a.api.put(`/candidates/${rows[1].matchId}/decision`, {
+      mark: 'not_now',
+      note: 'too old',
+      expectedVersion: 1,
+    });
+    expect(again.json().mirror).toMatchObject({ kind: 'reason' });
+    const quiet = await a.api.put(`/candidates/${rows[1].matchId}/decision`, {
+      mark: 'maybe',
+      expectedVersion: 2,
+    });
+    expect(quiet.json().mirror).toBeUndefined();
+    // Another recruiter's marks are never read.
+    const b = await h.recruiter('t21@azerconnect.test');
+    const other = await b.api.put(`/candidates/${rows[1].matchId}/decision`, {
+      mark: 'not_now',
+      expectedVersion: 3,
+    });
+    expect(other.json().mirror).toBeUndefined();
+  });
 });

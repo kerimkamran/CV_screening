@@ -106,6 +106,11 @@ const W = {
     ru: 'Открыть: {name}',
   },
   openVacancy: { en: 'Open {title}', az: '{title} vakansiyasını aç', ru: 'Открыть: {title}' },
+  openNewVacancy: {
+    en: 'Create a new vacancy',
+    az: 'Yeni vakansiya yarat',
+    ru: 'Создать новую вакансию',
+  },
   openHead: { en: 'Here it is.', az: 'Buyurun.', ru: 'Вот.' },
   openWhich: {
     en: 'Open which one? Say a number from the list ("open the second") or a name.',

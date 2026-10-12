@@ -15,6 +15,7 @@ import {
   type ReportAnchor,
   type ReportRequirement,
   type ResumeData,
+  mirrorNote,
 } from '../pool';
 import {
   btnPrimary,
@@ -262,19 +263,22 @@ export function CandidateReport({ id, canMark }: { id: string; canMark: boolean 
         expectedVersion: before.version,
       });
       await load();
+      const said = mirrorNote(t, res.mirror);
+      const undo = async () => {
+        try {
+          await api.put(`/candidates/${id}/decision`, {
+            mark: res.previous.mark,
+            note: res.previous.note,
+            expectedVersion: res.version,
+          });
+        } catch (e) {
+          setError(errMsg(e));
+        }
+        await load();
+      };
       if (to !== before.mark)
-        show(t('Marked {mark}.', { mark: markName(to) }), async () => {
-          try {
-            await api.put(`/candidates/${id}/decision`, {
-              mark: res.previous.mark,
-              note: res.previous.note,
-              expectedVersion: res.version,
-            });
-          } catch (e) {
-            setError(errMsg(e));
-          }
-          await load();
-        });
+        show([t('Marked {mark}.', { mark: markName(to) }), said].filter(Boolean).join(' '), undo);
+      else if (said) show(said, undo);
     } catch (e) {
       setError(errMsg(e));
       if (e instanceof ApiError && e.code === 'STALE_VERSION') await load();

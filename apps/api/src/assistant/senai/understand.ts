@@ -77,6 +77,8 @@ const SHORT = lex(
   'shortlist',
   'short list',
   'qısa siyahı',
+  'qısa siyahını',
+  'qısa siyahısı',
   'короткий список',
   'шортлист',
   'избранн*',
@@ -219,6 +221,107 @@ const ABOUT = lex(
   'кто ты',
   'как ты нашел',
 );
+const NEW_VACANCY = lex(
+  'new vacancy',
+  'create vacancy',
+  'create a vacancy',
+  'yeni vakansiya',
+  'vakansiya yarat',
+  'новая вакансия',
+  'создать вакансию',
+);
+const JD = lex(
+  'check the jd',
+  'check jd',
+  'jd check',
+  'jd coach',
+  'check the job description',
+  'review the job description',
+  'review the jd',
+  'vakansiya mətnini yoxla',
+  'jd ni yoxla',
+  'təsviri yoxla',
+  'проверь описание',
+  'проверь jd',
+  'проверь текст вакансии',
+);
+const CONSIST = lex(
+  'check my decisions',
+  'review my decisions',
+  'my decisions',
+  'consistency',
+  'consistent',
+  'qərarlarımı yoxla',
+  'qərarlarım',
+  'проверь мои решения',
+  'мои решения',
+  'последовательн*',
+);
+const QUALITY = lex(
+  'data quality',
+  'duplicate',
+  'duplicates',
+  'dublikat*',
+  'thin cv',
+  'thin cvs',
+  'unreadable',
+  'copies of',
+  'qualit y',
+  'məlumat keyfiyyəti',
+  'дубликат*',
+  'качество данных',
+  'одинаковые резюме',
+);
+const SIMILAR = lex(
+  'similar vacancy',
+  'similar vacancies',
+  'same requirements',
+  'shares requirements',
+  'oxşar vakansiya*',
+  'похожие вакансии',
+  'похожая вакансия',
+);
+const REDISCOVER = lex(
+  'rediscover*',
+  'silver medal*',
+  'other vacancies',
+  'from other vacancies',
+  'earlier candidates',
+  'previous candidates',
+  'başqa vakansiyalardan',
+  'keçmiş namizəd*',
+  'из других вакансий',
+  'прошлые кандидаты',
+);
+const CHALLENGE = lex(
+  'you are wrong',
+  'youre wrong',
+  'that is wrong',
+  'thats wrong',
+  'is wrong',
+  'but he has',
+  'but she has',
+  'but he knows',
+  'but she knows',
+  'he does know',
+  'she does know',
+  'he does have',
+  'she does have',
+  'does have',
+  'does know',
+  'do know',
+  'actually has',
+  'actually knows',
+  'yanlışdır',
+  'səhvdir',
+  'amma o bilir',
+  'amma onda var',
+  'неправильно',
+  'неверно',
+  'но он знает',
+  'но у него есть',
+  'но она знает',
+);
 const HELP = lex(
   'what does',
   'what is',
@@ -332,7 +435,7 @@ const TRIGGER = lex(
   'işləyib',
 );
 const BAND_WORDS: [Band, Lex][] = [
-  ['strong', lex('strong', 'güclü', 'сильн*', 'сильное')],
+  ['strong', lex('strong', 'güclü*', 'сильн*', 'сильное')],
   ['good', lex('good band', 'yaxşı band', 'хорош*')],
   ['partial', lex('partial', 'partly', 'qismən', 'частичн*')],
   ['limited', lex('limited', 'məhdud', 'слаб*', 'ограничен*')],
@@ -526,6 +629,13 @@ const KNOWN = [
   RECALL,
   ABOUT,
   HELP,
+  NEW_VACANCY,
+  JD,
+  CONSIST,
+  QUALITY,
+  SIMILAR,
+  REDISCOVER,
+  CHALLENGE,
   WIDE,
   ALL,
   MORE,
@@ -653,6 +763,44 @@ export interface Context {
   now: Date;
 }
 
+const STOP = new Set([
+  'worked',
+  'work',
+  'working',
+  'used',
+  'using',
+  'people',
+  'person',
+  'anyone',
+  'someone',
+  'me',
+  'mene',
+  'but',
+  'the',
+  'an',
+  'is',
+  'are',
+  'does',
+  'do',
+  'did',
+  'has',
+  'have',
+  'he',
+  'she',
+  'they',
+  'it',
+  'one',
+  'also',
+  'actually',
+  'amma',
+  'ama',
+  'no',
+  'но',
+  'он',
+  'она',
+  'они',
+]);
+
 const isNumber = (t: string) => /^\d+$/.test(t);
 
 function skillTerm(s: Skill, words: string[]): SkillTerm {
@@ -675,6 +823,17 @@ export function understand(text: string, ctx: Context): Query {
   const hRecall = has(RECALL);
   const hAbout = has(ABOUT);
   const hHelp = has(HELP);
+  const hNewVacancy = has(NEW_VACANCY);
+  const hJd = has(JD);
+  const hConsist = has(CONSIST);
+  const hQuality = has(QUALITY);
+  const hSimilar = has(SIMILAR);
+  const hRediscover = has(REDISCOVER);
+  const hChallenge = has(CHALLENGE);
+  const pref =
+    /(?:always|hemise|vsegda|by default|default)\D{0,16}(\d{1,2})\b|\b(\d{1,2})\D{0,10}(?:always|hemise|vsegda)/.exec(
+      fold(text),
+    );
   const hWhatIf = has(WHATIF);
   const hNice = has(NICE);
   const hMust = has(MUST);
@@ -727,6 +886,11 @@ export function understand(text: string, ctx: Context): Query {
         ),
       );
   }
+  // Words that point at a candidate ("the first one", "those") or only glue a sentence together.
+  const refWord = new Set<number>();
+  for (const [, l] of ORDINALS) for (const i of hits(toks, l)) refWord.add(i);
+  for (const i of hits(toks, LAST)) refWord.add(i);
+  for (const i of hits(toks, DEMONSTRATIVE)) refWord.add(i);
   if (trigger) {
     let buf: string[] = [];
     const flush = () => {
@@ -743,7 +907,13 @@ export function understand(text: string, ctx: Context): Query {
     };
     toks.forEach((t, i) => {
       const skip =
-        used.has(i) || known.has(i) || isNumber(t) || t.length < 2 || ctx.titleWords.has(t);
+        used.has(i) ||
+        known.has(i) ||
+        isNumber(t) ||
+        t.length < 2 ||
+        ctx.titleWords.has(t) ||
+        STOP.has(t) ||
+        refWord.has(i);
       if (skip) flush();
       else buf.push(t);
     });
@@ -786,6 +956,18 @@ export function understand(text: string, ctx: Context): Query {
   const glossary = GLOSSARY.find(([, l]) => hits(toks, l).length > 0);
   if (hRecall.length) intent = 'recall';
   else if (hAbout.length) intent = 'about';
+  else if (hNewVacancy.length) {
+    intent = 'open';
+    q.topic = 'new_vacancy';
+  } else if (pref) {
+    intent = 'prefs';
+    q.top = Math.min(Math.max(parseInt(pref[1] ?? pref[2]!, 10), 1), 50);
+  } else if (hJd.length) intent = 'jd';
+  else if (hConsist.length) intent = 'consistency';
+  else if (hQuality.length) intent = 'quality';
+  else if (hSimilar.length) intent = 'similar';
+  else if (hRediscover.length) intent = 'rediscover';
+  else if (hChallenge.length && q.skills.length) intent = 'challenge';
   else if (hHelp.length && glossary && !q.skills.length && !q.refs.length) {
     intent = 'help';
     q.topic = glossary[0];
@@ -825,11 +1007,12 @@ export function understand(text: string, ctx: Context): Query {
     content.length <= 3 &&
     toks.length <= 8;
   if (elliptical && last) {
-    const modifier: FollowUp = hits(toks, ADD).length
-      ? 'add'
-      : hits(toks, NARROW).length
-        ? 'narrow'
-        : 'replace';
+    const modifier: FollowUp =
+      hits(toks, ADD).length || ['and', 've', 'i', 'ayrica'].includes(toks[0] ?? '')
+        ? 'add'
+        : hits(toks, NARROW).length
+          ? 'narrow'
+          : 'replace';
     if (
       q.skills.length &&
       (intent === 'skills' || intent === 'find' || intent === 'unknown' || intent === 'count')

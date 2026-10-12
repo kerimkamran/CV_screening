@@ -816,6 +816,87 @@ describe('SenAI Ask bar', () => {
     expect(await within(panel).findByText(/Excel ×3/)).toBeInTheDocument();
     expect(within(panel).getByText(/Finance Analyst/)).toBeInTheDocument();
   });
+
+  it('shows the proof line, the chips, the receipt and a table; a chip can be taken off', async () => {
+    const calls = mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline: 'Candidates whose resume mentions Excel: 1 (all vacancies).',
+                notes: [],
+                vacancy: null,
+                options: [],
+                counts: null,
+                used: [
+                  { kind: 'everywhere', text: 'All vacancies' },
+                  { kind: 'skill', text: 'Excel' },
+                  { kind: 'band', text: 'Strong' },
+                ],
+                rows: [
+                  {
+                    matchId: MID,
+                    label: 'Aysel Mammadova',
+                    score: 61,
+                    band: 'partial',
+                    mustFound: 1,
+                    mustTotal: 2,
+                    decision: 'new',
+                    decisionLabel: 'New',
+                    outOfDate: false,
+                    strengths: [],
+                    missing: [],
+                    passages: [
+                      {
+                        skill: 'Excel',
+                        text: 'Built reports in Excel pivot tables.',
+                        hit: 'Excel',
+                      },
+                    ],
+                  },
+                ],
+                table: {
+                  head: ['Requirement', 'Aysel'],
+                  rows: [{ cells: ['Excel', 'Met'], tag: 'must' }],
+                },
+                receipt: {
+                  read: 'skills; skills: Excel',
+                  by: 'rules',
+                  sources: ['pool analysis'],
+                  asOf: '2026-10-08T09:00:00Z',
+                },
+                more: 0,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: [],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'Who knows Excel?{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    expect(await within(panel).findByText(/pivot tables/)).toBeInTheDocument();
+    expect(within(panel).getByText('Excel', { selector: 'mark' })).toBeInTheDocument();
+    expect(within(panel).getByRole('table')).toBeInTheDocument();
+    expect(within(panel).getByText(/How I got this/)).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole('button', { name: /Remove filter Strong/ }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.endsWith('/assistant/ask')).pop()!.body).toMatchObject({
+        without: { kind: 'band', text: 'Strong' },
+      }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------- accessibility of the new screens

@@ -44,6 +44,10 @@ export interface PoolAnswer {
   table?: { head: string[]; rows: { cells: string[]; tag?: 'must' | 'nice' }[] };
   /** Where to go next: a candidate or a vacancy. */
   actions?: { label: string; href: string }[];
+  /** The table can be copied as text (interview kit). */
+  copyable?: boolean;
+  /** "How I got this": how the question was read and what the answer used. */
+  receipt?: { read: string; by: 'rules' | 'model'; sources: string[]; asOf: string };
   /** What the answer is about (vacancy, skills, filters), shown as chips so a wrong reading is visible. */
   used?: { kind: string; text: string }[];
   more: number;
@@ -86,7 +90,15 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const send = useCallback(
-    async (message: string, extra: { pick?: string; showAll?: boolean; echo?: boolean } = {}) => {
+    async (
+      message: string,
+      extra: {
+        pick?: string;
+        showAll?: boolean;
+        echo?: boolean;
+        without?: { kind: 'skill' | 'band' | 'mark' | 'top'; text?: string };
+      } = {},
+    ) => {
       if (busy || !message.trim()) return;
       const mine = ++turn.current;
       if (extra.echo !== false)
@@ -104,6 +116,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
             language: getLang(),
             pick: extra.pick,
             showAll: extra.showAll,
+            without: extra.without,
           },
         );
         if (turn.current !== mine) return;
@@ -183,6 +196,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
   }
 
   if (!open) return null;
+  const lastAnswerId = [...items].reverse().find((i) => i.role === 'assistant')?.id;
   const lastUser = [...items].reverse().find((i) => i.role === 'user') as
     { text: string } | undefined;
 
@@ -324,6 +338,12 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
                   })
                 }
                 onSuggest={(q) => void send(q)}
+                canEdit={it.id === lastAnswerId}
+                onRemove={(c) =>
+                  void send(`− ${c.text}`, {
+                    without: { kind: c.kind as 'skill' | 'band' | 'mark' | 'top', text: c.text },
+                  })
+                }
               />
             ),
           )}
@@ -390,12 +410,16 @@ function PoolAnswerView({
   onPick,
   onAll,
   onSuggest,
+  canEdit,
+  onRemove,
 }: {
   answer: PoolAnswer;
   busy: boolean;
   onPick: (id: string) => void;
   onAll: () => void;
   onSuggest: (q: string) => void;
+  canEdit: boolean;
+  onRemove: (chip: { kind: string; text: string }) => void;
 }) {
   const t = useT();
   return (
@@ -410,15 +434,29 @@ function PoolAnswerView({
       )}
       {a.used && a.used.length > 0 && a.kind === 'pool' && (
         <ul className="flex flex-wrap gap-1" aria-label={t('Used for this answer')}>
-          {a.used.map((u) => (
-            <li
-              key={`${u.kind}:${u.text}`}
-              className="rounded-full bg-page px-2 py-0.5 text-xs text-ink-2"
-              data-chip={u.kind}
-            >
-              {u.text}
-            </li>
-          ))}
+          {a.used.map((u) => {
+            const removable = canEdit && ['skill', 'band', 'mark', 'top'].includes(u.kind);
+            return (
+              <li
+                key={`${u.kind}:${u.text}`}
+                className="flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-xs text-ink-2"
+                data-chip={u.kind}
+              >
+                {u.text}
+                {removable && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={t('Remove filter {name}', { name: u.text })}
+                    className="rounded px-0.5 text-ink-3 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    onClick={() => onRemove(u)}
+                  >
+                    ×
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {a.notes.map((n) => (
@@ -561,6 +599,19 @@ function PoolAnswerView({
           ))}
         </ul>
       )}
+      {a.copyable && a.table && <CopyTable table={a.table} />}
+      {a.receipt && (
+        <details className="text-xs text-ink-3">
+          <summary className="cursor-pointer">{t('How I got this')}</summary>
+          <p className="mt-1">
+            {t('Read as')}: {a.receipt.read}
+            {' · '}
+            {a.receipt.by === 'model' ? t('A model read the question') : t('Read by rules')}
+            {' · '}
+            {a.receipt.sources.join(', ')}
+          </p>
+        </details>
+      )}
       <p className="text-xs text-ink-3">{t('As of {time}', { time: ago(a.asOf) })}</p>
     </div>
   );
@@ -578,5 +629,27 @@ function HighlightedPassage({ text, hit }: { text: string; hit?: string }) {
       </mark>
       {text.slice(i + hit.length)}
     </>
+  );
+}
+
+/** Copies a table as tab-separated text, for pasting into a document or an e-mail. */
+function CopyTable({ table }: { table: NonNullable<PoolAnswer['table']> }) {
+  const t = useT();
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    const text = [table.head, ...table.rows.map((r) => r.cells)]
+      .map((r) => r.join('\t'))
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setDone(true);
+    } catch {
+      setDone(false);
+    }
+  };
+  return (
+    <button type="button" className={btnSecondary} onClick={() => void copy()}>
+      {done ? t('Copied') : t('Copy')}
+    </button>
   );
 }

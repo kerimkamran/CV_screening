@@ -84,6 +84,13 @@ export class AssistantController {
         pick: ulidSchema.optional(),
         showAll: z.boolean().optional(),
         language: z.enum(['en', 'az', 'ru']).optional(),
+        /** A chip taken off the last answer: the same question again without that part. */
+        without: z
+          .object({
+            kind: z.enum(['skill', 'band', 'mark', 'top']),
+            text: z.string().max(60).optional(),
+          })
+          .optional(),
       }),
       body,
     );

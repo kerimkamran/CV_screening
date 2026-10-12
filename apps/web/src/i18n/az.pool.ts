@@ -211,6 +211,16 @@ export const AZ_POOL: Record<string, string> = {
   'Not found': 'Tapılmadı',
   'In the resume': 'CV-də',
   must: 'vacib',
+  'That reason is not one of the requirements. Keep it or edit it?':
+    'Bu səbəb tələblərdən biri deyil. Saxlayaq, yoxsa dəyişək?',
+  'Same must-have evidence as {name}, who is marked {mark}. Look again?':
+    '{name} ilə eyni vacib tələb sübutu var, o isə "{mark}" kimi qeyd olunub. Yenidən baxaq?',
+  'another candidate': 'başqa namizəd',
+  'Remove filter {name}': '{name} filtrini götür',
+  'How I got this': 'Bunu necə tapdım',
+  'Read as': 'Belə oxundu',
+  'A model read the question': 'Sualı model oxudu',
+  'Read by rules': 'Qaydalarla oxundu',
   'Used for this answer': 'Bu cavabda istifadə olunanlar',
   'Show in resume': 'CV-də göstərin',
   'Hide in resume': 'CV-də gizlədin',

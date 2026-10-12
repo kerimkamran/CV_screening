@@ -19,6 +19,7 @@ import {
   type Lang,
   type VacancyRef,
 } from './pool-assistant';
+import { dsay, declineFor } from './senai/deep-words';
 import { describe, type Query } from './senai/query';
 import { PoolSearch, stripPassages, type PassageRef } from './senai/search';
 import { PoolTools, type AnswerAction, type AnswerTable } from './senai/tools';
@@ -87,6 +88,17 @@ export interface PoolAnswer {
   table?: AnswerTable;
   /** Where to go next (open a candidate or a vacancy). */
   actions?: AnswerAction[];
+  /** "How I got this": what the question was read as, what it used and when. */
+  receipt?: {
+    read: string;
+    by: 'rules' | 'model';
+    promptVersion: string | null;
+    model: string | null;
+    asOf: string;
+    sources: string[];
+  };
+  /** The table can be copied as text (interview kit). */
+  copyable?: boolean;
   /** Pseudonyms of the candidates a tool answer is about (for the audit trail; names never go there). */
   subjects?: string[];
   /** How the question was read: what the answer is about. */
@@ -108,6 +120,8 @@ export interface PoolAskInput {
   pick?: string;
   showAll?: boolean;
   language?: Lang;
+  /** A chip removed from the last answer (SenAI plan F1). */
+  without?: { kind: 'skill' | 'band' | 'mark' | 'top'; text?: string };
 }
 
 /** What the last answer was about, kept with the conversation so a follow-up can be read (migration 0028). */
@@ -145,6 +159,13 @@ const TOOL_INTENTS: Query['intent'][] = [
   'recall',
   'about',
   'help',
+  'prefs',
+  'jd',
+  'consistency',
+  'quality',
+  'similar',
+  'rediscover',
+  'challenge',
 ];
 
 /** Intents whose answer lists candidates: only these change what a follow-up refers to. */
@@ -176,7 +197,9 @@ export class PoolAssistantService {
   async ask(p: Principal, input: PoolAskInput, ip: string | undefined) {
     const s = await this.assistant.settings();
     if (!s.enabled) throw new AssistantOff();
-    const text = input.message.trim().slice(0, 1000);
+    const text =
+      input.message.trim().slice(0, 1000) ||
+      (input.without ? `− ${input.without.text ?? input.without.kind}` : '');
     const reg = input.conversationId ? await this.register(p, input.conversationId) : null;
     const lang = this.language(text, input.language, reg);
     const now = new Date();
@@ -216,6 +239,9 @@ export class PoolAssistantService {
         headline: say(lang, 'decision'),
         flags: ['refused:decision'],
       });
+    } else if (declineFor(text)) {
+      const d = declineFor(text)!;
+      Object.assign(a, { kind: 'decline', headline: dsay(lang, d.key), flags: [d.flag] });
     } else {
       // Which vacancy does the question name?
       let named: VacancyRef | null = null;
@@ -235,17 +261,20 @@ export class PoolAssistantService {
       const titleWords = new Set(live.flatMap((v) => fold(v.title).split(' ')));
       // The vacancy's own title is a name, not a command: "Open Source Engineer" is not "open".
       const forRules = named ? this.withoutTitle(text, named.title) : text;
-      const rules = understand(forRules, {
-        last: reg?.q ?? null,
-        shown: reg?.shown.length ?? 0,
-        titleWords,
-        namesVacancy: strong,
-        now,
-      });
+      const edit = input.without && reg ? this.without(reg.q, input.without) : null;
+      const rules =
+        edit ??
+        understand(forRules, {
+          last: reg?.q ?? null,
+          shown: reg?.shown.length ?? 0,
+          titleWords,
+          namesVacancy: strong,
+          now,
+        });
       q = rules;
       // A question that half-names a vacancy is for the person to settle ('which one?'), not the model.
       const halfNamed = res.tier === 'partial' && rules.intent === 'find';
-      if (rules.confidence === 'low' && !halfNamed) {
+      if (rules.confidence === 'low' && !halfNamed && s.features.understand) {
         const m = await this.viaModel(s, text, reg, live, input.vacancyId, now);
         if (m) {
           q = m.q;
@@ -262,6 +291,17 @@ export class PoolAssistantService {
         if (q.intent === 'skills' && q.skills.length === 0) q.intent = 'find';
       }
 
+      // "Always show the top 10": the person's own typed preference, unless the question says a number.
+      if (
+        LISTING.includes(q.intent) &&
+        q.top === null &&
+        !q.showAll &&
+        !input.showAll &&
+        !input.without
+      ) {
+        const pref = await this.tools.prefTop(p.userId);
+        if (pref) q.top = pref;
+      }
       const page = input.vacancyId ? live.find((v) => v.id === input.vacancyId) : undefined;
       const follow = q.followUp !== 'new' && reg ? reg.scope : null;
       const followVacancy = follow?.vacancyId
@@ -298,6 +338,7 @@ export class PoolAssistantService {
             live,
             now,
             p,
+            features: s.features,
           })
         : false;
 
@@ -355,7 +396,40 @@ export class PoolAssistantService {
       if (a.kind === 'pool' && !handled) a.used = this.used(q, a, lang);
     }
 
+    if (q && (a.kind === 'pool' || a.kind === 'help'))
+      a.receipt = {
+        read: describe(q),
+        by: model ? 'model' : 'rules',
+        promptVersion: model ? UNDERSTAND_PROMPT_VERSION : null,
+        model,
+        asOf: a.asOf,
+        sources: [
+          'pool analysis',
+          ...(q.skills.length ? ['resume text'] : []),
+          ...(a.table ? ['stored assessments'] : []),
+        ],
+      };
     return this.save(p, input, text, a, ip, { q, model, counted, reg });
+  }
+
+  /** The last query without one chip: the same question again, no model and no new reading. */
+  private without(last: Query, w: NonNullable<PoolAskInput['without']>): Query {
+    const q: Query = JSON.parse(JSON.stringify(last)) as Query;
+    q.followUp = 'refine';
+    q.confidence = 'high';
+    q.source = 'rules';
+    q.refs = [];
+    if (w.kind === 'skill')
+      q.skills = q.skills.filter((x) => x.label.toLowerCase() !== (w.text ?? '').toLowerCase());
+    else if (w.kind === 'band')
+      q.bands = q.bands.filter((b) => !Object.values(BAND_WORD).some((m) => m[b] === w.text));
+    else if (w.kind === 'mark')
+      q.decisions = q.decisions.filter(
+        (m) => !Object.values(MARK_WORD).some((x) => x[m] === w.text),
+      );
+    else q.top = null;
+    if (q.intent === 'skills' && q.skills.length === 0) q.intent = 'find';
+    return q;
   }
 
   /** The message with the vacancy's full title taken out (only when the whole title is written). */

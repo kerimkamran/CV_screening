@@ -24,6 +24,9 @@ export interface AssistantConfig {
     compare: boolean;
     interview: boolean;
     challengeRecruiter: boolean;
+    understand?: boolean;
+    rediscovery?: boolean;
+    linkReview?: boolean;
   };
   unavailableMessage: string;
 }

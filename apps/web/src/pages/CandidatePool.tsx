@@ -15,6 +15,7 @@ import {
   type PoolPage,
   type PoolRow,
   type VacancyListItem,
+  mirrorNote,
 } from '../pool';
 import { btnPrimary, btnSecondary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
 import { MarkSelect } from './MarkSelect';
@@ -219,7 +220,9 @@ export function CandidatePool({
         decisionVersion: res.version,
         decisionNote: res.note,
       }));
-      show(t('{name}: {mark}.', { name: r.label, mark: markName(to) }), async () => {
+      const said = mirrorNote(t, res.mirror);
+      const line = t('{name}: {mark}.', { name: r.label, mark: markName(to) });
+      show(said ? `${line} ${said}` : line, async () => {
         try {
           const back = await api.put<MarkResult>(`/candidates/${r.matchId}/decision`, {
             mark: before.mark,

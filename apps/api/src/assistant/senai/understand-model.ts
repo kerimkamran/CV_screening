@@ -7,14 +7,14 @@
 import { fold, SKILLS, skillById, tokens } from '@cv/shared';
 import { INTENTS, describe, blankQuery, modelQuerySchema, type Query, type Ref } from './query';
 
-export const UNDERSTAND_PROMPT_VERSION = 'senai-understand-1';
+export const UNDERSTAND_PROMPT_VERSION = 'senai-understand-2';
 
 export function understandSystem(): string {
   return [
     "You read a recruiter's message to an assistant that searches a pool of analyzed resumes, and you turn it into ONE JSON query. You never answer the question yourself.",
     'The message may be in Azerbaijani (with or without special letters), English or Russian, may have typos, and may be a short follow-up to the previous query.',
     `Return only a JSON object with these fields: intent (one of ${INTENTS.join(', ')}), followUp (new, replace, add, narrow, refine), skills (array of {id, text}), mode (all or any), bands (strong, good, partial, limited), decisions (new, shortlist, maybe, not_now), top (number or null), showAll (boolean), countOnly (boolean), refs (array of {kind: ordinal|last|label|shown, n}), sinceDays (number or null), whatIf ({text, to: nice|must} or null), everywhere (boolean), topic (string or null).`,
-    'Intents: find = best matches for a vacancy; count = how many; shortlist = the Shortlist; skills = who knows or has worked with something (a tool, language, certificate, domain); compare = side by side; doctor = why so few Strong or which requirement is rare; changes = what changed since a date; what_if = what if a requirement were nice-to-have or must-have; open = open a candidate or vacancy; interview = interview questions; recall = what was concluded before; about = what the assistant can see or how it got an answer; help = what a word or screen means, how to do something; unknown = none of these.',
+    'Intents: find = best matches for a vacancy; count = how many; shortlist = the Shortlist; skills = who knows or has worked with something (a tool, language, certificate, domain); compare = side by side; doctor = why so few Strong or which requirement is rare; changes = what changed since a date; what_if = what if a requirement were nice-to-have or must-have; open = open a candidate or vacancy; interview = interview questions; recall = what was concluded before; about = what the assistant can see or how it got an answer; help = what a word or screen means, how to do something; prefs = always show the top N; jd = check the job description; consistency = look at the user own marks for contradictions; quality = duplicates, thin or unreadable resumes; similar = vacancies sharing requirements; rediscover = candidates of other vacancies who may fit; challenge = the person says a candidate does have a skill the analysis missed; unknown = none of these.',
     'For skills use the dictionary id when one fits (ids are listed below), otherwise id null and the words exactly as written in the message. Never add a skill the message does not ask for.',
     'A short message right after a previous query is a follow-up: "replace" keeps the scope and changes the skill, "add" adds a skill, "narrow" restricts the previous result, "refine" changes only bands, marks or counts.',
     'Never output names, never guess personal traits, never recommend hiring or rejecting. If you cannot tell what is meant, use intent "unknown".',

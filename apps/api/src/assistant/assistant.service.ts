@@ -48,6 +48,12 @@ export interface Settings {
     compare: boolean;
     interview: boolean;
     challengeRecruiter: boolean;
+    /** SenAI may ask a model to read a question the rules cannot. */
+    understand: boolean;
+    /** Suggestions from other vacancies' resumes. Off until Legal confirms the privacy notice. */
+    rediscovery: boolean;
+    /** Reading a link the candidate gave. Off; needs a recorded consent. */
+    linkReview: boolean;
   };
   unavailableMessage: string;
   regionAllowed: string;
@@ -113,6 +119,9 @@ export class AssistantService {
       feat_compare: boolean;
       feat_interview: boolean;
       feat_challenge_recruiter: boolean;
+      feat_understand: boolean;
+      feat_rediscovery: boolean;
+      feat_link_review: boolean;
       unavailable_message: string;
       region_allowed: string;
       data_terms: Settings['dataTerms'];
@@ -134,6 +143,9 @@ export class AssistantService {
         compare: r.feat_compare,
         interview: r.feat_interview,
         challengeRecruiter: r.feat_challenge_recruiter,
+        understand: r.feat_understand,
+        rediscovery: r.feat_rediscovery,
+        linkReview: r.feat_link_review,
       },
       unavailableMessage: r.unavailable_message,
       regionAllowed: r.region_allowed,

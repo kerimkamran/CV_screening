@@ -20,6 +20,13 @@ export const INTENTS = [
   'recall', // what did we conclude
   'about', // what can you see, how did you get this
   'help', // how do I use the tool, what does a word mean
+  'prefs', // always show the top 10
+  'jd', // check the job description
+  'consistency', // look at my own decisions for contradictions
+  'quality', // duplicates, thin or unreadable resumes
+  'similar', // vacancies that share requirements
+  'rediscover', // candidates of other vacancies who may fit this one (switch)
+  'challenge', // "but he does know Kubernetes": check the resume for what the recruiter says
   'unknown',
 ] as const;
 export type Intent = (typeof INTENTS)[number];

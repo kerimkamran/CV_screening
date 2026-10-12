@@ -41,6 +41,9 @@ const putSchema = z.object({
     compare: z.boolean(),
     interview: z.boolean(),
     challengeRecruiter: z.boolean(),
+    understand: z.boolean().default(true),
+    rediscovery: z.boolean().default(false),
+    linkReview: z.boolean().default(false),
   }),
   unavailableMessage: z.string().trim().min(1).max(300),
   regionAllowed: z.string().trim().max(200),
@@ -174,7 +177,8 @@ export class AssistantAdminController {
            feat_challenge_recruiter=$7, unavailable_message=$8, region_allowed=$9, data_terms=$10,
            daily_cap=$11, monthly_cap=$12, warn_pct=$13, updated_by=$14, updated_at=now(),
            attested_by = CASE WHEN $15::boolean THEN $16::text::ulid ELSE attested_by END,
-           attested_at = CASE WHEN $15::boolean THEN now() ELSE attested_at END`,
+           attested_at = CASE WHEN $15::boolean THEN now() ELSE attested_at END,
+           feat_understand=$17, feat_rediscovery=$18, feat_link_review=$19`,
         [
           b.enabled,
           b.name,
@@ -192,6 +196,9 @@ export class AssistantAdminController {
           p.userId,
           attestNow,
           p.userId,
+          b.features.understand,
+          b.features.rediscovery,
+          b.features.linkReview,
         ],
       );
       const diff: Record<string, { from: unknown; to: unknown }> = {};

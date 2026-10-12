@@ -11,6 +11,7 @@ import { AdjustmentService } from '../../pipeline/adjustments.service';
 import { PoolService, bandOf, type PoolRow } from '../../pipeline/pool.service';
 import { BAND_WORD, MARK_WORD, type Lang, type VacancyRef } from '../pool-assistant';
 import type { PoolAnswer, Register } from '../pool-assistant.service';
+import { DeepTools } from './deep-tools';
 import { describe, type Query } from './query';
 import { helpKey, tsay, type TKey } from './tools-words';
 
@@ -35,6 +36,8 @@ export interface ToolCtx {
   live: VacancyRef[];
   now: Date;
   p: Principal;
+  /** The administrator's ability switches. */
+  features: { understand: boolean; rediscovery: boolean; linkReview: boolean };
 }
 
 interface Item {
@@ -66,7 +69,12 @@ export class PoolTools {
     private readonly db: DbService,
     private readonly pool: PoolService,
     private readonly adj: AdjustmentService,
+    private readonly deep: DeepTools,
   ) {}
+
+  prefTop(userId: string): Promise<number | null> {
+    return this.deep.prefTop(userId);
+  }
 
   /** Which tool answers this intent; false when the intent is not a tool. */
   async run(c: ToolCtx): Promise<boolean> {
@@ -94,6 +102,27 @@ export class PoolTools {
         return true;
       case 'about':
         this.about(c);
+        return true;
+      case 'prefs':
+        await this.deep.prefs(c);
+        return true;
+      case 'jd':
+        await this.deep.jd(c);
+        return true;
+      case 'consistency':
+        await this.deep.consistency(c);
+        return true;
+      case 'quality':
+        await this.deep.quality(c);
+        return true;
+      case 'similar':
+        await this.deep.similar(c);
+        return true;
+      case 'rediscover':
+        await this.deep.rediscover(c, c.features.rediscovery);
+        return true;
+      case 'challenge':
+        await this.deep.challenge(c, await this.resolve(c, 2));
         return true;
       case 'help': {
         const k = c.q.topic ? helpKey(c.q.topic) : null;
@@ -432,6 +461,13 @@ export class PoolTools {
   private async open(c: ToolCtx) {
     const { a } = c;
     const lang = a.language;
+    if (c.q.topic === 'new_vacancy') {
+      a.kind = 'pool';
+      a.headline = tsay(lang, 'openHead');
+      a.actions = [{ label: tsay(lang, 'openNewVacancy'), href: '#/vacancies/new' }];
+      a.flags = ['open'];
+      return;
+    }
     const picks = await this.resolve(c, 3);
     if (picks.length) {
       a.kind = 'pool';
@@ -470,15 +506,7 @@ export class PoolTools {
       a.flags = ['not_understood'];
       return;
     }
-    const r = picks[0]!;
-    a.kind = 'pool';
-    a.headline = tsay(lang, 'interviewHead');
-    a.notes = [tsay(lang, 'interviewNote')];
-    a.actions = [
-      { label: tsay(lang, 'openCandidate', { name: r.label }), href: `#/candidates/${r.matchId}` },
-    ];
-    a.subjects = [r.pseudonym];
-    a.flags = ['interview_pointer'];
+    await this.deep.kit(c, picks[0]!);
   }
 
   // ------------------------------------------------------------------ recall, about

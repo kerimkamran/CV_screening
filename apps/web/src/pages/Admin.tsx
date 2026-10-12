@@ -789,6 +789,9 @@ interface AssistantSettingsData {
     compare: boolean;
     interview: boolean;
     challengeRecruiter: boolean;
+    understand: boolean;
+    rediscovery: boolean;
+    linkReview: boolean;
   };
   unavailableMessage: string;
   regionAllowed: string;
@@ -1015,6 +1018,12 @@ export function AssistantSettings() {
                 ['compare', 'Compare candidates'],
                 ['interview', 'Interview questions'],
                 ['challengeRecruiter', 'Say when a question contradicts the record'],
+                ['understand', 'Let a model read questions the rules cannot (question text only)'],
+                [
+                  'rediscovery',
+                  'Suggest candidates from other vacancies (keep off until Legal confirms the notice)',
+                ],
+                ['linkReview', 'Read links candidates gave (keep off; needs recorded consent)'],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="flex items-center gap-2">

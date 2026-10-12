@@ -8,6 +8,7 @@ import {
   systemPrompt,
   type ModelIntent,
 } from './assistant-rules';
+import { UNDERSTAND_PROMPT_VERSION, understandSystem } from './senai/understand-model';
 
 /**
  * The prompt lock (Development Plan WP 4.8). The lock file holds the hash of every system prompt the
@@ -26,6 +27,8 @@ function current() {
     for (const lang of ['en', 'az', 'ru'])
       for (const flag of [false, true])
         h.update(systemPrompt('SenAI', intent, lang, flag) + '\n--\n');
+  // The prompt that reads a recruiter's question into a typed query (SenAI plan 6.2 step 4).
+  h.update(understandSystem() + '\n--\n' + UNDERSTAND_PROMPT_VERSION);
   return {
     promptVersion: PROMPT_VERSION,
     packageVersion: PACKAGE_VERSION,

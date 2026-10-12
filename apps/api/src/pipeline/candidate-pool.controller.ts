@@ -37,6 +37,7 @@ import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { CandidateViewService } from './candidate-view.service';
 import { PoolService, type PoolRow } from './pool.service';
+import { mirrorFor } from './mirror';
 
 const NOT_FOUND = 'We could not find this candidate.';
 const CURSOR_MINUTES = 15;
@@ -435,7 +436,22 @@ export class CandidatePoolController {
       entityId: sid,
       after: { decisionId: id, mark, previous: previous.mark },
     });
-    return { mark, note: note && note.length ? note : null, version: version + 1, previous };
+    // The consistency mirror: private, once per pair, never blocks the mark.
+    const mirror = await mirrorFor(
+      tx,
+      p.userId,
+      hit.documentId,
+      hit.vacancyId,
+      mark,
+      note && note.length ? note : null,
+    );
+    return {
+      mark,
+      note: note && note.length ? note : null,
+      version: version + 1,
+      previous,
+      ...(mirror ? { mirror } : {}),
+    };
   }
 }
 
