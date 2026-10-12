@@ -33,7 +33,7 @@ interface Created {
   /** Absent when the admin only asked for a link (nothing was emailed). */
   emailSent?: boolean;
   setupToken: string;
-  expiresAt: string;
+  expiresAt?: string | null;
 }
 
 /** Built from the address the admin is using, so it always points at this very site. */
@@ -65,7 +65,7 @@ function InviteLink({ created }: { created: Created }) {
             ? 'Email could not be sent (check the email settings). '
             : ''}
           Copy this link and send it to {who} by any channel. When they open it they choose their
-          own password. It works once and expires {when(created.expiresAt)}. It is shown only once.
+          own password. The link has no time limit and works once. It is shown only once.
         </Notice>
       )}
       <div className="flex flex-wrap gap-2">
@@ -131,6 +131,7 @@ export function Users({ meId }: { meId: string }) {
       await load();
     } catch (e) {
       setError(errMsg(e));
+      await load().catch(() => undefined); // the list may be out of date (for example a user disabled elsewhere)
     }
   };
 
@@ -232,12 +233,14 @@ export function Users({ meId }: { meId: string }) {
                           Copy invite link
                         </button>
                       )}
-                      <button
-                        className={btnSecondary}
-                        onClick={() => act(() => api.post(`/admin/users/${u.id}/reset-password`))}
-                      >
-                        Reset password
-                      </button>
+                      {u.status === 'active' && (
+                        <button
+                          className={btnSecondary}
+                          onClick={() => act(() => api.post(`/admin/users/${u.id}/reset-password`))}
+                        >
+                          Reset password
+                        </button>
+                      )}
                       {u.mfa && (
                         <button
                           className={btnSecondary}

@@ -171,7 +171,7 @@ describeDb('Local accounts', () => {
       (await post(`/admin/users/${id}/setup-link`, {}, adminToken)).json() as {
         setupToken: string;
         setupLink: string;
-        expiresAt: string;
+        expiresAt: string | null;
         user: { email: string };
       };
 
@@ -179,9 +179,7 @@ describeDb('Local accounts', () => {
       const l = await issue();
       expect(l.setupLink).toContain('/#/set-password?token=');
       expect(l.user.email).toBe('ayla.recruiter@azerconnect.test');
-      const ttl = new Date(l.expiresAt).getTime() - Date.now();
-      expect(ttl).toBeGreaterThan(71 * 3_600_000);
-      expect(ttl).toBeLessThanOrEqual(72 * 3_600_000);
+      expect(l.expiresAt).toBeNull(); // no time limit
 
       const who = await post('/auth/setup-link/check', { token: l.setupToken });
       expect(who.json()).toEqual({
@@ -226,7 +224,7 @@ describeDb('Local accounts', () => {
       for (const r of stored.rows) expect(r.token_hash).not.toContain(l.setupToken);
     });
 
-    it('a newer link withdraws the older one, and an expired link is refused', async () => {
+    it('a newer link withdraws the older one; a link has no time limit but works once', async () => {
       const first = await issue();
       const second = await issue();
       expect((await post('/auth/setup-link/check', { token: first.setupToken })).statusCode).toBe(
@@ -235,13 +233,24 @@ describeDb('Local accounts', () => {
       expect((await post('/auth/setup-link/check', { token: second.setupToken })).statusCode).toBe(
         200,
       );
-      await db.owner.query(`UPDATE password_setup SET expires_at = now() - interval '1 minute'`);
-      const late = await post('/auth/setup-password', {
+      // A link that sat unused for more than a year still works.
+      await db.owner.query(
+        `UPDATE password_setup SET created_at = now() - interval '400 days' WHERE used_at IS NULL`,
+      );
+      expect((await post('/auth/setup-link/check', { token: second.setupToken })).statusCode).toBe(
+        200,
+      );
+      const done = await post('/auth/setup-password', {
         token: second.setupToken,
-        newPassword: 'Too-late-pass-6464',
+        newPassword: 'Second-pass-4242',
       });
-      expect(late.statusCode).toBe(400);
-      expect(late.json().message).toMatch(/invalid or has expired/);
+      expect(done.statusCode).toBe(200);
+      const again = await post('/auth/setup-password', {
+        token: second.setupToken,
+        newPassword: 'Another-pass-6464',
+      });
+      expect(again.statusCode).toBe(400);
+      expect(again.json().message).toMatch(/already been used|replaced/);
     });
 
     it('a made-up token, a disabled user and a non-admin are all refused', async () => {
@@ -250,7 +259,9 @@ describeDb('Local accounts', () => {
       );
       const l = await issue();
       await post(`/admin/users/${recruiterId}/status`, { status: 'disabled' }, adminToken);
-      expect((await post('/auth/setup-link/check', { token: l.setupToken })).statusCode).toBe(400);
+      const off = await post('/auth/setup-link/check', { token: l.setupToken });
+      expect(off.statusCode).toBe(400);
+      expect(off.json().message).toMatch(/account is disabled/);
       expect(
         (await post(`/admin/users/${recruiterId}/setup-link`, {}, adminToken)).statusCode,
       ).toBe(409);

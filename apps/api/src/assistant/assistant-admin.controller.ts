@@ -12,6 +12,7 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AiGateway } from '../ai/ai-gateway.service';
+import { ProviderError } from '../ai/providers';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -283,7 +284,9 @@ export class AssistantAdminController {
         ? `${res.provider} / ${res.model} answered in the expected shape.`
         : 'The model answered, but not in a form that can be checked.';
     } catch (e) {
-      detail = (e as Error).message;
+      // The test carries no candidate data, so the provider's short reason may be shown.
+      detail =
+        (e as Error).message + (e instanceof ProviderError && e.detail ? ` (${e.detail})` : '');
     }
     await this.db.withTx(async (tx) => {
       if (ok) {

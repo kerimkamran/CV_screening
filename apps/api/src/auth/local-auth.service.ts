@@ -35,9 +35,10 @@ const MAX_FAILURES = 5;
 const ipLimiter = new RateLimiter(30, 60_000);
 const LOCK_MINUTES = 15;
 const BAD_CREDENTIALS = 'Invalid email or password';
-/** How long an invitation / password-setup link stays usable. It also works only once. */
-export const SETUP_LINK_HOURS = 72;
-const INVALID_LINK = 'This link is invalid or has expired. Ask your administrator for a new one.';
+/** An invitation / password-setup link has no time limit. It works once, and a newer link for the same person replaces it. */
+const INVALID_LINK =
+  'This link has already been used or was replaced by a newer one. Ask your administrator for a new one.';
+const DISABLED_LINK = 'This account is disabled. Ask your administrator.';
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
 export interface SessionResult {
@@ -52,7 +53,8 @@ export interface SetupLink {
   setupToken: string;
   /** The same link on APP_BASE_URL, when that is configured (this is what the email carries). */
   setupLink?: string;
-  expiresAt: string;
+  /** Always null: links have no time limit (kept so older screens keep working). */
+  expiresAt: string | null;
 }
 
 export interface CredentialsResult extends SetupLink {
@@ -376,11 +378,12 @@ export class LocalAuthService {
     const { rows } = await this.db.query<{ email: string; display_name: string; status: string }>(
       `SELECT u.email, u.display_name, u.status
          FROM password_setup s JOIN app_user u ON u.id = s.user_id
-        WHERE s.token_hash = $1 AND s.used_at IS NULL AND s.expires_at > now()`,
+        WHERE s.token_hash = $1 AND s.used_at IS NULL`,
       [sha256(token)],
     );
     const r = rows[0];
-    if (!r || r.status !== 'active') throw new BadRequestException(INVALID_LINK);
+    if (!r) throw new BadRequestException(INVALID_LINK);
+    if (r.status !== 'active') throw new BadRequestException(DISABLED_LINK);
     return { email: r.email, displayName: r.display_name };
   }
 
@@ -399,12 +402,13 @@ export class LocalAuthService {
            FROM password_setup s
            JOIN app_user u ON u.id = s.user_id
            JOIN local_credential c ON c.user_id = u.id
-          WHERE s.token_hash = $1 AND s.used_at IS NULL AND s.expires_at > now()
+          WHERE s.token_hash = $1 AND s.used_at IS NULL
           FOR UPDATE OF s, c`,
         [sha256(token)],
       );
       const r = rows[0];
-      if (!r || r.status !== 'active') throw new BadRequestException(INVALID_LINK);
+      if (!r) throw new BadRequestException(INVALID_LINK);
+      if (r.status !== 'active') throw new BadRequestException(DISABLED_LINK);
       const problem = passwordProblem(newPassword, r.email);
       if (problem) throw new BadRequestException(`New password ${problem}`);
       const upd = await tx.query<{ session_version: number }>(
@@ -440,18 +444,17 @@ export class LocalAuthService {
   /** New one-time token for the user; any earlier unused link is withdrawn. Only the hash is kept. */
   private async newSetupLink(tx: PoolClient, userId: string, by: string): Promise<SetupLink> {
     const token = randomBytes(32).toString('base64url');
-    const expires = new Date(Date.now() + SETUP_LINK_HOURS * 3_600_000);
     await tx.query(`DELETE FROM password_setup WHERE user_id = $1 AND used_at IS NULL`, [userId]);
     await tx.query(
       `INSERT INTO password_setup (id, user_id, token_hash, expires_at, created_by)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [newId(), userId, sha256(token), expires, by],
+       VALUES ($1,$2,$3,NULL,$4)`,
+      [newId(), userId, sha256(token), by],
     );
     const base = this.env.APP_BASE_URL?.replace(/\/+$/, '');
     return {
       setupToken: token,
       ...(base ? { setupLink: `${base}/#/set-password?token=${token}` } : {}),
-      expiresAt: expires.toISOString(),
+      expiresAt: null,
     };
   }
 
@@ -570,11 +573,7 @@ export class LocalAuthService {
       '',
       'This password is temporary. You will be asked to choose your own the first time you sign in.',
       ...(setup.setupLink
-        ? [
-            '',
-            `Or choose your own password right away with this one-time link (valid ${SETUP_LINK_HOURS} hours):`,
-            setup.setupLink,
-          ]
+        ? ['', `Or choose your own password right away with this one-time link:`, setup.setupLink]
         : []),
       '',
       'Do not forward this message. If you did not expect it, tell your administrator.',

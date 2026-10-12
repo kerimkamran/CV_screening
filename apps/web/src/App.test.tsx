@@ -349,16 +349,17 @@ describe('invitation links', () => {
     });
   });
 
-  it('says so plainly when a link is invalid, used or expired', async () => {
+  it('says so plainly when a link is used, replaced or its account is disabled', async () => {
     window.location.hash = `/set-password?token=${TOKEN}`;
     mockFetch(() => ({
       status: 400,
       body: {
-        message: 'This link is invalid or has expired. Ask your administrator for a new one.',
+        message:
+          'This link has already been used or was replaced by a newer one. Ask your administrator for a new one.',
       },
     }));
     render(<App check={up} />);
-    expect(await screen.findByText(/invalid or has expired/)).toBeInTheDocument();
+    expect(await screen.findByText(/already been used or was replaced/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/^New password/)).not.toBeInTheDocument();
   });
 
