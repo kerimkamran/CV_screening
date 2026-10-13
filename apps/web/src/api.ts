@@ -116,7 +116,7 @@ export interface Me {
   roles: Role[];
   mustChangePassword?: boolean;
   /** Chosen page background; null or absent means follow the device. */
-  background?: 'white' | 'grey' | 'cream' | 'dark' | null;
+  background?: 'white' | 'grey' | 'cream' | 'dark' | 'auto' | null;
   language?: string | null;
 }
 export interface Session {

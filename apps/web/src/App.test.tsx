@@ -452,15 +452,25 @@ describe('page background', () => {
     await waitFor(() => expect(document.documentElement.dataset.bg).toBe('cream'));
   });
 
-  it('follows the device when nothing is saved', async () => {
+  it('shows the light default on every device when nothing is saved', async () => {
     document.documentElement.setAttribute('data-bg', 'dark');
     signedIn(null);
     render(<App check={up} />);
     await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
-    expect(await screen.findByLabelText('Match my device')).toBeChecked();
+    await userEvent.click(await screen.findByText('Background'));
+    expect(screen.getByLabelText('White-grey')).toBeChecked();
+    expect(screen.getByLabelText('Match my device')).not.toBeChecked();
   });
 
-  it('lets the user pick one of four, saves it, and can go back to the device', async () => {
+  it('follows the device only when the person chose that', async () => {
+    signedIn('auto');
+    render(<App check={up} />);
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('auto'));
+    await userEvent.click(await screen.findByText('Background'));
+    expect(screen.getByLabelText('Match my device')).toBeChecked();
+  });
+
+  it('lets the user pick one of four, saves it, and can choose to match the device', async () => {
     const saved: unknown[] = [];
     signedIn(null, saved);
     render(<App check={up} />);
@@ -472,8 +482,8 @@ describe('page background', () => {
     expect(saved).toEqual([{ background: 'cream' }]);
     expect(localStorage.getItem('cv-background')).toBe('cream');
     await userEvent.click(screen.getByLabelText('Match my device'));
-    await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
-    expect(saved).toEqual([{ background: 'cream' }, { background: null }]);
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('auto'));
+    expect(saved).toEqual([{ background: 'cream' }, { background: 'auto' }]);
   });
 });
 

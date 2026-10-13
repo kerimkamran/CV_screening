@@ -6,7 +6,7 @@ import {
   BACKGROUND_LABEL,
   BACKGROUND_SWATCH,
   BACKGROUNDS,
-  type Background,
+  type BackgroundChoice,
 } from './theme';
 
 /** Language switch (spec 13). Saved per person when signed in; kept in the browser either way. */
@@ -41,13 +41,13 @@ export function Appearance({
   value,
   onChange,
 }: {
-  value: Background | null;
-  onChange: (b: Background | null) => void;
+  value: BackgroundChoice | null;
+  onChange: (b: BackgroundChoice | null) => void;
 }) {
   const t = useT();
   const [failed, setFailed] = useState(false);
 
-  async function choose(next: Background | null) {
+  async function choose(next: BackgroundChoice) {
     onChange(next);
     applyBackground(next);
     try {
@@ -70,8 +70,8 @@ export function Appearance({
             <input
               type="radio"
               name="background"
-              checked={value === null}
-              onChange={() => void choose(null)}
+              checked={value === 'auto'}
+              onChange={() => void choose('auto')}
             />
             <span
               aria-hidden="true"
@@ -88,7 +88,7 @@ export function Appearance({
               <input
                 type="radio"
                 name="background"
-                checked={value === b}
+                checked={value === b || (value === null && b === 'grey')}
                 onChange={() => void choose(b)}
               />
               <span

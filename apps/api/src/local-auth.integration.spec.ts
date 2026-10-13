@@ -330,6 +330,8 @@ describeDb('Local accounts', () => {
     expect((await get('/me', adminToken)).json().background).toBe('dark');
     const rows = await db.owner.query('SELECT user_id FROM user_preference');
     expect(rows.rowCount).toBe(1); // one row, keyed by the signed-in user
+    expect((await put(adminToken, { background: 'auto' })).statusCode).toBe(200);
+    expect((await get('/me', adminToken)).json().background).toBe('auto');
     expect((await put(adminToken, { background: 'pink' })).statusCode).toBe(400);
     expect((await put(adminToken, {})).statusCode).toBe(400);
     expect((await put(adminToken, { background: null })).statusCode).toBe(200);

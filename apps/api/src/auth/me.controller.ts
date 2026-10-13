@@ -5,8 +5,8 @@ import { DbService } from '../db/db.service';
 import { AnyAuthenticated, CurrentPrincipal } from './decorators';
 import type { Principal } from './principal';
 
-/** Page backgrounds (design spec 4.2). `null` means "match my device". */
-export const BACKGROUNDS = ['white', 'grey', 'cream', 'dark'] as const;
+/** Page backgrounds (design spec 4.2). `null` is the light default; 'auto' follows the device. */
+export const BACKGROUNDS = ['white', 'grey', 'cream', 'dark', 'auto'] as const;
 export type Background = (typeof BACKGROUNDS)[number];
 /** Interface languages (design spec 13). `null` means "follow the browser". */
 export const LANGUAGES = ['en', 'az'] as const;
@@ -37,8 +37,7 @@ export class MeController {
   }
 
   /**
-   * Stores the person's display choices. `background: null` clears it so the page follows the
-   * device; `focusOnSkills` is the recruiter's own switch (design spec 6.2.6). Send either or both.
+   * Stores the person's display choices. `background: null` clears it (the light default); `focusOnSkills` is the recruiter's own switch (design spec 6.2.6). Send either or both.
    */
   @AnyAuthenticated()
   @Put('me/preferences')

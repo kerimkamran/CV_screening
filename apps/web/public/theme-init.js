@@ -4,7 +4,8 @@
 (function () {
   try {
     const v = localStorage.getItem('cv-background');
-    if (/^(white|grey|cream|dark)$/.test(v)) document.documentElement.setAttribute('data-bg', v);
+    if (/^(white|grey|cream|dark|auto)$/.test(v))
+      document.documentElement.setAttribute('data-bg', v);
   } catch {
     /* storage blocked: the page follows the device */
   }

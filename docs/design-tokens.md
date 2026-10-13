@@ -43,3 +43,7 @@ From a review of the real screens (sign-in, vacancies, a vacancy, candidates, ph
 - **Vacancy list.** "38 of 40" with a thin progress bar (the words carry the meaning), decisions as three small coloured pills with words, "12 out of date · Re-analyze" is a link, the list refreshes itself every 5 seconds while a scan runs and when the tab returns (no Refresh button).
 - **Sign-in and chrome.** The brand is shown once (header), a Show/Hide button for the password, the footer is centred under the card, "Service unavailable" is the only service status shown (nothing while healthy), the Vacancies icon is a briefcase, not a menu. Search boxes in lists keep their intended width.
 - Not changed after checking: the score vocabulary was already one set (Strong, Good, Partial, Limited) in filters, pills and the report.
+
+## Default background (13 October 2026, later)
+
+Recruiters on dark-mode computers saw the dark theme because nothing chosen meant "follow the device". Now nothing chosen is the light default, White-grey, on every device (signed in or out). "Match my device" is an explicit choice (`data-bg='auto'`, saved as `auto`, migration 0035); Dark is chosen from the picker. Existing saved choices are kept.

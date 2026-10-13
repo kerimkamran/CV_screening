@@ -138,7 +138,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-bg]) {
+  :root[data-bg='auto'] {
     --c-star: #f5c461;
     --c-bg: #0a2140;
     --c-card: #0f2d55;
