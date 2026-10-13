@@ -341,4 +341,8 @@ export const AZ_POOL: Record<string, string> = {
   'Hide password': 'Parolu gizlədin',
   Show: 'Göstər',
   Hide: 'Gizlət',
+
+  // Role card (Oct 2026)
+  'No skills could be read from this text. Add the skills yourself below, or write a fuller description of the role.':
+    'Bu mətndən bacarıq oxunmadı. Bacarıqları aşağıda özünüz əlavə edin və ya vəzifə haqqında daha ətraflı yazın.',
 };

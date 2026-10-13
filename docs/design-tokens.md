@@ -47,3 +47,9 @@ From a review of the real screens (sign-in, vacancies, a vacancy, candidates, ph
 ## Default background (13 October 2026, later)
 
 Recruiters on dark-mode computers saw the dark theme because nothing chosen meant "follow the device". Now nothing chosen is the light default, White-grey, on every device (signed in or out). "Match my device" is an explicit choice (`data-bg='auto'`, saved as `auto`, migration 0035); Dark is chosen from the picker. Existing saved choices are kept.
+
+## Role card: "Save the role first" that never clears (UAT, 13 October 2026)
+
+A recruiter saved a vacancy but the page kept saying "Unsaved changes" and "Save the role first.", and Save answered "Nothing to save", so the scan could not start. Cause: the page decided "unsaved" by comparing every field exactly, while Save compares trimmed text; a trailing space or blank line in the requirements (or title, department, notes) is trimmed by the server, so the two tests disagreed for ever. Now "unsaved" means "Save would send something" (the same test), the saved text replaces what was typed after a save, and the page opens with the vacancy as saved.
+
+Second dead end found in the same screen: when no skills were read (a very short text such as "English, Russian"), the "Add another skill" field was hidden although the page said "or add your own". The field is now always there, and a reading that finds nothing says so.

@@ -86,8 +86,6 @@ const fromView = (v: VacancyView): Form => ({
 
 const reqKey = (rs: VacancyRequirement[]) =>
   JSON.stringify(rs.map((r) => [r.text, r.classification, r.weight]));
-const same = (a: Form, b: Form) =>
-  JSON.stringify({ ...a, reqs: reqKey(a.reqs) }) === JSON.stringify({ ...b, reqs: reqKey(b.reqs) });
 
 const plural = (n: number, one: string, many: string) => tr(n === 1 ? one : many, { n });
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
@@ -142,8 +140,38 @@ export function RoleCard({
   const manual = useRef(new Set<string>());
   const wordRef = useRef<HTMLInputElement>(null);
 
+  /** What would be sent on Save, compared with what is saved. Empty means there is nothing to save. */
+  const payload = (f: Form, base: Form) => {
+    const p: Record<string, unknown> = {};
+    if (f.title.trim() !== base.title) p['title'] = f.title.trim();
+    if (f.status !== base.status) p['status'] = f.status;
+    if (f.experience !== base.experience) p['experienceRange'] = f.experience;
+    if (f.text.trim() !== base.text.trim()) p['description'] = f.text.trim();
+    if (f.department !== base.department) p['department'] = f.department.trim() || null;
+    if (f.location !== base.location) p['location'] = f.location.trim() || null;
+    if (f.openings !== base.openings) p['openings'] = f.openings ? Number(f.openings) : null;
+    if (f.closingDate !== base.closingDate) p['closingDate'] = f.closingDate || null;
+    if (f.hiringManager !== base.hiringManager) p['hiringManager'] = f.hiringManager.trim() || null;
+    if (f.notes !== base.notes) p['notes'] = f.notes.trim() || null;
+    if (f.sourceType !== base.sourceType) p['sourceType'] = f.sourceType;
+    if (f.sourceFileName !== base.sourceFileName) p['sourceFileName'] = f.sourceFileName || null;
+    if (f.linkUrl !== base.linkUrl) p['linkUrl'] = f.linkUrl || null;
+    if (f.linkHash) p['linkHash'] = f.linkHash;
+    if (f.reqs.length && reqKey(f.reqs) !== reqKey(base.reqs))
+      p['requirements'] = f.reqs.map((r) => ({
+        text: r.text,
+        classification: r.classification,
+        weight: r.weight,
+        rule: r.rule ?? null,
+        confidence: r.confidence ?? null,
+      }));
+    return p;
+  };
   const locked = vacancy ? !vacancy.canEdit || vacancy.archived : false;
-  const dirty = !same(form, saved);
+  // Unsaved means "Save would send something", the same test Save uses, so the two never disagree
+  // (a trailing space or blank line in a field is trimmed on save and is not a change).
+  const hasChanges = (f: Form, base: Form) => Object.keys(payload(f, base)).length > 0;
+  const dirty = hasChanges(form, saved);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   // A newer version of the vacancy arrived (reload, or another tab): show it, unless there are edits.
@@ -152,7 +180,7 @@ export function RoleCard({
     const next = fromView(vacancy);
     setVersion(vacancy.version);
     setSaved(next);
-    setForm((cur) => (same(cur, saved) ? next : cur));
+    setForm((cur) => (hasChanges(cur, saved) ? cur : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancy?.version, vacancy?.requirementsVersion]);
 
@@ -191,7 +219,7 @@ export function RoleCard({
       const raw = localStorage.getItem(draftKey(id));
       if (!raw) return;
       const d = JSON.parse(raw) as { form: Form; at: string };
-      if (d?.form && !same(d.form, saved)) setDraftFrom(d);
+      if (d?.form && hasChanges(d.form, saved)) setDraftFrom(d);
     } catch {
       /* a draft is a convenience only */
     }
@@ -243,32 +271,6 @@ export function RoleCard({
   );
 
   // ---------------------------------------------------------------- save
-  const payload = (f: Form, base: Form) => {
-    const p: Record<string, unknown> = {};
-    if (f.title.trim() !== base.title) p['title'] = f.title.trim();
-    if (f.status !== base.status) p['status'] = f.status;
-    if (f.experience !== base.experience) p['experienceRange'] = f.experience;
-    if (f.text.trim() !== base.text.trim()) p['description'] = f.text.trim();
-    if (f.department !== base.department) p['department'] = f.department.trim() || null;
-    if (f.location !== base.location) p['location'] = f.location.trim() || null;
-    if (f.openings !== base.openings) p['openings'] = f.openings ? Number(f.openings) : null;
-    if (f.closingDate !== base.closingDate) p['closingDate'] = f.closingDate || null;
-    if (f.hiringManager !== base.hiringManager) p['hiringManager'] = f.hiringManager.trim() || null;
-    if (f.notes !== base.notes) p['notes'] = f.notes.trim() || null;
-    if (f.sourceType !== base.sourceType) p['sourceType'] = f.sourceType;
-    if (f.sourceFileName !== base.sourceFileName) p['sourceFileName'] = f.sourceFileName || null;
-    if (f.linkUrl !== base.linkUrl) p['linkUrl'] = f.linkUrl || null;
-    if (f.linkHash) p['linkHash'] = f.linkHash;
-    if (f.reqs.length && reqKey(f.reqs) !== reqKey(base.reqs))
-      p['requirements'] = f.reqs.map((r) => ({
-        text: r.text,
-        classification: r.classification,
-        weight: r.weight,
-        rule: r.rule ?? null,
-        confidence: r.confidence ?? null,
-      }));
-    return p;
-  };
 
   /** After a save the assistant may have suggestions about the wording; they never block or change anything. */
   async function loadCoach(vid: string) {
@@ -331,7 +333,20 @@ export function RoleCard({
       v = await api.patch<VacancyView>(`/vacancies/${vacancy.id}`, { expectedVersion: ver, ...p });
       const next = fromView(v);
       setSaved(next);
-      setForm((f) => ({ ...f, linkHash: '', reqs: f.reqs.length ? f.reqs : next.reqs }));
+      setForm((f) => {
+        // The server keeps the trimmed text; show what was kept so the page does not look unsaved.
+        const g = { ...f, linkHash: '', reqs: f.reqs.length ? f.reqs : next.reqs };
+        for (const k of [
+          'title',
+          'text',
+          'department',
+          'location',
+          'hiringManager',
+          'notes',
+        ] as const)
+          if (f[k].trim() === next[k].trim()) g[k] = next[k];
+        return g;
+      });
       setVersion(v.version);
       clearDraft();
       setInfo(t('Saved.'));
@@ -456,6 +471,12 @@ export function RoleCard({
       setVersion(fresh.version);
       setForm({ ...next, reqs: [...found, ...kept] });
       setReadText(form.text);
+      if (found.length === 0 && kept.length === 0)
+        setInfo(
+          t(
+            'No skills could be read from this text. Add the skills yourself below, or write a fuller description of the role.',
+          ),
+        );
       onSaved(fresh);
     } catch (e) {
       setError(errMsg(e));
@@ -893,26 +914,6 @@ export function RoleCard({
                 );
               })}
             </ul>
-            {!locked && (
-              <div className="flex gap-2">
-                <input
-                  className={input}
-                  aria-label={t('Add another skill')}
-                  placeholder={t('Add another skill')}
-                  value={newSkill}
-                  onChange={(e) => setNewSkill(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addSkill();
-                    }
-                  }}
-                />
-                <button type="button" className={btnSecondary} onClick={addSkill}>
-                  {t('Add')}
-                </button>
-              </div>
-            )}
             <p className="text-sm text-ink-3">
               {t(
                 'Press a skill to switch between must-have (●) and nice-to-have (○). A missing must-have lowers the match. It never hides anyone.',
@@ -937,9 +938,31 @@ export function RoleCard({
           </div>
         )}
         {form.reqs.length === 0 && vacancy && (
-          <p className="text-sm text-ink-3">
-            {t('No skills yet. Read the requirements or add your own.')}
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-ink-3">
+              {t('No skills yet. Read the requirements or add your own.')}
+            </p>
+            {!locked && (
+              <div className="flex gap-2">
+                <input
+                  className={input}
+                  aria-label={t('Add another skill')}
+                  placeholder={t('Add another skill')}
+                  value={newSkill}
+                  onChange={(e) => setNewSkill(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addSkill();
+                    }
+                  }}
+                />
+                <button type="button" className={btnSecondary} onClick={addSkill}>
+                  {t('Add')}
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         <details className="rounded-md border border-line p-3 text-sm">

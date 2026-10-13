@@ -351,6 +351,47 @@ describe('Role card', () => {
     expect(await screen.findByText('Save the role first.')).toBeInTheDocument();
   });
 
+  it('does not call a role unsaved because of a trailing space or blank line, so the scan can start', async () => {
+    open(() => undefined);
+    render(<App check={up} />);
+    const text = await screen.findByRole('textbox', { name: /Requirements/ });
+    await userEvent.type(text, '{Enter}  ');
+    const title = screen.getByLabelText('Position');
+    await userEvent.type(title, '  ');
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    expect(screen.queryByText('Save the role first.')).toBeNull();
+  });
+
+  it('shows the saved text as saved after Save, even when it was typed with extra blank space', async () => {
+    const calls = open((url, init) =>
+      init?.method === 'PATCH'
+        ? { body: view({ version: 4, description: 'We need BGP, OSPF and Kubernetes.' }) }
+        : undefined,
+    );
+    render(<App check={up} />);
+    const text = await screen.findByRole('textbox', { name: /Requirements/ });
+    await userEvent.clear(text);
+    await userEvent.type(text, 'We need BGP, OSPF and Kubernetes.{Enter}{Enter}  ');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true));
+    expect(await screen.findByText('Saved.')).toBeInTheDocument();
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('lets a person add a skill by hand when none were read', async () => {
+    open((url, init) =>
+      url.endsWith(`/vacancies/${VID}`) && isGet(init)
+        ? { body: view({ requirements: [] }) }
+        : undefined,
+    );
+    render(<App check={up} />);
+    expect(await screen.findByText(/No skills yet/)).toBeInTheDocument();
+    const add = screen.getByLabelText('Add another skill');
+    await userEvent.type(add, 'English{Enter}');
+    expect(await screen.findByRole('button', { name: /English, must-have/ })).toBeInTheDocument();
+  });
+
   it('shows a read-only role to someone who is not the owner', async () => {
     open((url, init) =>
       url.endsWith(`/vacancies/${VID}`) && isGet(init)
