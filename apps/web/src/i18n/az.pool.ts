@@ -314,4 +314,31 @@ export const AZ_POOL: Record<string, string> = {
   'Copy requirements': 'Tələbləri köçür',
   'Review the requirements of {title} to copy':
     '{title} vakansiyasının tələblərinə baxın və köçürün',
+
+  // Candidate preview panel and list keys (Oct 2026)
+  'Preview of {name}': '{name} haqqında qısa baxış',
+  'Close preview': 'Qısa baxışı bağlayın',
+  'No must-haves in this vacancy.': 'Bu vakansiyada mütləq tələb yoxdur.',
+  'Keys: S shortlist, M maybe, N not now. Press again to clear it.':
+    'Düymələr: S qısa siyahı, M bəlkə, N indi yox. Qərarı silmək üçün yenidən basın.',
+  'Open the full report': 'Tam hesabata keçin',
+  'Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the report.':
+    'Düymələr: J və K keçid, S qısa siyahı, M bəlkə, N indi yox, Enter hesabatı açır.',
+
+  // Vacancy page summary strip (Oct 2026)
+  Resumes: 'Rezyumelər',
+  'Need a look': 'Baxış tələb edir',
+  'Could not be read': 'Oxunmadı',
+  'Reading now': 'İndi oxunur',
+  'Hide role and resumes': 'Vakansiya və rezyumeləri gizlədin',
+  'Role and resumes': 'Vakansiya və rezyumelər',
+  '{n} results were scored against earlier requirements.':
+    '{n} nəticə əvvəlki tələblərə görə qiymətləndirilib.',
+  'Review and re-analyze': 'Baxın və yenidən təhlil edin',
+
+  // Sign-in (Oct 2026)
+  'Show password': 'Parolu göstərin',
+  'Hide password': 'Parolu gizlədin',
+  Show: 'Göstər',
+  Hide: 'Gizlət',
 };

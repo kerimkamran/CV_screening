@@ -35,10 +35,25 @@ beforeEach(() => {
 });
 
 describe('sign-in and gates', () => {
-  it('shows the sign-in form when signed out, with the AI notice and service status in the footer', async () => {
+  it('names the service only when it is down', async () => {
+    render(<App check={() => Promise.resolve({ state: 'down' })} />);
+    expect(await screen.findByText('Service unavailable')).toBeInTheDocument();
+  });
+
+  it('can show and hide the typed password', async () => {
+    render(<App check={up} />);
+    const field = await screen.findByLabelText('Password');
+    expect(field).toHaveAttribute('type', 'password');
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }));
+    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'text');
+    await userEvent.click(screen.getByRole('button', { name: 'Hide password' }));
+    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password');
+  });
+
+  it('shows the sign-in form when signed out, with the AI notice in the footer and no status line while the service is fine', async () => {
     render(<App check={up} />);
     expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(await screen.findByText('Service ready')).toBeInTheDocument();
+    expect(screen.queryByText('Service ready')).toBeNull();
     expect(
       screen.getByText(/Every decision about a candidate is made by a person/),
     ).toBeInTheDocument();
@@ -88,7 +103,14 @@ describe('sign-in and gates', () => {
       '#/vacancies/V',
     );
     expect(screen.getByRole('heading', { name: 'Vacancies' })).toBeInTheDocument();
-    expect(screen.getByText('1 out of date')).toBeInTheDocument();
+    // Out of date carries its own action; progress and decisions read in words.
+    expect(screen.getByRole('link', { name: '1 out of date · Re-analyze' })).toHaveAttribute(
+      'href',
+      '#/vacancies/V',
+    );
+    expect(screen.getByText('2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('1 Shortlist')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
     expect(screen.getByRole('link', { name: 'New vacancy' })).toHaveAttribute(
       'href',
       '#/vacancies/new',

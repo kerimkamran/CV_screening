@@ -30,7 +30,7 @@ const inSection = (route: string, href: string) => route === href || route.start
 function Icon({ name }: { name: 'vacancies' | 'candidates' | 'ask' }) {
   const d =
     name === 'vacancies'
-      ? 'M4 7h16M4 12h16M4 17h10'
+      ? 'M4 8h16v11H4V8Zm5 0V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16'
       : name === 'candidates'
         ? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6'
         : 'M5 5h14v10H9l-4 4V5Z';

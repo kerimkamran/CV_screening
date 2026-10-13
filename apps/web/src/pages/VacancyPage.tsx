@@ -98,6 +98,8 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // The role and resume cards fold away once there are results; null means "decide by itself".
+  const [setupChoice, setSetupChoice] = useState<boolean | null>(null);
 
   const reload = useCallback(async () => {
     if (creating) return;
@@ -185,6 +187,17 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   if (!v) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
 
   const last = runs?.[0];
+  const c = v.counts;
+  const hasResults = c.analyzed + c.running > 0;
+  const setupOpen = setupChoice ?? (!hasResults || dirty);
+  const showSetup = (focus = false) => {
+    setSetupChoice(true);
+    if (focus)
+      window.setTimeout(
+        () => document.getElementById('vacancy-setup')?.scrollIntoView?.({ behavior: 'smooth' }),
+        0,
+      );
+  };
   return (
     <div className="space-y-5">
       <div>
@@ -281,7 +294,47 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         </section>
       )}
 
-      <div className="grid items-start gap-4 xl:grid-cols-2">
+      {hasResults && (
+        <section
+          aria-label={t('Summary')}
+          className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-line bg-card px-4 py-3 text-sm"
+        >
+          {(
+            [
+              [c.documents, t('Resumes')],
+              [c.analyzed, t('Analyzed')],
+              [c.strong, t('Strong')],
+              ...(c.needsLook > 0 ? [[c.needsLook, t('Need a look')]] : []),
+              ...(c.failed > 0 ? [[c.failed, t('Could not be read')]] : []),
+              ...(c.running > 0 ? [[c.running, t('Reading now')]] : []),
+            ] as [number, string][]
+          ).map(([n, label]) => (
+            <span key={label} className="flex items-baseline gap-1.5">
+              <span className="text-lg font-bold tabular-nums">{n}</span>
+              <span className="text-ink-2">{label}</span>
+            </span>
+          ))}
+          <button
+            type="button"
+            className={`${btnSecondary} ml-auto`}
+            aria-expanded={setupOpen}
+            aria-controls="vacancy-setup"
+            onClick={() => setSetupChoice(!setupOpen)}
+          >
+            {setupOpen ? t('Hide role and resumes') : t('Role and resumes')}
+          </button>
+        </section>
+      )}
+      {hasResults && c.outOfDate > 0 && (
+        <Notice kind="warn">
+          {t('{n} results were scored against earlier requirements.', { n: c.outOfDate })}{' '}
+          <button type="button" className="font-semibold underline" onClick={() => showSetup(true)}>
+            {t('Review and re-analyze')}
+          </button>
+        </Notice>
+      )}
+
+      <div id="vacancy-setup" hidden={!setupOpen} className="grid items-start gap-4 xl:grid-cols-2">
         <RoleCard vacancy={v} onSaved={setV} onReload={reload} onDirty={setDirty} />
         <ResumesCard
           vacancy={v}

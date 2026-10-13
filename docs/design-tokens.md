@@ -33,3 +33,13 @@ Rules that the pool screens follow:
 ## Backgrounds, October 2026 (second change)
 
 The picker offers White, White-grey, Cream-white and Dark. Cream-white (`data-bg='cream'`) replaces Sky: warm page `#f7f1e3`, near-white card `#fffdf8`, warm line and edge, navy ink and navy tags, so the Azerconnect navy stays the brand on every background. A person who had chosen Sky is moved to White-grey by migration 0034. The default (nothing chosen) still follows the device: White-grey in light mode, Dark in dark mode. The browser theme colour and the favicon use the navy `#133e72`.
+
+## UI/UX changes of 13 October 2026
+
+From a review of the real screens (sign-in, vacancies, a vacancy, candidates, phone width):
+
+- **Vacancy page leads with results.** Once a vacancy has analyzed or running resumes, a summary strip (resumes, analyzed, strong, need a look, could not be read, reading now) and the ranked Candidates tab come first. The Role card and the Resumes card fold into one panel behind "Role and resumes" (kept mounted, so typing is never lost; it opens by itself while there is unsaved typing or nothing is analyzed yet). A warning with "Review and re-analyze" appears when results were scored against earlier requirements.
+- **Candidate preview.** On wide screens a click on a row opens a side panel: score and word, must-haves with their state in words, the decision as three buttons (Shortlist, Maybe, Not now; pressing the same one again clears it) and "Open the full report". Keys: J and K move, S, M and N decide, Enter opens the report, Esc closes the panel; keys do nothing while a field, button or link has the focus. On phones a click still opens the report, and the decision stays a drop-down. Every decision keeps the 10-second Undo, the version check and the consistency mirror.
+- **Vacancy list.** "38 of 40" with a thin progress bar (the words carry the meaning), decisions as three small coloured pills with words, "12 out of date · Re-analyze" is a link, the list refreshes itself every 5 seconds while a scan runs and when the tab returns (no Refresh button).
+- **Sign-in and chrome.** The brand is shown once (header), a Show/Hide button for the password, the footer is centred under the card, "Service unavailable" is the only service status shown (nothing while healthy), the Vacancies icon is a briefcase, not a menu. Search boxes in lists keep their intended width.
+- Not changed after checking: the score vocabulary was already one set (Strong, Good, Partial, Limited) in filters, pills and the report.

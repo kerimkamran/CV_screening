@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, session, type Session } from '../api';
-import { Brand } from '../brand';
 import { useT } from '../i18n';
 import { btnPrimary, Card, errMsg, Field, input, Notice } from '../ui';
 
@@ -12,6 +11,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   const [code, setCode] = useState('');
   const [needCode, setNeedCode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -36,10 +36,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <div className="mx-auto mt-16 max-w-sm">
-      <div className="mb-6 flex justify-center">
-        <Brand size={40} />
-      </div>
+    <div className="mx-auto mt-10 max-w-sm">
       <Card title={t('Sign in')}>
         <form onSubmit={submit} className="space-y-3">
           <Field label={t('Email')}>
@@ -52,16 +49,27 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
-          <Field label={t('Password')}>
-            <input
-              className={input}
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
+          <div className="relative">
+            <Field label={t('Password')}>
+              <input
+                className={`${input} pr-16`}
+                type={showPw ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <button
+              type="button"
+              aria-pressed={showPw}
+              aria-label={showPw ? t('Hide password') : t('Show password')}
+              onClick={() => setShowPw((x) => !x)}
+              className="absolute right-1 bottom-1 h-8 rounded-full px-3 text-xs font-semibold text-link hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              {showPw ? t('Hide') : t('Show')}
+            </button>
+          </div>
           {needCode && (
             <Field
               label={t('Code from your authenticator app')}

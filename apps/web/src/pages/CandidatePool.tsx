@@ -18,6 +18,7 @@ import {
   mirrorNote,
 } from '../pool';
 import { btnPrimary, btnSecondary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
+import { CandidatePreview, DECISION_KEY, useWide } from './CandidatePreview';
 import { MarkSelect } from './MarkSelect';
 
 /**
@@ -127,6 +128,9 @@ export function CandidatePool({
   const [copied, setCopied] = useState(false);
   const { toast, show, dismiss } = useUndoToast();
   const restored = useRef(false);
+  const wide = useWide();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // The state is kept for this tab, so coming back from a report lands where the person left.
   useEffect(() => {
@@ -333,6 +337,46 @@ export function CandidatePool({
   };
 
   const shown = rows;
+  const activeRow = shown.find((r) => r.matchId === activeId) ?? null;
+  const previewRow = wide && previewOpen ? activeRow : null;
+
+  // Keys (J and K move, S, M and N decide, Esc closes the panel, Enter opens the report). They do
+  // nothing while a field has the focus, so typing a name never marks anyone.
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  const onKey = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || summary) return;
+    const el = e.target as HTMLElement | null;
+    if (el && /^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(el.tagName)) return;
+    if (el?.isContentEditable) return;
+    const k = e.key.toLowerCase();
+    const i = shown.findIndex((r) => r.matchId === activeId);
+    if (k === 'j' || k === 'k') {
+      if (!shown.length) return;
+      const next =
+        shown[Math.max(0, Math.min(shown.length - 1, i < 0 ? 0 : i + (k === 'j' ? 1 : -1)))]!;
+      setActiveId(next.matchId);
+      if (wide) setPreviewOpen(true);
+      document.getElementById(`cand-${next.matchId}`)?.scrollIntoView?.({ block: 'nearest' });
+      e.preventDefault();
+    } else if (k === 'escape') {
+      setPreviewOpen(false);
+    } else if (k === 'enter' && activeRow) {
+      e.preventDefault();
+      leave(activeRow);
+    } else if (k in DECISION_KEY && activeRow && canMark && !activeRow.vacancyArchived) {
+      const to = DECISION_KEY[k]!;
+      e.preventDefault();
+      void mark(activeRow, activeRow.decision === to ? 'new' : to);
+    }
+  };
+  useEffect(() => {
+    keysRef.current = onKey;
+  });
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keysRef.current(e);
+    window.addEventListener('keydown', on);
+    return () => window.removeEventListener('keydown', on);
+  }, []);
   const allSelected =
     shown.length > 0 && shown.slice(0, BULK_MAX).every((r) => selected.has(r.matchId));
   const filtered =
@@ -361,7 +405,7 @@ export function CandidatePool({
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
-            className={`${input} w-64`}
+            className={`${input} w-64!`}
             aria-label={t('Search candidates')}
             placeholder={t('Search by name, skill or vacancy')}
             value={s.q}
@@ -369,7 +413,7 @@ export function CandidatePool({
           />
           {!vacancyId && (
             <select
-              className={`${input} w-56`}
+              className={`${input} w-56!`}
               aria-label={t('Vacancy')}
               value={s.vacancy}
               onChange={(e) => patch({ vacancy: e.target.value })}
@@ -616,141 +660,170 @@ export function CandidatePool({
         </div>
       )}
 
+      {shown.length > 0 && canMark && (
+        <p className="hidden text-xs text-ink-3 lg:block">
+          {t('Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the report.')}
+        </p>
+      )}
+
       {shown.length > 0 && (
-        <div className="rounded-2xl border border-line bg-card">
-          <div
-            role="row"
-            className="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
-          >
-            <span>
-              {canMark && (
-                <input
-                  type="checkbox"
-                  aria-label={t('Select all shown')}
-                  checked={allSelected}
-                  onChange={(e) =>
-                    setSelected(
-                      e.target.checked
-                        ? new Set(shown.slice(0, BULK_MAX).map((r) => r.matchId))
-                        : new Set(),
-                    )
+        <div
+          className={
+            previewRow ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_23rem]' : undefined
+          }
+        >
+          <div className="min-w-0 rounded-2xl border border-line bg-card">
+            <div
+              role="row"
+              className="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
+            >
+              <span>
+                {canMark && (
+                  <input
+                    type="checkbox"
+                    aria-label={t('Select all shown')}
+                    checked={allSelected}
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked
+                          ? new Set(shown.slice(0, BULK_MAX).map((r) => r.matchId))
+                          : new Set(),
+                      )
+                    }
+                  />
+                )}
+              </span>
+              {(
+                [
+                  ['candidate', 'Candidate'],
+                  ['vacancy', 'Vacancy'],
+                  ['match', 'Match'],
+                ] as [SortKey, string][]
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => sortBy(k)}
+                  aria-sort={
+                    s.sort === k ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
                   }
-                />
-              )}
-            </span>
-            {(
-              [
-                ['candidate', 'Candidate'],
-                ['vacancy', 'Vacancy'],
-                ['match', 'Match'],
-              ] as [SortKey, string][]
-            ).map(([k, label]) => (
+                  className="text-left uppercase hover:text-ink"
+                >
+                  {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                </button>
+              ))}
+              <span>{t('Must-haves')}</span>
               <button
-                key={k}
                 type="button"
-                onClick={() => sortBy(k)}
-                aria-sort={s.sort === k ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'}
+                onClick={() => sortBy('decision')}
+                aria-sort={
+                  s.sort === 'decision' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
+                }
                 className="text-left uppercase hover:text-ink"
               >
-                {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
               </button>
-            ))}
-            <span>{t('Must-haves')}</span>
-            <button
-              type="button"
-              onClick={() => sortBy('decision')}
-              aria-sort={
-                s.sort === 'decision' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
-              }
-              className="text-left uppercase hover:text-ink"
-            >
-              {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-            </button>
-            <button
-              type="button"
-              onClick={() => sortBy('updated')}
-              aria-sort={
-                s.sort === 'updated' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
-              }
-              className="text-left uppercase hover:text-ink"
-            >
-              {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-            </button>
-          </div>
-          <ul className="divide-y divide-line" aria-label={t('Candidates')}>
-            {shown.map((r) => (
-              <li
-                key={r.matchId}
-                className="grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]"
-                onClick={() => leave(r)}
+              <button
+                type="button"
+                onClick={() => sortBy('updated')}
+                aria-sort={
+                  s.sort === 'updated' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
+                }
+                className="text-left uppercase hover:text-ink"
               >
-                <span onClick={(e) => e.stopPropagation()}>
-                  {canMark && (
-                    <input
-                      type="checkbox"
-                      aria-label={t('Select {name}', { name: r.label })}
-                      checked={selected.has(r.matchId)}
-                      onChange={(e) =>
-                        setSelected((cur) => {
-                          const n = new Set(cur);
-                          if (e.target.checked) n.add(r.matchId);
-                          else n.delete(r.matchId);
-                          return n;
-                        })
-                      }
-                    />
-                  )}
-                </span>
-                <span className="min-w-0">
-                  <a
-                    href={`#/candidates/${r.matchId}`}
-                    className="block truncate font-medium text-link hover:underline"
-                    onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      leave(r);
-                    }}
-                  >
-                    {r.label}
-                  </a>
-                </span>
-                <span className="col-span-3 min-w-0 truncate text-ink-2 lg:col-span-1">
-                  {r.vacancyTitle}
-                  {r.vacancyStatus === 'closed' && (
-                    <span className="text-ink-3"> · {t('Closed')}</span>
-                  )}
-                  {r.vacancyArchived && <span className="text-ink-3"> · {t('Archived')}</span>}
-                </span>
-                <span className="col-span-3 flex flex-wrap items-center gap-1.5 lg:col-span-1">
-                  <span className="font-medium tabular-nums">{Math.round(r.score)}%</span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
-                  >
-                    {t(BAND_NAME[r.band])}
+                {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
+              </button>
+            </div>
+            <ul className="divide-y divide-line" aria-label={t('Candidates')}>
+              {shown.map((r) => (
+                <li
+                  key={r.matchId}
+                  id={`cand-${r.matchId}`}
+                  data-active={r.matchId === activeId ? 'true' : undefined}
+                  className={`${r.matchId === activeId ? 'bg-sel ' : ''}grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
+                  onClick={() => {
+                    setActiveId(r.matchId);
+                    if (wide) setPreviewOpen(true);
+                    else leave(r);
+                  }}
+                >
+                  <span onClick={(e) => e.stopPropagation()}>
+                    {canMark && (
+                      <input
+                        type="checkbox"
+                        aria-label={t('Select {name}', { name: r.label })}
+                        checked={selected.has(r.matchId)}
+                        onChange={(e) =>
+                          setSelected((cur) => {
+                            const n = new Set(cur);
+                            if (e.target.checked) n.add(r.matchId);
+                            else n.delete(r.matchId);
+                            return n;
+                          })
+                        }
+                      />
+                    )}
                   </span>
-                  {r.outOfDate && (
-                    <span className="rounded border border-warn-line bg-warn px-1.5 py-0.5 text-xs text-warn-ink">
-                      {r.reanalyzing ? t('Re-analyzing') : t('Out of date')}
+                  <span className="min-w-0">
+                    <a
+                      href={`#/candidates/${r.matchId}`}
+                      className="block truncate font-medium text-link hover:underline"
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        leave(r);
+                      }}
+                    >
+                      {r.label}
+                    </a>
+                  </span>
+                  <span className="col-span-3 min-w-0 truncate text-ink-2 lg:col-span-1">
+                    {r.vacancyTitle}
+                    {r.vacancyStatus === 'closed' && (
+                      <span className="text-ink-3"> · {t('Closed')}</span>
+                    )}
+                    {r.vacancyArchived && <span className="text-ink-3"> · {t('Archived')}</span>}
+                  </span>
+                  <span className="col-span-3 flex flex-wrap items-center gap-1.5 lg:col-span-1">
+                    <span className="font-medium tabular-nums">{Math.round(r.score)}%</span>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
+                    >
+                      {t(BAND_NAME[r.band])}
                     </span>
-                  )}
-                </span>
-                <span className="text-ink-2">
-                  <span className="text-ink-3 lg:hidden">{t('Must-haves')}: </span>
-                  {t('{a} of {b}', { a: r.mustFound, b: r.mustTotal })}
-                </span>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <MarkSelect
-                    value={r.decision}
-                    label={r.label}
-                    disabled={!canMark || r.vacancyArchived}
-                    onChange={(m) => void mark(r, m)}
-                  />
-                </span>
-                <span className="text-ink-3">{ago(r.updatedAt)}</span>
-              </li>
-            ))}
-          </ul>
+                    {r.outOfDate && (
+                      <span className="rounded border border-warn-line bg-warn px-1.5 py-0.5 text-xs text-warn-ink">
+                        {r.reanalyzing ? t('Re-analyzing') : t('Out of date')}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-ink-2">
+                    <span className="text-ink-3 lg:hidden">{t('Must-haves')}: </span>
+                    {t('{a} of {b}', { a: r.mustFound, b: r.mustTotal })}
+                  </span>
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <MarkSelect
+                      value={r.decision}
+                      label={r.label}
+                      disabled={!canMark || r.vacancyArchived}
+                      onChange={(m) => void mark(r, m)}
+                    />
+                  </span>
+                  <span className="text-ink-3">{ago(r.updatedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {previewRow && (
+            <CandidatePreview
+              row={previewRow}
+              canMark={canMark}
+              onMark={(m) => void mark(previewRow, m)}
+              onOpen={() => leave(previewRow)}
+              onClose={() => setPreviewOpen(false)}
+            />
+          )}
         </div>
       )}
 

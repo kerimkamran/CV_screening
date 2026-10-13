@@ -1397,3 +1397,215 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
     expect(within(panel).getByRole('button', { name: /Show all \(1 more\)/ })).toBeInTheDocument();
   });
 });
+
+describe('Candidate preview and keys (Oct 2026)', () => {
+  const wide = () =>
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: true,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      })),
+    );
+  const preview = {
+    matchId: MID,
+    documentId: 'D1',
+    label: 'Aysel Mammadova',
+    name: 'Aysel Mammadova',
+    pseudonym: 'Candidate 01',
+    email: null,
+    filename: null,
+    vacancy: { id: VID, title: 'Network Engineer', status: 'open', archived: false },
+    score: 88,
+    band: 'strong',
+    mustFound: 1,
+    mustTotal: 2,
+    summary: 'Strong carrier-core background.',
+    analyzedAt: new Date().toISOString(),
+    outOfDate: null,
+    reanalyzing: false,
+    decision: { mark: 'new', note: null, version: 0, decidedAt: null, decidedBy: null },
+    history: [],
+    requirements: [
+      {
+        requirementId: 'R1',
+        text: 'BGP routing',
+        kind: 'must',
+        state: 'matched',
+        unclear: false,
+        notFound: false,
+        confidence: 'high',
+        rationale: null,
+        anchors: [],
+      },
+      {
+        requirementId: 'R2',
+        text: 'Kubernetes',
+        kind: 'must',
+        state: 'missing',
+        unclear: false,
+        notFound: true,
+        confidence: 'high',
+        rationale: null,
+        anchors: [],
+      },
+    ],
+  };
+  const open = () => {
+    window.location.hash = '/candidates';
+    return mockFetch(
+      base((url, init) => {
+        if (init?.method === 'PUT')
+          return {
+            body: {
+              mark: JSON.parse(String(init.body)).mark,
+              note: null,
+              version: 1,
+              previous: { mark: 'new', note: null, version: 0 },
+            },
+          };
+        if (url.endsWith(`/candidates/${MID}/report`)) return { body: preview };
+        if (url.includes(`/candidates/${MID}/resume`))
+          return {
+            body: {
+              view: 'original',
+              text: 'Aysel Mammadova',
+              truncated: false,
+              pageStarts: [0],
+              blocks: [],
+              hidden: {},
+              notice: null,
+            },
+          };
+        if (url.endsWith(`/candidates/${MID2}/report`))
+          return { body: { ...preview, matchId: MID2, label: 'Rashad Aliyev', requirements: [] } };
+        if (url.includes('/candidates?')) return { body: page([poolRow(1), poolRow(2)]) };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        return undefined;
+      }),
+    );
+  };
+
+  it('opens a side panel with the must-haves and decides with one tap', async () => {
+    wide();
+    const calls = open();
+    render(<App check={up} />);
+    await screen.findByRole('link', { name: 'Aysel Mammadova' });
+    await userEvent.click(screen.getAllByText('Network Engineer', { selector: 'span' })[0]!);
+    const panel = await screen.findByRole('complementary', { name: 'Preview of Aysel Mammadova' });
+    expect(await within(panel).findByText('BGP routing')).toBeInTheDocument();
+    expect(within(panel).getByText('Matched')).toBeInTheDocument();
+    expect(within(panel).getByText('Not found')).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole('button', { name: 'Shortlist' }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true));
+    expect(calls.find((c) => c.init?.method === 'PUT')!.body).toEqual({
+      mark: 'shortlist',
+      expectedVersion: 0,
+    });
+    expect(within(panel).getByRole('button', { name: 'Shortlist' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(panel).getByRole('button', { name: 'Open the full report' }));
+    expect(window.location.hash).toBe(`#/candidates/${MID}`);
+  });
+
+  it('moves with J and K, decides with S, closes with Escape, and ignores keys typed in a field', async () => {
+    wide();
+    const calls = open();
+    render(<App check={up} />);
+    await screen.findByRole('link', { name: 'Aysel Mammadova' });
+    await userEvent.click(screen.getByLabelText('Search candidates'));
+    await userEvent.keyboard('sj');
+    expect(calls.some((c) => c.init?.method === 'PUT')).toBe(false);
+    await userEvent.click(document.body);
+    await userEvent.keyboard('j');
+    expect(
+      await screen.findByRole('complementary', { name: 'Preview of Aysel Mammadova' }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard('j');
+    expect(
+      await screen.findByRole('complementary', { name: 'Preview of Rashad Aliyev' }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard('k');
+    await userEvent.keyboard('m');
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true));
+    expect(calls.find((c) => c.init?.method === 'PUT')!.url).toContain(`/candidates/${MID}/`);
+    expect(calls.find((c) => c.init?.method === 'PUT')!.body).toMatchObject({ mark: 'maybe' });
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: /Preview of/ })).toBeNull();
+  });
+
+  it('keeps opening the report on a click when the screen is narrow', async () => {
+    open();
+    render(<App check={up} />);
+    await screen.findByRole('link', { name: 'Aysel Mammadova' });
+    await userEvent.click(screen.getAllByText('Network Engineer', { selector: 'span' })[0]!);
+    expect(window.location.hash).toBe(`#/candidates/${MID}`);
+  });
+});
+
+describe('Vacancy page with results (Oct 2026)', () => {
+  const open = (counts: object) => {
+    window.location.hash = `/vacancies/${VID}/candidates`;
+    return mockFetch(
+      base((url, init) => {
+        if (url.endsWith(`/vacancies/${VID}`) && isGet(init))
+          return {
+            body: view({
+              counts: {
+                documents: 40,
+                analyzed: 38,
+                outOfDate: 0,
+                strong: 6,
+                running: 0,
+                stopped: 0,
+                failed: 1,
+                needsLook: 3,
+                ...counts,
+              },
+            }),
+          };
+        if (url.endsWith(`/vacancies/${VID}/runs`)) return { body: [] };
+        if (url.includes('/candidates?')) return { body: page([poolRow(1), poolRow(2)]) };
+        return undefined;
+      }),
+    );
+  };
+
+  it('leads with the numbers and the ranked list, and folds the role and resumes away', async () => {
+    open({});
+    render(<App check={up} />);
+    const summary = await screen.findByRole('region', { name: 'Summary' });
+    expect(within(summary).getByText('38')).toBeInTheDocument();
+    expect(within(summary).getByText('Need a look')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Aysel Mammadova' })).toBeInTheDocument();
+    const setup = document.getElementById('vacancy-setup')!;
+    expect(setup).toHaveAttribute('hidden');
+    await userEvent.click(within(summary).getByRole('button', { name: 'Role and resumes' }));
+    expect(setup).not.toHaveAttribute('hidden');
+    expect(within(summary).getByRole('button', { name: 'Hide role and resumes' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('says results are out of date and opens the role and resumes on request', async () => {
+    open({ outOfDate: 5 });
+    render(<App check={up} />);
+    expect(
+      await screen.findByText(/5 results were scored against earlier requirements/),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Review and re-analyze' }));
+    expect(document.getElementById('vacancy-setup')).not.toHaveAttribute('hidden');
+  });
+
+  it('shows the role and resumes first while nothing is analyzed yet', async () => {
+    open({ documents: 0, analyzed: 0, strong: 0, failed: 0, needsLook: 0 });
+    render(<App check={up} />);
+    await screen.findByLabelText('Position');
+    expect(screen.queryByRole('region', { name: 'Summary' })).toBeNull();
+    expect(document.getElementById('vacancy-setup')).not.toHaveAttribute('hidden');
+  });
+});

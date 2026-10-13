@@ -3,8 +3,8 @@ import type { VacancyStatus } from '@cv/shared';
 import { api } from '../api';
 import { go } from '../route';
 import { useT } from '../i18n';
-import { ago, STATUS_STYLE, statusName, type VacancyListItem } from '../pool';
-import { btnPrimary, btnSecondary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
+import { ago, MARK_STYLE, markName, STATUS_STYLE, statusName, type VacancyListItem } from '../pool';
+import { btnPrimary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
 
 /**
  * The Vacancy pool (Development Plan, Phase 1; UAT-01): every vacancy the person may see, with the
@@ -155,6 +155,21 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
     return () => clearTimeout(h);
   }, [load, q]);
 
+  // Scans in progress move the numbers: look again every few seconds, and when the tab returns.
+  const anyRunning = rows?.some((v) => v.running > 0) ?? false;
+  useEffect(() => {
+    if (!anyRunning) return;
+    const h = setInterval(() => void load(q), 5000);
+    return () => clearInterval(h);
+  }, [anyRunning, load, q]);
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState === 'visible') void load(q);
+    };
+    document.addEventListener('visibilitychange', back);
+    return () => document.removeEventListener('visibilitychange', back);
+  }, [load, q]);
+
   async function act(path: string, v: VacancyListItem, undo?: { path: string; text: string }) {
     try {
       await api.post(`/vacancies/${v.id}/${path}`);
@@ -212,7 +227,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <input
             type="search"
-            className={`${input} w-56`}
+            className={`${input} w-72!`}
             aria-label={t('Search vacancies')}
             placeholder={t('Search by title, department or place')}
             value={q}
@@ -266,7 +281,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
         <div className="rounded-2xl border border-line bg-card">
           <div
             aria-hidden="true"
-            className="hidden grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.3fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem] gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
+            className="hidden grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem] gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
           >
             <span>{t('Title')}</span>
             <span>{t('Status')}</span>
@@ -281,7 +296,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
             {rows.map((v) => (
               <li
                 key={v.id}
-                className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.3fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
+                className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
               >
                 <div className="col-span-2 min-w-0 lg:col-span-1">
                   <a
@@ -304,29 +319,57 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
                   </span>
                 </span>
                 <span>
+                  <span className="lg:hidden text-ink-3">{t('Analyzed')}: </span>
                   {v.analyzed === 0 && v.running === 0
                     ? '—'
                     : v.running > 0
                       ? t('{n} analyzed, {m} running', { n: v.analyzed, m: v.running })
-                      : v.analyzed}
-                  {v.outOfDate > 0 && (
-                    <span className="ml-1 rounded bg-warn px-1 py-0.5 text-xs text-warn-ink">
-                      {t('{n} out of date', { n: v.outOfDate })}
+                      : t('{a} of {b}', { a: v.analyzed, b: Math.max(v.documents, v.analyzed) })}
+                  {(v.analyzed > 0 || v.running > 0) && v.documents > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="mt-1 block h-1.5 w-full max-w-28 overflow-hidden rounded-full bg-neutral"
+                    >
+                      <span
+                        className="block h-full rounded-full bg-accent"
+                        style={{
+                          width: `${Math.min(100, Math.round((v.analyzed / Math.max(v.documents, 1)) * 100))}%`,
+                        }}
+                      />
                     </span>
+                  )}
+                  {v.outOfDate > 0 && (
+                    <a
+                      href={`#/vacancies/${v.id}`}
+                      className="mt-1 block w-fit whitespace-nowrap rounded bg-warn px-1.5 py-0.5 text-xs text-warn-ink hover:underline"
+                    >
+                      {t('{n} out of date', { n: v.outOfDate })} · {t('Re-analyze')}
+                    </a>
                   )}
                 </span>
                 <span>
                   <span className="lg:hidden text-ink-3">{t('Strong')}: </span>
                   {v.analyzed ? v.strong : '—'}
                 </span>
-                <span className="text-ink-2">
+                <span className="flex flex-wrap gap-1 text-ink-2">
                   {v.decisions.shortlist + v.decisions.maybe + v.decisions.notNow === 0
                     ? '—'
-                    : t('{a} shortlist · {b} maybe · {c} not now', {
-                        a: v.decisions.shortlist,
-                        b: v.decisions.maybe,
-                        c: v.decisions.notNow,
-                      })}
+                    : (
+                        [
+                          ['shortlist', v.decisions.shortlist],
+                          ['maybe', v.decisions.maybe],
+                          ['not_now', v.decisions.notNow],
+                        ] as const
+                      )
+                        .filter(([, n]) => n > 0)
+                        .map(([m, n]) => (
+                          <span
+                            key={m}
+                            className={`rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${MARK_STYLE[m]}`}
+                          >
+                            {n} {markName(m)}
+                          </span>
+                        ))}
                 </span>
                 <span className="truncate text-ink-2">{v.owner.name ?? ''}</span>
                 <span className="text-ink-3">{ago(v.updatedAt)}</span>
@@ -348,13 +391,6 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
         </div>
       )}
       <UndoBar toast={toast} onDone={dismiss} label={t('Undo')} />
-      {rows && rows.length > 0 && (
-        <p className="text-xs text-ink-3">
-          <button type="button" className={btnSecondary} onClick={() => void load(q)}>
-            {t('Refresh')}
-          </button>
-        </p>
-      )}
     </div>
   );
 }

@@ -240,8 +240,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.',
         )}
       </p>
-      <p role="status" aria-live="polite" className="mt-1">
-        {t(HEALTH_LABEL[health.state])}
+      {/* Only a problem is worth a line: "Service ready" on every page is noise. */}
+      <p role="status" aria-live="polite" className="mt-1 font-medium text-err-ink">
+        {health.state === 'down' ? t(HEALTH_LABEL.down) : ''}
       </p>
     </>
   );
@@ -277,7 +278,11 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>
+      <footer
+        className={`mx-auto px-4 pb-8 text-xs text-ink-3 ${me ? 'max-w-6xl' : 'max-w-xl text-center'}`}
+      >
+        {footer}
+      </footer>
     </div>
   );
 }
