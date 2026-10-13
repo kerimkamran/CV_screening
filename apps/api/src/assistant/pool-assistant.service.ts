@@ -1,5 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { BAND_LABEL, MARK_LABEL, fold, newId, type Mark } from '@cv/shared';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { BAND_LABEL, MARK_LABEL, fold, newId, tokens, type Mark } from '@cv/shared';
 import { AiGateway } from '../ai/ai-gateway.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -22,6 +28,7 @@ import {
 import { dsay, declineFor } from './senai/deep-words';
 import { describe, type Query } from './senai/query';
 import { PoolSearch, stripPassages, type PassageRef } from './senai/search';
+import { DeepTools } from './senai/deep-tools';
 import { PoolTools, type AnswerAction, type AnswerTable } from './senai/tools';
 import { understand } from './senai/understand';
 import {
@@ -82,8 +89,12 @@ export interface PoolAnswer {
     needsLook: number;
   } | null;
   rows: PoolAnswerRow[];
+  /** Rediscovery only: a button per resume, "Analyze for this vacancy" (switch on). */
+  analyze?: { matchId: string; vacancyId: string; label: string }[];
   /** Skill search only: the skills that were looked for. */
   skills?: string[];
+  /** Skill search: words the dictionary does not know, searched as written (a person may suggest them). */
+  unknownSkills?: string[];
   /** Compare, doctor, changes, what-if, recall: a small table the tool filled. */
   table?: AnswerTable;
   /** Where to go next (open a candidate or a vacancy). */
@@ -125,6 +136,13 @@ export interface PoolAskInput {
 }
 
 /** What the last answer was about, kept with the conversation so a follow-up can be read (migration 0028). */
+/** Exactly one open vacancy has this title (as the model copied it). */
+const hasTitle = (live: VacancyRef[], title: string): boolean =>
+  live.filter((v) => fold(v.title) === fold(title)).length === 1;
+
+/** A message of up to this many words, read by the rules alone when they are sure of it. */
+const PLAIN_WORDS = 4;
+
 export interface Register {
   q: Query;
   scope: { vacancyId: string | null; everywhere: boolean };
@@ -192,7 +210,124 @@ export class PoolAssistantService {
     private readonly gateway: AiGateway,
     private readonly search: PoolSearch,
     private readonly tools: PoolTools,
+    private readonly deep: DeepTools,
   ) {}
+
+  /**
+   * "Analyze for this vacancy" (plan M3, 7 action tiers "Change state"): the person asks for a resume of
+   * another vacancy to be scored here too. Only with the rediscovery switch on; a button, never automatic.
+   * The resume is copied into this vacancy (the copy points at the original, so erasing one erases both)
+   * and queued like any upload. Nothing is scored or ranked until it has been analyzed here.
+   */
+  async analyzeHere(p: Principal, matchId: string, vacancyId: string, ip: string | undefined) {
+    const s = await this.assistant.settings();
+    if (!s.enabled) throw new AssistantOff();
+    if (!s.features.rediscovery)
+      throw new ForbiddenException('Suggestions from other vacancies are switched off');
+    await this.scope.assert(p, vacancyId);
+    const target = await this.db.query<{ id: string; archived: boolean; title: string }>(
+      `SELECT id, archived_at IS NOT NULL AS archived, title FROM vacancy WHERE id = $1`,
+      [vacancyId],
+    );
+    if (!target.rows[0]) throw new NotFoundException();
+    if (target.rows[0].archived) throw new ConflictException('This vacancy is archived');
+    const src = await this.db.query<{
+      id: string;
+      vacancyId: string;
+      filename: string;
+      mime: string;
+      size: number;
+      sha: string;
+      content: Buffer | null;
+      text: string | null;
+      truncated: boolean;
+      pageStarts: unknown;
+    }>(
+      `SELECT d.id, d.vacancy_id AS "vacancyId", d.filename, d.mime, d.size_bytes AS size, d.sha256 AS sha,
+              d.content, d.text, d.text_truncated AS truncated, d.page_starts AS "pageStarts"
+         FROM screening m JOIN cv_document d ON d.id = m.document_id
+        WHERE m.id = $1 AND d.erased_at IS NULL AND d.parse_status = 'parsed'`,
+      [matchId],
+    );
+    const d = src.rows[0];
+    if (!d || !d.content || !d.text) throw new NotFoundException();
+    await this.scope.assert(p, d.vacancyId);
+    if (d.vacancyId === vacancyId) throw new ConflictException('This resume is already here');
+    const dup = await this.db.query<{ id: string }>(
+      `SELECT id FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2`,
+      [vacancyId, d.sha],
+    );
+    if (dup.rows[0]) throw new ConflictException('This resume is already in this vacancy');
+    const set = await this.db.query<{ id: string }>(
+      `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
+      [vacancyId],
+    );
+    if (!set.rows[0])
+      throw new ConflictException('Add the requirements to this vacancy first, then analyze');
+    const docId = newId();
+    await this.db.withTx(async (tx) => {
+      await tx.query(
+        `INSERT INTO cv_document
+           (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
+            parse_status, uploaded_by, page_starts, copied_from)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'parsed',$10,$11,$12)`,
+        [
+          docId,
+          vacancyId,
+          d.filename,
+          d.mime,
+          d.size,
+          d.sha,
+          d.content,
+          d.text,
+          d.truncated,
+          p.userId,
+          d.pageStarts ? JSON.stringify(d.pageStarts) : null,
+          d.id,
+        ],
+      );
+      await tx.query(
+        `INSERT INTO screening (id, document_id, requirement_set_id, state) VALUES ($1,$2,$3,'queued')`,
+        [newId(), docId, set.rows[0]!.id],
+      );
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: ip,
+        action: 'assistant.rediscovery_analyze',
+        entityType: 'document',
+        entityId: docId,
+        after: { vacancyId, copiedFrom: d.id, fromVacancyId: d.vacancyId },
+      });
+    });
+    return { documentId: docId, vacancyId, vacancyTitle: target.rows[0].title, queued: true };
+  }
+
+  /**
+   * The JD coach on save (plan M6, F8): suggestions about the wording and the requirements of one vacancy.
+   * Read-only and rule-based: no model is called, nothing is stored, nothing is blocked or edited.
+   */
+  async coach(p: Principal, vacancyId: string, language: Lang) {
+    const s = await this.assistant.settings();
+    if (!s.enabled) throw new AssistantOff();
+    await this.scope.assert(p, vacancyId);
+    const { rows } = await this.db.query<{ id: string; title: string }>(
+      `SELECT id, title FROM vacancy WHERE id = $1`,
+      [vacancyId],
+    );
+    if (!rows[0]) throw new NotFoundException();
+    const { tips, empty } = await this.deep.jdTips(rows[0], language);
+    return {
+      vacancyId,
+      language,
+      tips,
+      headline: empty
+        ? dsay(language, 'jdNoReqs')
+        : tips.length
+          ? dsay(language, 'jdHead', { title: rows[0].title, n: tips.length })
+          : dsay(language, 'jdClean', { title: rows[0].title }),
+    };
+  }
 
   async ask(p: Principal, input: PoolAskInput, ip: string | undefined) {
     const s = await this.assistant.settings();
@@ -220,6 +355,7 @@ export class PoolAssistantService {
     let q: Query | null = null;
     let model: string | null = null;
     let counted = false;
+    let safeMode = false;
 
     if (hijacks(text)) {
       Object.assign(a, {
@@ -274,12 +410,41 @@ export class PoolAssistantService {
       q = rules;
       // A question that half-names a vacancy is for the person to settle ('which one?'), not the model.
       const halfNamed = res.tier === 'partial' && rules.intent === 'find';
-      if (rules.confidence === 'low' && !halfNamed && s.features.understand) {
-        const m = await this.viaModel(s, text, reg, live, input.vacancyId, now);
-        if (m) {
+      // The rules answer on their own only when they are sure AND the message is short and plain.
+      // Anything longer or looser (typos, broken grammar, informal talk) is read by the model, like a
+      // person would read it; the rules stay as the fast path and as the fallback when the model is
+      // off, over its cap, down, or cannot tell.
+      const plain = rules.confidence === 'high' && tokens(forRules).length <= PLAIN_WORDS;
+      const redo = !!(input.pick || input.showAll);
+      const askModel =
+        !edit && s.features.understand && (rules.confidence === 'low' || (!plain && !redo));
+      if (askModel) {
+        const read = await this.viaModel(
+          s,
+          text,
+          reg,
+          live,
+          input.vacancyId,
+          now,
+          input.conversationId,
+        );
+        const m = read && !('down' in read) ? read : null;
+        // A question that only half-names a vacancy stays for the person to settle ("which one?"), unless
+        // the model could point at exactly one title.
+        const settled = !halfNamed || (m?.vacancy ? hasTitle(live, m.vacancy) : false);
+        if (read && 'down' in read) safeMode = rules.confidence === 'high';
+        if (m && settled && (m.q.intent !== 'unknown' || rules.confidence === 'low')) {
           q = m.q;
           model = m.model;
           counted = true;
+          if (!named && m.vacancy) {
+            const want = fold(m.vacancy);
+            const hit = live.filter((v) => fold(v.title) === want);
+            if (hit.length === 1) {
+              named = hit[0]!;
+              ambiguous = [];
+            }
+          }
         }
       }
       if (named && !q.trigger) {
@@ -396,6 +561,12 @@ export class PoolAssistantService {
       if (a.kind === 'pool' && !handled) a.used = this.used(q, a, lang);
     }
 
+    // Safe mode (plan 9): the answer is complete and comes from the records; only the reading was by rules.
+    if (safeMode && (a.kind === 'pool' || a.kind === 'help')) {
+      a.notes = [...a.notes, say(lang, 'safeMode')];
+      a.flags = [...a.flags, 'safe_mode'];
+    }
+
     if (q && (a.kind === 'pool' || a.kind === 'help'))
       a.receipt = {
         read: describe(q),
@@ -497,10 +668,11 @@ export class PoolAssistantService {
     live: VacancyRef[],
     pageId: string | undefined,
     now: Date,
-  ): Promise<{ q: Query; model: string } | null> {
+    conversationId: string | undefined,
+  ): Promise<{ q: Query; model: string; vacancy: string | null } | { down: true } | null> {
     try {
       if (!s.modelRowId && !(await this.gateway.active())) return null;
-      if (await this.assistant.capReached(s)) return null;
+      if (await this.assistant.capReached(s)) return { down: true };
       const page = pageId ? live.find((v) => v.id === pageId) : undefined;
       const user = understandUser({
         message: text.replace(CONTACT, '[contact hidden]'),
@@ -508,21 +680,53 @@ export class PoolAssistantService {
         page: page?.title ?? null,
         vacancies: live.map((v) => v.title),
         shown: reg?.shown.length ?? 0,
+        recent: await this.recent(conversationId),
       });
       const keys = Object.keys(JSON.parse(user) as object);
       if (keys.some((k) => !UNDERSTAND_FIELDS.includes(k))) return null;
-      const res = await this.gateway.complete(
-        { system: understandSystem(), user, json: true, maxTokens: 400 },
-        s.modelRowId ?? undefined,
-      );
+      const ask = { system: understandSystem(), user, json: true, maxTokens: 400 };
+      // The faster reader model, when one is set; if it fails the answer model reads the question.
+      let res;
+      if (s.understandModelRowId) {
+        try {
+          res = await this.gateway.complete(ask, s.understandModelRowId);
+        } catch (e) {
+          this.log.warn(`reader model failed, using the answer model: ${(e as Error).message}`);
+        }
+      }
+      res ??= await this.gateway.complete(ask, s.modelRowId ?? undefined);
       const mq = parseModelQuery(res.text);
       if (!mq) return null;
       const q = toQuery(mq, text, { shown: reg?.shown.length ?? 0, now });
-      return { q, model: `${res.provider} / ${res.model}` };
+      return { q, model: `${res.provider} / ${res.model}`, vacancy: mq.vacancy };
     } catch (e) {
       this.log.warn(`understanding by model failed: ${(e as Error).message}`);
-      return null;
+      return { down: true };
     }
+  }
+
+  /** What SenAI remembers about the person: only "show N", and only when they asked for it. */
+  async preferences(p: Principal) {
+    return { top: await this.deep.prefTop(p.userId) };
+  }
+  async setPreferences(p: Principal, top: number | null) {
+    if (top === null) await this.deep.clearPref(p.userId);
+    else await this.deep.setPref(p.userId, top);
+    return this.preferences(p);
+  }
+
+  /** The person's own last messages in this chat, oldest first: what "them" and "same for Python" point at. */
+  private async recent(conversationId: string | undefined): Promise<string[]> {
+    if (!conversationId) return [];
+    const { rows } = await this.db.query<{ content: { text?: string } }>(
+      `SELECT content FROM assistant_pool_message
+        WHERE conversation_id = $1 AND role = 'user' ORDER BY created_at DESC, id DESC LIMIT 3`,
+      [conversationId],
+    );
+    return rows
+      .map((r) => (r.content.text ?? '').replace(CONTACT, '[contact hidden]').slice(0, 300))
+      .filter(Boolean)
+      .reverse();
   }
 
   // ------------------------------------------------------------------ answers
@@ -671,6 +875,8 @@ export class PoolAssistantService {
     a.vacancy = one ? { id: one.id, title: one.title, status: one.status } : null;
     a.flags = ['skill_search'];
     a.skills = q.skills.map((x) => x.label);
+    const unknown = q.skills.filter((x) => x.id === null).map((x) => x.label);
+    if (unknown.length) a.unknownSkills = unknown;
     a.headline = sel.length
       ? say(lang, 'skillFound', { skills, n: sel.length, scope: place })
       : say(lang, 'skillNone', { skills, scope: place });
@@ -835,6 +1041,7 @@ export class PoolAssistantService {
             ? {
                 by: meta.model ? 'model' : 'rules',
                 promptVersion: meta.model ? UNDERSTAND_PROMPT_VERSION : null,
+                intent: meta.q.intent,
                 query: describe(meta.q),
               }
             : null,

@@ -70,7 +70,14 @@ describeDb('SenAI release gates (plan sections 6.1, 11, 12.2)', () => {
     expect(calls).toHaveLength(1);
     const sent = JSON.parse(calls[0]!.user);
     expect(Object.keys(sent).sort()).toEqual(
-      ['candidatesShownBefore', 'message', 'onPage', 'previousQuery', 'vacancyTitles'].sort(),
+      [
+        'candidatesShownBefore',
+        'message',
+        'onPage',
+        'previousQuery',
+        'recentMessages',
+        'vacancyTitles',
+      ].sort(),
     );
     expect(calls[0]!.user).not.toMatch(/someone@example\.com|123 45 67/);
     // No resume text, no scores, no decisions went with it.
@@ -100,6 +107,86 @@ describeDb('SenAI release gates (plan sections 6.1, 11, 12.2)', () => {
     understand = () => JSON.stringify({ intent: 'compare', refs: [{ kind: 'shown' }] });
     const r = await ask(a, 'qwx plomb vlerg');
     expect(r.answer.kind).toBe('help');
+  });
+
+  describe('reading free-form messages (typos, broken grammar, two languages)', () => {
+    const understandCalls = (before: number) =>
+      h.modelCalls.slice(before).filter((c) => c.system.includes('ONE JSON query'));
+
+    it('a short, plain message is read by the rules alone', async () => {
+      const a = await h.recruiter('m1@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Plain Role');
+      const before = h.modelCalls.length;
+      const r = await ask(a, 'kubernetes');
+      expect(r.answer.skills).toEqual(['Kubernetes']);
+      expect(understandCalls(before)).toHaveLength(0);
+    });
+
+    it('a long, loose message goes to the model, which sees the chat so far and is checked', async () => {
+      const a = await h.recruiter('m2@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Loose Role');
+      const first = await ask(a, 'kubernetes');
+      understand = () =>
+        JSON.stringify({
+          intent: 'skills',
+          followUp: 'replace',
+          skills: [{ id: 'bgp', text: 'bgpp' }],
+        });
+      const before = h.modelCalls.length;
+      const r = await ask(
+        a,
+        'hmm ok and what about the guys who knw bgpp insted, if any one have it',
+        { conversationId: first.conversationId },
+      );
+      const calls = understandCalls(before);
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(calls[0]!.user).recentMessages).toEqual(['kubernetes']);
+      expect(r.answer.skills).toEqual(['BGP']);
+      expect([...new Set(r.answer.rows.map((x: any) => x.label))].sort()).toEqual([
+        'Alice Full',
+        'Bob Routing',
+      ]);
+    });
+
+    it('a skill the message does not point to is dropped, and the rules answer instead', async () => {
+      const a = await h.recruiter('m3@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Guess Role');
+      understand = () =>
+        JSON.stringify({ intent: 'skills', skills: [{ id: 'sap', text: 'enterprise software' }] });
+      const r = await ask(a, 'hey can u pls show me peple who knw kubernets or something like it');
+      expect(r.answer.skills ?? []).not.toContain('SAP');
+      expect(r.answer.skills).toEqual(['Kubernetes']);
+    });
+
+    it('when the model cannot tell, the rules answer stands', async () => {
+      const a = await h.recruiter('m4@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Unknown Role');
+      understand = () => JSON.stringify({ intent: 'unknown' });
+      const r = await ask(a, 'could you please tell me who has worked with kubernets earlier');
+      expect(r.answer.skills).toEqual(['Kubernetes']);
+    });
+
+    it('the model may name a vacancy by its title; a title that does not exist is ignored', async () => {
+      const a = await h.recruiter('m5@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Named Role');
+      understand = () => JSON.stringify({ intent: 'count', vacancy: 'Free Named Role' });
+      const r = await ask(a, 'hw many ppl did we get for that named thing from last week');
+      expect(r.answer.vacancy?.title).toBe('Free Named Role');
+      understand = () => JSON.stringify({ intent: 'count', vacancy: 'No Such Vacancy' });
+      const r2 = await ask(a, 'hw many ppl did we get for that other thing from last week');
+      expect(r2.answer.vacancy?.title).not.toBe('No Such Vacancy');
+    });
+
+    it('is off with the switch: the rules read everything and the model is never called', async () => {
+      const a = await h.recruiter('m6@azerconnect.test');
+      await h.scenario(a.api, cvs, 'Free Off Role');
+      await put((b) => ({ ...b, features: { ...b.features, understand: false } }));
+      const before = h.modelCalls.length;
+      const r = await ask(a, 'hey can u pls show me peple who knw kubernets or something like it');
+      expect(r.answer.skills).toEqual(['Kubernetes']);
+      expect(understandCalls(before)).toHaveLength(0);
+      await put((b) => ({ ...b, features: { ...b.features, understand: true } }));
+    });
   });
 
   it('never ends in "I do not understand": it asks one question and offers examples', async () => {

@@ -40,6 +40,10 @@ export interface PoolAnswer {
     /** Skill search: the line of the resume where the skill is written, with the word itself. */
     passages?: { skill: string; text?: string; hit?: string }[];
   }[];
+  /** Rediscovery (switch on): a resume of another vacancy that can be analyzed for this one. */
+  analyze?: { matchId: string; vacancyId: string; label: string }[];
+  /** Words searched as written because the dictionary does not know them. */
+  unknownSkills?: string[];
   /** Compare, doctor, changes, what-if, recall: a small table written by the server. */
   table?: { head: string[]; rows: { cells: string[]; tag?: 'must' | 'nice' }[] };
   /** Where to go next: a candidate or a vacancy. */
@@ -143,7 +147,15 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
     if (open && !queued) inputRef.current?.focus();
   }, [open, queued]);
   useEffect(() => {
-    listRef.current?.scrollTo?.({ top: listRef.current.scrollHeight });
+    const list = listRef.current;
+    if (!list) return;
+    // A new answer is read from its first line (a long result list would otherwise jump to its end);
+    // the "looking…" line and the user's own message go to the bottom.
+    const last = items[items.length - 1];
+    const answers = list.querySelectorAll<HTMLElement>('[data-answer]');
+    const top = last?.role === 'assistant' && !busy ? answers[answers.length - 1] : null;
+    if (top) list.scrollTo?.({ top: Math.max(0, top.offsetTop - list.offsetTop - 8) });
+    else list.scrollTo?.({ top: list.scrollHeight });
   }, [items, busy]);
 
   const newChat = () => {
@@ -209,7 +221,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
           setAssistantOpen(false);
         }
       }}
-      className="fixed inset-x-0 bottom-0 z-30 flex max-h-[85vh] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-y-0 sm:bottom-auto sm:left-auto sm:right-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
+      className="fixed inset-x-0 bottom-0 z-30 flex max-h-[85dvh] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:h-dvh sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
     >
       <header className="flex items-start justify-between gap-2 border-b border-line p-3">
         <div className="min-w-0">
@@ -281,7 +293,8 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
       ) : (
         <div
           ref={listRef}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
+          tabIndex={0}
+          className="relative min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3"
           aria-label={t('Conversation')}
         >
           {items.length === 0 && !busy && (
@@ -423,7 +436,11 @@ function PoolAnswerView({
 }) {
   const t = useT();
   return (
-    <div className="space-y-2 rounded-lg border border-line p-3 text-sm" data-kind={a.kind}>
+    <div
+      className="space-y-2 rounded-2xl border border-line p-3 text-sm"
+      data-kind={a.kind}
+      data-answer
+    >
       <p className="font-medium">{a.headline}</p>
       {a.vacancy && a.kind === 'pool' && (
         <p className="text-xs text-ink-3">
@@ -459,6 +476,9 @@ function PoolAnswerView({
           })}
         </ul>
       )}
+      {a.unknownSkills && a.unknownSkills.length > 0 && a.kind === 'pool' && (
+        <SuggestWords words={a.unknownSkills} />
+      )}
       {a.notes.map((n) => (
         <p key={n} className="text-ink-2">
           {n}
@@ -492,6 +512,9 @@ function PoolAnswerView({
             </tbody>
           </table>
         </div>
+      )}
+      {a.analyze && a.analyze.length > 0 && a.vacancy && (
+        <AnalyzeHere items={a.analyze} vacancyTitle={a.vacancy.title} />
       )}
       {a.actions && a.actions.length > 0 && (
         <ul className="flex flex-wrap gap-2">
@@ -536,7 +559,9 @@ function PoolAnswerView({
                   {r.label}
                 </a>
                 <span className="tabular-nums">{r.score}%</span>
-                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${BAND_STYLE[r.band]}`}>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
+                >
                   {t(BAND_NAME[r.band])}
                 </span>
                 {r.decision !== 'new' && (
@@ -651,5 +676,97 @@ function CopyTable({ table }: { table: NonNullable<PoolAnswer['table']> }) {
     <button type="button" className={btnSecondary} onClick={() => void copy()}>
       {done ? t('Copied') : t('Copy')}
     </button>
+  );
+}
+
+/** A word the dictionary does not know was searched as written; the person may suggest it to the administrator. */
+function SuggestWords({ words }: { words: string[] }) {
+  const t = useT();
+  const [sent, setSent] = useState<Record<string, 'ok' | 'error'>>({});
+  async function suggest(w: string) {
+    try {
+      await api.post('/assistant/skills/suggest', { label: w, kind: 'tool', aliases: [] });
+      setSent((s) => ({ ...s, [w]: 'ok' }));
+    } catch {
+      setSent((s) => ({ ...s, [w]: 'error' }));
+    }
+  }
+  return (
+    <ul className="space-y-1 text-xs text-ink-2" aria-label={t('Words not in the dictionary')}>
+      {words.map((w) => (
+        <li key={w}>
+          {t('"{word}" is not in the dictionary, so it was searched as written.', { word: w })}{' '}
+          {sent[w] === 'ok' ? (
+            <span role="status">{t('Suggested. An administrator will review it.')}</span>
+          ) : (
+            <button
+              type="button"
+              className="text-link underline"
+              onClick={() => void suggest(w)}
+              aria-label={t('Suggest {word} to the administrator', { word: w })}
+            >
+              {sent[w] === 'error' ? t('Could not send. Try again') : t('Suggest it')}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "Analyze for this vacancy": a button per suggested resume. Nothing happens until it is pressed. */
+function AnalyzeHere({
+  items,
+  vacancyTitle,
+}: {
+  items: { matchId: string; vacancyId: string; label: string }[];
+  vacancyTitle: string;
+}) {
+  const t = useT();
+  const [state, setState] = useState<Record<string, string>>({});
+  async function go(it: { matchId: string; vacancyId: string }) {
+    setState((s) => ({ ...s, [it.matchId]: 'busy' }));
+    try {
+      await api.post('/assistant/rediscovery/analyze', {
+        matchId: it.matchId,
+        vacancyId: it.vacancyId,
+      });
+      setState((s) => ({ ...s, [it.matchId]: 'done' }));
+    } catch (e) {
+      setState((s) => ({ ...s, [it.matchId]: `error:${errMsg(e)}` }));
+    }
+  }
+  return (
+    <ul className="space-y-1" aria-label={t('Analyze for this vacancy')}>
+      {items.map((it) => {
+        const st = state[it.matchId];
+        return (
+          <li key={it.matchId} className="flex flex-wrap items-center gap-2">
+            {st === 'done' ? (
+              <span role="status" className="text-xs text-ok-ink">
+                {t('{name} was added to {vacancy}. The analysis is running.', {
+                  name: it.label,
+                  vacancy: vacancyTitle,
+                })}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={st === 'busy'}
+                onClick={() => void go(it)}
+              >
+                {t('Analyze {name} for {vacancy}', { name: it.label, vacancy: vacancyTitle })}
+              </button>
+            )}
+            {st?.startsWith('error:') && (
+              <span role="alert" className="text-xs text-err-ink">
+                {st.slice(6)}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -5,8 +5,10 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
@@ -27,6 +29,7 @@ import {
   verify,
 } from './assistant-rules';
 import { AssistantService } from './assistant.service';
+import { SkillsService } from './senai/skills.service';
 
 /** A fixed, valid id for the audit trail of the one settings row. */
 const SETTINGS_ENTITY = '0000000000000000000000ASST';
@@ -36,6 +39,7 @@ const putSchema = z.object({
   enabled: z.boolean(),
   name: z.string().trim().min(1).max(30),
   modelRowId: ulidSchema.nullable(),
+  understandModelRowId: ulidSchema.nullable().default(null),
   features: z.object({
     challenge: z.boolean(),
     compare: z.boolean(),
@@ -53,6 +57,16 @@ const putSchema = z.object({
   monthlyCap: z.number().int().min(0).max(10_000_000).nullable(),
   warnPct: z.number().int().min(1).max(100),
 });
+const skillSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  kind: z.enum(['tool', 'language', 'domain', 'certificate']),
+  aliases: z.array(z.string().trim().min(1).max(60)).min(1).max(20),
+  extends: z.string().trim().max(40).nullable().default(null),
+});
+const decideSchema = z.object({
+  to: z.enum(['approved', 'rejected']),
+  note: z.string().trim().max(300).nullable().default(null),
+});
 const testSchema = z.object({ modelRowId: ulidSchema.nullable().default(null) });
 
 /** ADMIN controls for the assistant (design spec 6.6.6). */
@@ -64,6 +78,7 @@ export class AssistantAdminController {
     private readonly audit: AuditService,
     private readonly svc: AssistantService,
     private readonly gateway: AiGateway,
+    private readonly skills: SkillsService,
   ) {}
 
   private async modelKey(modelRowId: string | null): Promise<string | null> {
@@ -130,12 +145,89 @@ export class AssistantAdminController {
     return r.rows[0]?.n ?? null;
   }
 
+  /** What SenAI did in the last N days, from the audit trail (counts only; no question text, no names). */
+  @Get('monitoring')
+  async monitoring(@Query('days') daysRaw?: string) {
+    const days = Math.min(90, Math.max(1, Number(daysRaw) || 30));
+    const { rows } = await this.db.query<{
+      kind: string | null;
+      by: string | null;
+      intent: string | null;
+      flags: string[] | null;
+      refused: boolean;
+    }>(
+      `SELECT after->>'kind' AS kind, after->'read'->>'by' AS by, after->'read'->>'intent' AS intent,
+              CASE WHEN jsonb_typeof(after->'flags') = 'array'
+                   THEN ARRAY(SELECT jsonb_array_elements_text(after->'flags')) END AS flags,
+              action = 'assistant.refused' AS refused
+         FROM audit_event
+        WHERE action IN ('assistant.pool_turn','assistant.refused')
+          AND occurred_at > now() - ($1::int * interval '1 day')`,
+      [days],
+    );
+    const tally = (xs: (string | null | undefined)[]) => {
+      const m = new Map<string, number>();
+      for (const x of xs) if (x) m.set(x, (m.get(x) ?? 0) + 1);
+      return [...m].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n);
+    };
+    const flags = rows.flatMap((r) => r.flags ?? []);
+    const count = (f: string) => flags.filter((x) => x === f).length;
+    return {
+      days,
+      total: rows.length,
+      refused: rows.filter((r) => r.refused).length,
+      readBy: {
+        rules: rows.filter((r) => r.by === 'rules').length,
+        model: rows.filter((r) => r.by === 'model').length,
+      },
+      unknown: rows.filter((r) => r.intent === 'unknown').length,
+      safeMode: count('safe_mode'),
+      byKind: tally(rows.map((r) => r.kind)),
+      byIntent: tally(rows.map((r) => r.intent)),
+      flags: tally(flags.filter((f) => !f.startsWith('refused'))),
+      breaker: this.gateway.breakerState(),
+    };
+  }
+
+  /** The skills dictionary: built-in skills are fixed; these are the entries added on top (plan F7). */
+  @Get('skills')
+  skillList() {
+    return this.skills.list();
+  }
+
+  @Post('skills')
+  async skillAdd(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    return this.skills.add(p, parse(skillSchema, body), req.ip, true);
+  }
+
+  @Post('skills/:id/decide')
+  @HttpCode(200)
+  async skillDecide(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const b = parse(decideSchema, body);
+    return this.skills.decide(p, parse(ulidSchema, id), b.to, b.note, req.ip);
+  }
+
   @Put()
   async put(@Body() body: unknown, @CurrentPrincipal() p: Principal, @Req() req: FastifyRequest) {
     const b = parse(putSchema, body);
     const before = await this.svc.settings();
     if (b.modelRowId) {
       const ok = await this.db.query(`SELECT 1 FROM ai_model WHERE id = $1`, [b.modelRowId]);
+      if (!ok.rows[0]) throw new BadRequestException('That model is not in the list');
+    }
+    if (b.understandModelRowId) {
+      const ok = await this.db.query(`SELECT 1 FROM ai_model WHERE id = $1`, [
+        b.understandModelRowId,
+      ]);
       if (!ok.rows[0]) throw new BadRequestException('That model is not in the list');
     }
     const key = await this.modelKey(b.modelRowId);
@@ -178,7 +270,8 @@ export class AssistantAdminController {
            daily_cap=$11, monthly_cap=$12, warn_pct=$13, updated_by=$14, updated_at=now(),
            attested_by = CASE WHEN $15::boolean THEN $16::text::ulid ELSE attested_by END,
            attested_at = CASE WHEN $15::boolean THEN now() ELSE attested_at END,
-           feat_understand=$17, feat_rediscovery=$18, feat_link_review=$19`,
+           feat_understand=$17, feat_rediscovery=$18, feat_link_review=$19,
+           understand_model_id=$20`,
         [
           b.enabled,
           b.name,
@@ -199,6 +292,7 @@ export class AssistantAdminController {
           b.features.understand,
           b.features.rediscovery,
           b.features.linkReview,
+          b.understandModelRowId,
         ],
       );
       const diff: Record<string, { from: unknown; to: unknown }> = {};
@@ -208,6 +302,7 @@ export class AssistantAdminController {
       mark('enabled', before.enabled, b.enabled);
       mark('name', before.name, b.name);
       mark('model', before.modelRowId, b.modelRowId);
+      mark('readerModel', before.understandModelRowId, b.understandModelRowId);
       mark('features', before.features, b.features);
       mark('unavailableMessage', before.unavailableMessage, b.unavailableMessage);
       mark('regionAllowed', before.regionAllowed, b.regionAllowed);
@@ -283,6 +378,7 @@ export class AssistantAdminController {
           maxTokens: 600,
         },
         b.modelRowId ?? undefined,
+        { probe: true },
       );
       const parsed = parseModel(res.text);
       const ans = verify(parsed, { packages: [built], intent: 'why' });

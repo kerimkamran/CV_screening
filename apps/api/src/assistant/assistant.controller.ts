@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AnyAuthenticated, CurrentPrincipal, Roles } from '../auth/decorators';
@@ -8,6 +19,7 @@ import { INTENTS } from './assistant-rules';
 import { AssistantService } from './assistant.service';
 import { detectLanguage } from './pool-assistant';
 import { PoolAssistantService } from './pool-assistant.service';
+import { SkillsService } from './senai/skills.service';
 
 const askSchema = z.object({
   message: z.string().trim().max(1000).default(''),
@@ -24,6 +36,7 @@ export class AssistantController {
   constructor(
     private readonly svc: AssistantService,
     private readonly poolSvc: PoolAssistantService,
+    private readonly skills: SkillsService,
   ) {}
 
   /** What the screen needs to draw the panel: on or off, its name and which buttons exist. */
@@ -37,6 +50,60 @@ export class AssistantController {
       features: s.features,
       unavailableMessage: s.unavailableMessage,
     };
+  }
+
+  /** A recruiter suggests a word SenAI does not know; an administrator decides (plan F7). */
+  @Post('assistant/skills/suggest')
+  @HttpCode(200)
+  suggestSkill(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    return this.skills.add(
+      p,
+      parse(
+        z.object({
+          label: z.string().trim().min(1).max(60),
+          kind: z.enum(['tool', 'language', 'domain', 'certificate']).default('tool'),
+          aliases: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
+          extends: z.string().trim().max(40).nullable().default(null),
+        }),
+        body,
+      ),
+      req.ip,
+      false,
+    );
+  }
+
+  /** The account menu's view of what SenAI keeps about the person (plan F6). */
+  @Get('assistant/preferences')
+  preferences(@CurrentPrincipal() p: Principal) {
+    return this.poolSvc.preferences(p);
+  }
+  @Put('assistant/preferences')
+  setPreferences(@Body() body: unknown, @CurrentPrincipal() p: Principal) {
+    const b = parse(z.object({ top: z.number().int().min(1).max(50).nullable() }), body);
+    return this.poolSvc.setPreferences(p, b.top);
+  }
+
+  /** "Analyze for this vacancy": a button on a rediscovery suggestion (switch). */
+  @Post('assistant/rediscovery/analyze')
+  @HttpCode(200)
+  analyzeHere(@Body() body: unknown, @CurrentPrincipal() p: Principal, @Req() req: FastifyRequest) {
+    const b = parse(z.object({ matchId: ulidSchema, vacancyId: ulidSchema }), body);
+    return this.poolSvc.analyzeHere(p, b.matchId, b.vacancyId, req.ip);
+  }
+
+  /** Suggestions about a vacancy's wording and requirements, shown after a save (plan M6). */
+  @Get('assistant/jd-coach/:vacancyId')
+  coach(
+    @Param('vacancyId') vacancyId: string,
+    @Query('language') language: string | undefined,
+    @CurrentPrincipal() p: Principal,
+  ) {
+    const lang = language === 'az' || language === 'ru' ? language : 'en';
+    return this.poolSvc.coach(p, parse(ulidSchema, vacancyId), lang);
   }
 
   @Get('screenings/:id/assistant')

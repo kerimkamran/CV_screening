@@ -60,7 +60,9 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
   it('answers "Find the right candidate for X" from the pool, with counts and the pool order', async () => {
     const a = await h.recruiter('pa1@azerconnect.test');
     const vid = await h.scenario(a.api, cvs, 'Core Network Engineer');
-    const calls = h.modelCalls.length;
+    const answerCalls = () =>
+      h.modelCalls.filter((c) => !c.system.includes('ONE JSON query')).length;
+    const calls = answerCalls();
     const r = await a.api.post('/assistant/ask', {
       message: 'Find the right candidate for Core Network Engineer',
     });
@@ -77,7 +79,8 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
     expect(ans.rows[0].strengths.length).toBeGreaterThan(0);
     expect(ans.asOf).toBeTruthy();
     // The model was never called for a pool answer.
-    expect(h.modelCalls.length).toBe(calls);
+    // Reading a longer question may call the model; no answer is ever written by it.
+    expect(answerCalls()).toBe(calls);
   });
 
   it('shows the top 5 and says how many more; "all" shows everyone', async () => {
@@ -155,7 +158,9 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
       { name: 'Farid Other', lines: ['Cooking.'] },
     ];
     const vid = await h.scenario(a.api, skillCvs, 'Skill Search Role');
-    const calls = h.modelCalls.length;
+    const answerCalls = () =>
+      h.modelCalls.filter((c) => !c.system.includes('ONE JSON query')).length;
+    const calls = answerCalls();
     // On the vacancy page: the page is searched, and the answer says so.
     const page = (
       await a.api.post('/assistant/ask', {
@@ -208,7 +213,8 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
     expect(none.headline).toMatch(/Quuxbarzed/);
     expect(none.language).toBe('ru');
     // Still no model call, and the audit trail holds the skill but no name.
-    expect(h.modelCalls.length).toBe(calls);
+    // Reading a longer question may call the model; no answer is ever written by it.
+    expect(answerCalls()).toBe(calls);
     const audit = JSON.stringify(
       (await h.admin.get('/admin/audit?action=assistant.pool_turn')).json(),
     );

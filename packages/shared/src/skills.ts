@@ -26,7 +26,8 @@ const S = (id: string, label: string, kind: SkillKind, aliases: string[]): Skill
   aliases,
 });
 
-export const SKILLS: Skill[] = [
+/** The built-in dictionary. Approved admin entries are added on top by `applyCustomSkills`. */
+export const BASE_SKILLS: Skill[] = [
   // Office and business tools
   S('excel', 'Excel', 'tool', [
     'excel',
@@ -349,37 +350,105 @@ interface Entry {
    * prefix: a stem written with a trailing star ("английск*" is "английский", "английском", ...).
    */
   mode: 'exact' | 'ending' | 'prefix';
+  /** Written in Cyrillic: Russian case endings may follow. */
+  cyr: boolean;
 }
 
-const ENTRIES: Entry[] = SKILLS.flatMap((skill) =>
-  skill.aliases.map((raw): Entry => {
-    const star = raw.endsWith('*');
-    const alias = fold(star ? raw.slice(0, -1) : raw);
-    const single = !alias.includes(' ');
-    return {
-      skill,
-      alias,
-      words: alias.split(' '),
-      mode: star ? 'prefix' : single && alias.length >= 5 ? 'ending' : 'exact',
-    };
-  }),
-).filter((e) => e.alias.length > 0);
+/** What the reader works with now: the built-in skills plus the admin-approved ones. */
+export let SKILLS: Skill[] = BASE_SKILLS;
+let ENTRIES: Entry[] = [];
+let BY_ID = new Map<string, Skill>();
+/** Single-word aliases, for typo matching. */
+let WORD_ALIASES: Entry[] = [];
 
-const BY_ID = new Map(SKILLS.map((s) => [s.id, s]));
+function rebuild(skills: Skill[]): void {
+  SKILLS = skills;
+  ENTRIES = skills
+    .flatMap((skill) =>
+      skill.aliases.map((raw): Entry => {
+        const star = raw.endsWith('*');
+        const alias = fold(star ? raw.slice(0, -1) : raw);
+        const single = !alias.includes(' ');
+        return {
+          skill,
+          alias,
+          words: alias.split(' '),
+          mode: star ? 'prefix' : single && alias.length >= 5 ? 'ending' : 'exact',
+          cyr: /[а-яё]/i.test(raw),
+        };
+      }),
+    )
+    .filter((e) => e.alias.length > 0);
+  BY_ID = new Map(skills.map((s) => [s.id, s]));
+  WORD_ALIASES = ENTRIES.filter((e) => e.mode === 'ending');
+}
+rebuild(BASE_SKILLS);
+
 export const skillById = (id: string): Skill | undefined => BY_ID.get(id);
 
-/** Single-word aliases, for typo matching. */
-const WORD_ALIASES = ENTRIES.filter((e) => e.mode === 'ending');
+/** An entry an administrator approved: a new skill, or more ways to write a built-in one. */
+export interface CustomSkill {
+  id: string;
+  label: string;
+  kind: SkillKind;
+  aliases: string[];
+  /** The id of a built-in skill these aliases belong to; null for a new skill. */
+  extends: string | null;
+}
+
+/**
+ * Replaces the approved extra entries (called at start-up and whenever an administrator decides).
+ * A built-in skill is never removed or renamed; an entry that clashes with one is ignored.
+ */
+export function applyCustomSkills(custom: CustomSkill[]): void {
+  const base = new Map(BASE_SKILLS.map((s) => [s.id, s]));
+  const extra = new Map<string, string[]>();
+  const added: Skill[] = [];
+  for (const c of custom) {
+    if (c.extends) {
+      if (base.has(c.extends))
+        extra.set(c.extends, [...(extra.get(c.extends) ?? []), ...c.aliases]);
+    } else if (!base.has(c.id) && !added.some((a) => a.id === c.id)) {
+      added.push({ id: c.id, label: c.label, kind: c.kind, aliases: c.aliases });
+    }
+  }
+  rebuild([
+    ...BASE_SKILLS.map((s) =>
+      extra.has(s.id) ? { ...s, aliases: [...s.aliases, ...extra.get(s.id)!] } : s,
+    ),
+    ...added,
+  ]);
+}
+
+/** Russian case endings: "питоном", "экселе". Only for Cyrillic aliases. */
+const RU_ENDINGS = new Set(
+  ['а', 'у', 'ом', 'е', 'ы', 'ов', 'ами', 'ах', 'ем', 'ой', 'ей'].map((x) => fold(x)),
+);
 
 /** A skill for one folded word: exact, with an ending, or a typo of a long word. */
 export function skillOfWord(w: string): Skill | null {
   const exact = ENTRIES.find((e) => e.words.length === 1 && e.alias === w);
   if (exact) return exact.skill;
+  // "pyton": five letters with one missing, the same first two letters as a six-letter alias.
+  if (w.length === 5) {
+    const miss = WORD_ALIASES.find(
+      (e) =>
+        e.alias.length === 6 &&
+        e.alias.startsWith(w.slice(0, 2)) &&
+        editDistance(w, e.alias, 1) === 1 &&
+        e.alias.replace(/.$/, '') !== w &&
+        /^[a-z]+$/.test(e.alias),
+    );
+    if (miss) return miss.skill;
+  }
   if (w.length >= 5) {
     const pre = ENTRIES.find((e) => e.mode === 'prefix' && w.startsWith(e.alias));
     if (pre) return pre.skill;
     const end = ENTRIES.find(
-      (e) => e.mode === 'ending' && w.startsWith(e.alias) && isEnding(w.slice(e.alias.length)),
+      (e) =>
+        e.mode === 'ending' &&
+        w.startsWith(e.alias) &&
+        (isEnding(w.slice(e.alias.length)) || (e.cyr && RU_ENDINGS.has(w.slice(e.alias.length)))),
     );
     if (end) return end.skill;
     // A typo of a long word: the nearest alias, or several that are all the same skill.

@@ -82,6 +82,9 @@ const SHORT = lex(
   'короткий список',
   'шортлист',
   'избранн*',
+  'shortlisted',
+  'short listed',
+  'qısa siyahıdakılar',
 );
 const FIND = lex(
   'find',
@@ -142,6 +145,17 @@ const COMPARE = lex(
 const DOCTOR = lex(
   'why so few',
   'why only',
+  'why there is no strong',
+  'why no strong',
+  'why nobody strong',
+  'no strong candidates',
+  'nobody is strong',
+  'niyə güclü namizəd yoxdur',
+  'güclü namizəd yoxdur',
+  'güclü yoxdur',
+  'нет сильных',
+  'сильных нет',
+  'почему нет сильных',
   'why are there so few',
   'why is nobody',
   'niyə az',
@@ -207,6 +221,13 @@ const RECALL = lex(
 const ABOUT = lex(
   'what can you see',
   'what do you see',
+  'what u can see',
+  'what u see',
+  'what do u see',
+  'what can u see',
+  'what can u do',
+  'who r u',
+  'who are u',
   'how did you get',
   'how i got this',
   'why did you say',
@@ -329,6 +350,7 @@ const HELP = lex(
   'means',
   'mean',
   'nə deməkdir',
+  'nə deməkdi',
   'nedir',
   'how do i',
   'how to',
@@ -764,6 +786,73 @@ export interface Context {
 }
 
 const STOP = new Set([
+  'ppl',
+  'peeps',
+  // filler of everyday talk: never a skill
+  'experiance',
+  'experince',
+  'exp',
+  'somebody',
+  'somewhere',
+  'someone',
+  'guys',
+  'guy',
+  'hey',
+  'hi',
+  'hello',
+  'here',
+  'there',
+  'tut',
+  'before',
+  'ever',
+  'good',
+  'well',
+  'pls',
+  'plz',
+  'please',
+  'peoples',
+  'persons',
+  'adam',
+  'adamlar',
+  'var',
+  'varmi',
+  'varmı',
+  'yaxsi',
+  'olub',
+  'olan',
+  'who',
+  'whose',
+  'whom',
+  'which',
+  'wich',
+  'that',
+  'this',
+  'those',
+  'any',
+  'need',
+  'want',
+  'show',
+  'give',
+  'find',
+  'kim',
+  'kimdir',
+  'bəlkə',
+  'belke',
+  'zehmet',
+  'olmasa',
+  'let',
+  'can',
+  'could',
+  'u',
+  'i',
+  'we',
+  'you',
+  'there',
+  'тут',
+  'здесь',
+  'вообще',
+  'кто',
+  'вроде',
   'worked',
   'work',
   'working',
@@ -892,16 +981,42 @@ export function understand(text: string, ctx: Context): Query {
   for (const i of hits(toks, LAST)) refWord.add(i);
   for (const i of hits(toks, DEMONSTRATIVE)) refWord.add(i);
   if (trigger) {
-    let buf: string[] = [];
+    // Words the dictionary does not know. When the dictionary already found a skill, an extra word is a
+    // skill only if it is joined to one with "and", "or", "ve", "и": "Excel and Terraform". Anything else
+    // around a known skill is just talk ("hey, who is knowing linux here").
+    const dictionary = new Set(skillHits.flatMap((h) => h.at));
+    const JOIN = new Set([
+      'and',
+      'or',
+      've',
+      'və',
+      'ya',
+      'и',
+      'или',
+      'plus',
+      'with',
+      'also',
+      'de',
+      'da',
+    ]);
+    let buf: { t: string; i: number }[] = [];
     const flush = () => {
       if (buf.length) {
-        const phrase = buf.join(' ');
-        q.skills.push({
-          id: null,
-          label: phrase[0]!.toUpperCase() + phrase.slice(1),
-          phrase,
-          words: [...buf],
-        });
+        const first = buf[0]!.i;
+        const lastAt = buf[buf.length - 1]!.i;
+        const joined =
+          (JOIN.has(toks[first - 1] ?? '') && dictionary.has(first - 2)) ||
+          (JOIN.has(toks[lastAt + 1] ?? '') && dictionary.has(lastAt + 2));
+        if (dictionary.size === 0 || joined) {
+          const words = buf.map((b) => b.t);
+          const phrase = words.join(' ');
+          q.skills.push({
+            id: null,
+            label: phrase[0]!.toUpperCase() + phrase.slice(1),
+            phrase,
+            words,
+          });
+        }
         buf = [];
       }
     };
@@ -915,7 +1030,7 @@ export function understand(text: string, ctx: Context): Query {
         STOP.has(t) ||
         refWord.has(i);
       if (skip) flush();
-      else buf.push(t);
+      else buf.push({ t, i });
     });
     flush();
   }

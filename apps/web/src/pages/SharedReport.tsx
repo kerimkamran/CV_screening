@@ -358,7 +358,7 @@ function Entry({
 }) {
   const t = useT();
   return (
-    <li className="rounded-lg border border-line bg-card p-4">
+    <li className="rounded-2xl border border-line bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">
           {c.rank}. {c.label}
@@ -437,7 +437,7 @@ export function SharedList() {
   }, []);
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-xl font-semibold">{t('Reports shared with me')}</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t('Reports shared with me')}</h1>
       {error && <Notice kind="error">{error}</Notice>}
       {rows === null && !error && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
       {rows?.length === 0 && (
@@ -449,7 +449,7 @@ export function SharedList() {
       )}
       <ul className="space-y-2">
         {rows?.map((r) => (
-          <li key={r.id} className="rounded-lg border border-line bg-card p-4">
+          <li key={r.id} className="rounded-2xl border border-line bg-card p-4">
             <a className="font-medium text-link underline" href={`#/reports/${r.id}`}>
               {r.title}
             </a>

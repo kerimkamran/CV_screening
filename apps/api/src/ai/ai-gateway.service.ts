@@ -15,6 +15,13 @@ import { SettingsCrypto } from './settings-crypto';
 
 export const FETCH = Symbol('FETCH');
 
+/**
+ * Circuit breaker (SenAI plan 9 "Fallback" and "Safe mode"): after this many failures in a row within
+ * the window, calls to that model stop for a while instead of every question waiting for a timeout.
+ * A "Test connection" always goes through and, when it works, closes the breaker.
+ */
+export const BREAKER = { threshold: 5, windowMs: 120_000, openMs: 60_000 };
+
 type Connection = Omit<Target, 'model'>;
 
 /**
@@ -25,6 +32,7 @@ type Connection = Omit<Target, 'model'>;
 export class AiGateway {
   private readonly log = new Logger('ai-gateway');
   fetcher: FetchLike = fetch;
+  private readonly breaker = new Map<string, { n: number; first: number; openUntil: number }>();
 
   constructor(
     private readonly db: DbService,
@@ -42,9 +50,31 @@ export class AiGateway {
   }
 
   /** Uses the active model, or the given model (by its row id) when testing one specifically. */
-  async complete(req: CompletionRequest, modelRowId?: string): Promise<CompletionResult> {
+  async complete(
+    req: CompletionRequest,
+    modelRowId?: string,
+    opts: { probe?: boolean } = {},
+  ): Promise<CompletionResult> {
     const target = await this.resolve(modelRowId ?? (await this.requireActive()));
     const name = COMPANIES[target.company].name;
+    const key = `${target.company}:${target.model}`;
+    if (!opts.probe && this.isOpen(key))
+      throw new ProviderError(`${name}: paused for a minute after repeated failures`, false, 503);
+    try {
+      const r = await this.attemptWithFallback(target, req, name);
+      this.breaker.delete(key);
+      return r;
+    } catch (e) {
+      this.noteFailure(key, e);
+      throw e;
+    }
+  }
+
+  private async attemptWithFallback(
+    target: Target,
+    req: CompletionRequest,
+    name: string,
+  ): Promise<CompletionResult> {
     try {
       return await this.attempt(target, req);
     } catch (e) {
@@ -58,6 +88,37 @@ export class AiGateway {
       }
       throw this.wrap(e, name);
     }
+  }
+
+  private isOpen(key: string): boolean {
+    const b = this.breaker.get(key);
+    return !!b && b.openUntil > Date.now();
+  }
+
+  /** Only a provider that is down or overloaded counts; a refused key or request is a setting, not an outage. */
+  private noteFailure(key: string, e: unknown): void {
+    const status = e instanceof ProviderError ? e.status : undefined;
+    if (status !== undefined && status !== 429 && status < 500) return;
+    const now = Date.now();
+    const b = this.breaker.get(key);
+    const cur = b && now - b.first < BREAKER.windowMs ? b : { n: 0, first: now, openUntil: 0 };
+    cur.n += 1;
+    if (cur.n >= BREAKER.threshold) cur.openUntil = now + BREAKER.openMs;
+    this.breaker.set(key, cur);
+  }
+
+  /** Forget past failures (used when the provider is known to be back, and by tests). */
+  resetBreaker(): void {
+    this.breaker.clear();
+  }
+
+  /** For the admin screen: is any model paused right now, and until when. */
+  breakerState(): { open: boolean; until: string | null } {
+    let until = 0;
+    for (const b of this.breaker.values()) until = Math.max(until, b.openUntil);
+    return until > Date.now()
+      ? { open: true, until: new Date(until).toISOString() }
+      : { open: false, until: null };
   }
 
   /** Models the stored key of a connection can use. */

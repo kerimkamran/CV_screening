@@ -87,6 +87,18 @@ export class DeepTools {
     return rows[0]?.top_n ?? null;
   }
 
+  /** The person's own saved "always show N", from the account menu (plan F6). */
+  async clearPref(userId: string): Promise<void> {
+    await this.db.query(`DELETE FROM assistant_preference WHERE user_id = $1`, [userId]);
+  }
+  async setPref(userId: string, n: number): Promise<void> {
+    await this.db.query(
+      `INSERT INTO assistant_preference (user_id, top_n) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET top_n = $2, updated_at = now()`,
+      [userId, n],
+    );
+  }
+
   // ------------------------------------------------------------------ interview kit
 
   /** Same core question per requirement for everyone, a rubric, and probes from this resume. */
@@ -263,12 +275,11 @@ export class DeepTools {
 
   // ------------------------------------------------------------------ JD coach
 
-  async jd(c: ToolCtx) {
-    const lang = c.a.language;
-    const v = this.vacancyOrAsk(c);
-    if (!v) return;
-    c.a.vacancy = { id: v.id, title: v.title, status: v.status };
-    c.a.flags = ['jd_check'];
+  /** The suggestions for a vacancy's wording and requirements. Read-only; never blocks or edits. */
+  async jdTips(
+    v: { id: string; title: string },
+    lang: ToolCtx['a']['language'],
+  ): Promise<{ tips: string[]; empty: boolean }> {
     const set = (await this.adj.currentSet(v.id)).filter(
       (r) => r.classification !== 'disqualifier',
     );
@@ -277,11 +288,7 @@ export class DeepTools {
       [v.id],
     );
     const body = rows[0]?.body ?? '';
-    c.a.kind = 'pool';
-    if (!set.length && !body.trim()) {
-      c.a.headline = dsay(lang, 'jdNoReqs');
-      return;
-    }
+    if (!set.length && !body.trim()) return { tips: [], empty: true };
     const f = fold(`${v.title} ${body}`);
     const tips: string[] = [];
     const must = set.filter((r) => r.classification === 'mandatory').length;
@@ -307,6 +314,21 @@ export class DeepTools {
       const inReq = skillsInTokens(tokens(reqText)).some((x) => x.skill.id === h.skill.id);
       if (!inReq) tips.push(dsay(lang, 'jdMissing', { skill: h.skill.label }));
       if (tips.length >= 8) break;
+    }
+    return { tips, empty: false };
+  }
+
+  async jd(c: ToolCtx) {
+    const lang = c.a.language;
+    const v = this.vacancyOrAsk(c);
+    if (!v) return;
+    c.a.vacancy = { id: v.id, title: v.title, status: v.status };
+    c.a.flags = ['jd_check'];
+    c.a.kind = 'pool';
+    const { tips, empty } = await this.jdTips(v, lang);
+    if (empty) {
+      c.a.headline = dsay(lang, 'jdNoReqs');
+      return;
     }
     c.a.headline = tips.length
       ? dsay(lang, 'jdHead', { title: v.title, n: tips.length })
@@ -424,6 +446,7 @@ export class DeepTools {
     c.a.actions = hit
       .slice(0, 3)
       .map((r) => ({ label: r.label, href: `#/candidates/${r.matchId}` }));
+    c.a.analyze = hit.map((r) => ({ matchId: r.matchId, vacancyId: v.id, label: r.label }));
     c.a.subjects = hit.map((r) => r.pseudonym);
     c.a.notes = [dsay(lang, 'redNote')];
   }

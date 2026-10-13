@@ -2,35 +2,40 @@
 @import '@fontsource-variable/manrope';
 
 /*
- * Design tokens (spec section 4). Every colour in the app comes from these variables, so the four
- * page backgrounds are one set of values each. Default is the device: Dark when the device is
- * dark, otherwise White-grey. An explicit choice sets data-bg on <html> and always wins.
+ * Design tokens (spec section 4), redesigned October 2026 around the Azerconnect Group navy
+ * #133e72 (the colour Azerconnect declares as its brand colour on azerconnect.az). Every colour in
+ * the app comes from these variables, so the four page backgrounds are one set of values each.
+ * Default is the device: Dark when the device is dark, otherwise White-grey. An explicit choice
+ * sets data-bg on <html> and always wins. contrast.test.ts measures every pair.
  */
 :root {
-  --c-bg: #f6f8fc;
+  --c-bg: #f3f6fb;
   --c-card: #ffffff;
-  --c-sel: #eaf1fe;
-  --c-hover: #eef2f9;
+  --c-sel: #e3edfa;
+  --c-hover: #ecf2fa;
   --c-field: #ffffff;
-  --c-line: #d5dce8;
-  --c-edge: #6b7a99;
-  --c-ink: #0a1530;
-  --c-ink-2: #46537a;
-  --c-ink-3: #4c5c80;
-  --c-accent: #1f5ae8;
-  --c-accent-hover: #1a4dcb;
+  --c-line: #d3dded;
+  --c-edge: #66789a;
+  --c-ink: #0b1f3a;
+  --c-ink-2: #3f5373;
+  --c-ink-3: #4a5c7b;
+  --c-brand: #133e72; /* header band: Azerconnect navy */
+  --c-on-brand: #ffffff;
+  --c-glow: rgb(19 62 114 / 0.09); /* soft wash at the top of every page */
+  --c-accent: #133e72;
+  --c-accent-hover: #0d2f58;
   --c-on-accent: #ffffff;
-  --c-link: #1f5ae8;
+  --c-link: #1558b0;
   --c-star: #9a5f00; /* brand mark star: gold as an icon on light pages (spec 4.2) */
-  --c-focus: #1f5ae8;
+  --c-focus: #1d6fe0;
   --c-danger: #b42318;
   --c-danger-hover: #912018;
-  --c-tag: #e3edff;
-  --c-tag-ink: #0c3fa8;
-  --c-neutral: #e3e8f2;
-  --c-info: #e3edff;
-  --c-info-ink: #0c3fa8;
-  --c-info-line: #b3cdf7;
+  --c-tag: #e1ebf9;
+  --c-tag-ink: #133e72;
+  --c-neutral: #e4e9f2;
+  --c-info: #e1ebf9;
+  --c-info-ink: #133e72;
+  --c-info-line: #b3cdf0;
   --c-ok: #d6f2e2;
   --c-ok-ink: #0b5a33;
   --c-ok-line: #8fd3ae;
@@ -48,22 +53,23 @@
 :root[data-bg='white'] {
   --c-bg: #ffffff;
   --c-hover: #f3f6fb;
+  --c-glow: rgb(19 62 114 / 0.06);
   color-scheme: light;
 }
 
 :root[data-bg='grey'] {
-  --c-bg: #f6f8fc;
+  --c-bg: #f3f6fb;
   --c-card: #ffffff;
-  --c-sel: #eaf1fe;
-  --c-hover: #eef2f9;
+  --c-sel: #e3edfa;
+  --c-hover: #ecf2fa;
   --c-field: #ffffff;
-  --c-line: #d5dce8;
-  --c-edge: #6b7a99;
-  --c-ink: #0a1530;
-  --c-ink-2: #46537a;
-  --c-ink-3: #4c5c80;
-  --c-tag: #e3edff;
-  --c-tag-ink: #0c3fa8;
+  --c-line: #d3dded;
+  --c-edge: #66789a;
+  --c-ink: #0b1f3a;
+  --c-ink-2: #3f5373;
+  --c-ink-3: #4a5c7b;
+  --c-tag: #e1ebf9;
+  --c-tag-ink: #133e72;
   --c-warn-text: #8a5a00;
   --c-ok-text: #0b6b3c;
   color-scheme: light;
@@ -71,18 +77,18 @@
 
 :root[data-bg='sky'] {
   --c-star: #7f4d00;
-  --c-bg: #dceafb;
+  --c-bg: #d9e8fb;
   --c-card: #f4f9ff;
-  --c-sel: #d8e8fc;
-  --c-hover: #e8f1fd;
+  --c-sel: #d3e4fa;
+  --c-hover: #e6f0fd;
   --c-field: #ffffff;
   --c-line: #a9c0e0;
   --c-edge: #566a91;
-  --c-ink: #0a1530;
-  --c-ink-2: #33426b;
-  --c-ink-3: #3b4b73;
-  --c-tag: #c2d8f8;
-  --c-tag-ink: #0a3796;
+  --c-ink: #0b1f3a;
+  --c-ink-2: #33466b;
+  --c-ink-3: #3b4d72;
+  --c-tag: #c5daf6;
+  --c-tag-ink: #133e72;
   --c-warn-text: #7f4d00;
   --c-ok-text: #0b5a33;
   color-scheme: light;
@@ -91,28 +97,30 @@
 /* Dark: chosen explicitly, or by the device when nothing is chosen. */
 :root[data-bg='dark'] {
   --c-star: #f5c461;
-  --c-bg: #0a1530;
-  --c-card: #0f1d45;
-  --c-sel: #142654;
-  --c-hover: #142654;
+  --c-bg: #0a2140;
+  --c-card: #0f2d55;
+  --c-sel: #153a69;
+  --c-hover: #153a69;
   --c-field: rgb(255 255 255 / 0.07);
-  --c-line: rgb(255 255 255 / 0.14);
-  --c-edge: rgb(255 255 255 / 0.4);
-  --c-ink: #e8eeff;
-  --c-ink-2: #b9c8f2;
-  --c-ink-3: #9fb0d0;
-  --c-accent: #2a63f0;
-  --c-accent-hover: #2158d9;
-  --c-link: #8fb4ff;
-  --c-focus: #5c93ff;
+  --c-line: rgb(255 255 255 / 0.15);
+  --c-edge: rgb(255 255 255 / 0.42);
+  --c-ink: #e8f0fc;
+  --c-ink-2: #b8cbe8;
+  --c-ink-3: #9db3d4;
+  --c-brand: #0c2749;
+  --c-glow: rgb(47 122 229 / 0.16);
+  --c-accent: #2468d4;
+  --c-accent-hover: #1d58b8;
+  --c-link: #8fbaff;
+  --c-focus: #6aa6ff;
   --c-danger: #c42b1c;
   --c-danger-hover: #a82417;
-  --c-tag: #1d3266;
-  --c-tag-ink: #cfe0ff;
-  --c-neutral: #1f2b4d;
-  --c-info: #1d3266;
-  --c-info-ink: #cfe0ff;
-  --c-info-line: #2f4a8f;
+  --c-tag: #1b3f73;
+  --c-tag-ink: #d3e3ff;
+  --c-neutral: #1f3558;
+  --c-info: #1b3f73;
+  --c-info-ink: #d3e3ff;
+  --c-info-line: #34569a;
   --c-ok: #0f3d2a;
   --c-ok-ink: #9fe3be;
   --c-ok-line: #1e6b49;
@@ -130,28 +138,30 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-bg]) {
     --c-star: #f5c461;
-    --c-bg: #0a1530;
-    --c-card: #0f1d45;
-    --c-sel: #142654;
-    --c-hover: #142654;
+    --c-bg: #0a2140;
+    --c-card: #0f2d55;
+    --c-sel: #153a69;
+    --c-hover: #153a69;
     --c-field: rgb(255 255 255 / 0.07);
-    --c-line: rgb(255 255 255 / 0.14);
-    --c-edge: rgb(255 255 255 / 0.4);
-    --c-ink: #e8eeff;
-    --c-ink-2: #b9c8f2;
-    --c-ink-3: #9fb0d0;
-    --c-accent: #2a63f0;
-    --c-accent-hover: #2158d9;
-    --c-link: #8fb4ff;
-    --c-focus: #5c93ff;
+    --c-line: rgb(255 255 255 / 0.15);
+    --c-edge: rgb(255 255 255 / 0.42);
+    --c-ink: #e8f0fc;
+    --c-ink-2: #b8cbe8;
+    --c-ink-3: #9db3d4;
+    --c-brand: #0c2749;
+    --c-glow: rgb(47 122 229 / 0.16);
+    --c-accent: #2468d4;
+    --c-accent-hover: #1d58b8;
+    --c-link: #8fbaff;
+    --c-focus: #6aa6ff;
     --c-danger: #c42b1c;
     --c-danger-hover: #a82417;
-    --c-tag: #1d3266;
-    --c-tag-ink: #cfe0ff;
-    --c-neutral: #1f2b4d;
-    --c-info: #1d3266;
-    --c-info-ink: #cfe0ff;
-    --c-info-line: #2f4a8f;
+    --c-tag: #1b3f73;
+    --c-tag-ink: #d3e3ff;
+    --c-neutral: #1f3558;
+    --c-info: #1b3f73;
+    --c-info-ink: #d3e3ff;
+    --c-info-line: #34569a;
     --c-ok: #0f3d2a;
     --c-ok-ink: #9fe3be;
     --c-ok-line: #1e6b49;
@@ -179,6 +189,8 @@
   --color-ink: var(--c-ink);
   --color-ink-2: var(--c-ink-2);
   --color-ink-3: var(--c-ink-3);
+  --color-brand: var(--c-brand);
+  --color-on-brand: var(--c-on-brand);
   --color-accent: var(--c-accent);
   --color-accent-hover: var(--c-accent-hover);
   --color-on-accent: var(--c-on-accent);
@@ -210,7 +222,14 @@
     background: var(--c-bg);
   }
   body {
-    background: var(--c-bg);
+    background-color: var(--c-bg);
+    background-image: radial-gradient(900px 360px at 50% 0, var(--c-glow), transparent 70%);
+    background-repeat: no-repeat;
+    color: var(--c-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--c-sel);
     color: var(--c-ink);
   }
   *,

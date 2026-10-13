@@ -121,7 +121,7 @@ export function ShareReport({
   }
 
   return (
-    <section aria-labelledby="share-h" className="rounded-lg border border-line bg-card p-4">
+    <section aria-labelledby="share-h" className="rounded-2xl border border-line bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="share-h" className="text-lg font-semibold">
           {t('Share this report')}

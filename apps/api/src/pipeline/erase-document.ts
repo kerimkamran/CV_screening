@@ -36,5 +36,18 @@ export async function eraseDocumentData(
   );
   await reports.scrubDocument(tx, vac.rows[0]!.vacancy_id, documentId);
   await eraseAssistantForDocument(tx, documentId);
+  // What was read from a link the candidate gave goes with the resume, and the consent ends.
+  await tx.query(`DELETE FROM candidate_link_review WHERE document_id = $1`, [documentId]);
+  await tx.query(
+    `UPDATE candidate_consent SET withdrawn_at = now(), withdrawn_by = $2
+      WHERE document_id = $1 AND withdrawn_at IS NULL`,
+    [documentId, erasedBy],
+  );
+  // A resume that was analyzed again for another vacancy is the same person's data: it goes too.
+  const copies = await tx.query<{ id: string }>(
+    `SELECT id FROM cv_document WHERE copied_from = $1 AND erased_at IS NULL`,
+    [documentId],
+  );
+  for (const c of copies.rows) await eraseDocumentData(tx, reports, c.id, erasedBy);
   return true;
 }

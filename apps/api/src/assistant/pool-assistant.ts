@@ -291,6 +291,11 @@ const D = {
     az: 'Yalnız {title} üzrə axtardım. Bütün vakansiyalarda axtarmaq üçün "bütün vakansiyalarda" yazın.',
     ru: 'Я искал только в «{title}». Чтобы искать по всем вакансиям, напишите «по всем вакансиям».',
   },
+  safeMode: {
+    en: 'The AI reader is not available right now, so your question was read by fixed rules only. The list comes from the same records; if it is not what you meant, rephrase it shortly.',
+    az: 'Süni intellekt oxuyucusu indi əlçatan deyil, ona görə sualınız yalnız sabit qaydalarla oxundu. Siyahı eyni qeydlərdən götürülüb; nəzərdə tutduğunuz bu deyilsə, sualı qısa yenidən yazın.',
+    ru: 'Чтение вопроса с помощью ИИ сейчас недоступно, поэтому вопрос прочитан только по фиксированным правилам. Список взят из тех же записей; если это не то, что вы имели в виду, переформулируйте вопрос короче.',
+  },
   scopeAll: {
     en: 'all vacancies',
     az: 'bütün vakansiyalar',

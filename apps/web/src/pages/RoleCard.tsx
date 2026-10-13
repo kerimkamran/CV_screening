@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VACANCY_STATUSES, type VacancyStatus } from '@cv/shared';
 import { api, ApiError, type Criteria } from '../api';
-import { useT, tr } from '../i18n';
+import { getLang, useT, tr } from '../i18n';
 import {
   ago,
   statusName,
@@ -132,6 +132,7 @@ export function RoleCard({
   const [linkInput, setLinkInput] = useState('');
   const [linkRead, setLinkRead] = useState<{ host: string; words: number } | null>(null);
   const [problem, setProblem] = useState('');
+  const [coach, setCoach] = useState<{ headline: string; tips: string[] } | null>(null);
   const [readText, setReadText] = useState<string | null>(
     vacancy?.requirements.length ? vacancy.description : null,
   );
@@ -237,6 +238,18 @@ export function RoleCard({
     return p;
   };
 
+  /** After a save the assistant may have suggestions about the wording; they never block or change anything. */
+  async function loadCoach(vid: string) {
+    try {
+      const r = await api.get<{ headline: string; tips: string[] }>(
+        `/assistant/jd-coach/${vid}?language=${getLang()}`,
+      );
+      setCoach(r && Array.isArray(r.tips) && r.tips.length ? r : null);
+    } catch {
+      setCoach(null); // the assistant is off or not reachable: nothing to show
+    }
+  }
+
   /** Returns the saved vacancy, or null when it could not be saved (the reason is on screen). */
   async function save(): Promise<VacancyView | null> {
     setShowErrors(true);
@@ -291,6 +304,7 @@ export function RoleCard({
       clearDraft();
       setInfo(t('Saved.'));
       onSaved(v);
+      void loadCoach(v.id);
       return v;
     } catch (e) {
       if (e instanceof ApiError && e.code === 'STALE_VERSION') setStale(errMsg(e));
@@ -926,6 +940,22 @@ export function RoleCard({
           </div>
         )}
       </form>
+      {coach && !dirty && (
+        <section
+          aria-label={t('Suggestions about the wording')}
+          className="mt-3 rounded-md border border-line bg-page p-3 text-sm"
+        >
+          <p className="font-medium">{coach.headline}</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-ink-2">
+            {coach.tips.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+          <button type="button" className="mt-2 text-link underline" onClick={() => setCoach(null)}>
+            {t('Dismiss')}
+          </button>
+        </section>
+      )}
     </Card>
   );
 }

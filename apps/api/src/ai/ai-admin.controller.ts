@@ -314,6 +314,7 @@ export class AiAdminController {
       const r = await this.gateway.complete(
         { system: 'Reply with the single word: ok', user: 'ping', maxTokens: 16 },
         id,
+        { probe: true },
       );
       return { ok: r.text.trim().length > 0, ms: Date.now() - started, model: r.model };
     } catch (e) {

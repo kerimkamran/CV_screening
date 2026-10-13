@@ -116,7 +116,7 @@ export function Monitoring({ canRun }: { canRun: boolean }) {
   const latest = runs?.runs.find((r) => r.state !== 'running');
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('Fairness monitoring')}</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t('Fairness monitoring')}</h1>
       {error && <Notice kind="error">{error}</Notice>}
 
       <Card title={t('Paired-CV test')}>

@@ -1,5 +1,6 @@
 import { describeDb } from '../testing/pg-harness';
 import { boot, scriptedModel, type Harness } from '../testing/app-harness';
+import { ProcessorService } from '../pipeline/processor.service';
 
 process.env['TEST_VISIBILITY'] = 'all';
 
@@ -58,7 +59,9 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
 
   it('compares two candidates from the last list, side by side, without a model', async () => {
     const { a, first, cid } = await start('t1@azerconnect.test', 'Compare Probe Role');
-    const calls = h.modelCalls.length;
+    const answerCalls = () =>
+      h.modelCalls.filter((c) => !c.system.includes('ONE JSON query')).length;
+    const calls = answerCalls();
     const r = (
       await a.api.post('/assistant/ask', {
         message: 'compare the first and the second',
@@ -72,7 +75,8 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     const kube = r.table.rows.find((x: any) => x.cells[0] === 'Kubernetes');
     expect(kube.tag).toBe('must');
     expect(kube.cells.slice(1)).toEqual(['Met', 'Not found']);
-    expect(h.modelCalls.length).toBe(calls);
+    // Reading a longer question may call the model; no answer is ever written by it.
+    expect(answerCalls()).toBe(calls);
   });
 
   it('asks who to compare when nobody is pointed at', async () => {
@@ -241,6 +245,23 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     expect(r.headline).toMatch(/Nothing was changed|nothing to suggest/);
   });
 
+  it('gives JD suggestions on its own endpoint, with no model call, in the language asked', async () => {
+    const a = await h.recruiter('t13b@azerconnect.test');
+    const vid = await h.scenario(a.api, [], 'Coach Probe Role');
+    const before = h.modelCalls.length;
+    const r = (await a.api.get(`/assistant/jd-coach/${vid}?language=az`)).json();
+    expect(r.vacancyId).toBe(vid);
+    expect(Array.isArray(r.tips)).toBe(true);
+    expect(r.headline).toMatch(/Coach Probe Role/);
+    expect(h.modelCalls.length).toBe(before);
+    const en = (await a.api.get(`/assistant/jd-coach/${vid}`)).json();
+    expect(en.language).toBe('en');
+    // Not visible to a recruiter who cannot see the vacancy.
+    expect(
+      (await a.api.get('/assistant/jd-coach/01ARZ3NDEKTSV4RRFFQ69G5FAV')).statusCode,
+    ).toBeGreaterThanOrEqual(403);
+  });
+
   it('declines web lookups, personality guesses and salary per candidate', async () => {
     const a = await h.recruiter('t14@azerconnect.test');
     for (const [q, flag] of [
@@ -310,6 +331,12 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
       })
     ).json().answer;
     expect(off.flags).toContain('switch_off:rediscovery');
+    // The button endpoint is closed too while the switch is off.
+    const closed = await a.api.post('/assistant/rediscovery/analyze', {
+      matchId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      vacancyId: vid2,
+    });
+    expect(closed.statusCode).toBe(403);
     const cur = (await h.admin.get('/admin/assistant')).json().settings;
     const put = await h.admin.put('/admin/assistant', {
       ...cur,
@@ -326,6 +353,52 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     ).json().answer;
     expect(on.flags).toContain('rediscovery');
     expect(on.table.rows.length).toBeGreaterThan(0);
+
+    // "Analyze for this vacancy": the resume is copied here and scored like any upload.
+    expect(on.analyze.length).toBe(on.table.rows.length);
+    const first = on.analyze[0];
+    expect(first.vacancyId).toBe(vid2);
+    const done = await a.api.post('/assistant/rediscovery/analyze', {
+      matchId: first.matchId,
+      vacancyId: first.vacancyId,
+    });
+    expect(done.statusCode).toBe(200);
+    expect(done.json().queued).toBe(true);
+    await h.app.get(ProcessorService).drain();
+    const copy = await h.db.owner.query(
+      `SELECT d.id, d.copied_from AS "from", s.state FROM cv_document d JOIN screening s ON s.document_id = d.id
+        WHERE d.vacancy_id = $1`,
+      [vid2],
+    );
+    expect(copy.rows).toHaveLength(1);
+    expect(copy.rows[0].from).toBeTruthy();
+    expect(copy.rows[0].state).toBe('completed');
+    // The same resume cannot be added twice, and nothing was copied for a vacancy the person cannot see.
+    const again = await a.api.post('/assistant/rediscovery/analyze', {
+      matchId: first.matchId,
+      vacancyId: first.vacancyId,
+    });
+    expect(again.statusCode).toBe(409);
+    const stranger = await h.recruiter('t17b@azerconnect.test');
+    const nope = await stranger.api.post('/assistant/rediscovery/analyze', {
+      matchId: first.matchId,
+      vacancyId: first.vacancyId,
+    });
+    expect(nope.statusCode).toBeGreaterThanOrEqual(403);
+    // Erasing the original erases the copy: it is the same person's data.
+    const er = await a.api.post(`/documents/${copy.rows[0].from}/erase`);
+    expect(er.statusCode).toBe(200);
+    const after = await h.db.owner.query(
+      `SELECT erased_at, content, text FROM cv_document WHERE id = $1`,
+      [copy.rows[0].id],
+    );
+    expect(after.rows[0].erased_at).not.toBeNull();
+    expect(after.rows[0].content).toBeNull();
+    expect(after.rows[0].text).toBeNull();
+    const audit = await h.db.owner.query(
+      `SELECT action FROM audit_event WHERE action = 'assistant.rediscovery_analyze'`,
+    );
+    expect(audit.rows.length).toBeGreaterThan(0);
     await h.admin.put('/admin/assistant', {
       ...cur,
       features: { ...cur.features, rediscovery: false },

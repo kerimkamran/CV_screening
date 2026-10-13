@@ -1,3 +1,4 @@
+import { AiGateway } from '../ai/ai-gateway.service';
 import { describeDb } from '../testing/pg-harness';
 import { boot, scriptedModel, type Harness } from '../testing/app-harness';
 import { EvalService } from './eval.service';
@@ -91,6 +92,7 @@ describeDb('Fairness tooling (plan EVAL-01/06)', () => {
     expect(run.state).toBe('failed');
     expect(run.error).toBeTruthy();
     h.setModel(scriptedModel);
+    h.app.get(AiGateway).resetBreaker(); // the failures above paused the model for a minute
   });
 
   it('reports aggregate fairness signals and nothing about individuals', async () => {

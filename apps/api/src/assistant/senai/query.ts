@@ -135,6 +135,8 @@ export const modelQuerySchema = z.object({
     .default(null),
   everywhere: z.boolean().default(false),
   topic: z.string().max(60).nullable().default(null),
+  /** The vacancy the message is about, copied from the list of titles it was given (checked by the server). */
+  vacancy: z.string().max(120).nullable().default(null),
 });
 export type ModelQuery = z.infer<typeof modelQuerySchema>;
 

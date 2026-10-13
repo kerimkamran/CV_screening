@@ -521,7 +521,7 @@ function CandidateEntry(props: {
   const missing = chips.find((c) => c.kind === 'missing' && c.classification === 'mandatory');
 
   return (
-    <li className="rounded-lg border border-line bg-card p-4">
+    <li className="rounded-2xl border border-line bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-semibold">
           {props.rank}. {props.name}

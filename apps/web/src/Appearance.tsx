@@ -63,7 +63,7 @@ export function Appearance({
       <summary className="cursor-pointer list-none rounded px-1 text-ink hover:underline focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none">
         {t('Background')}
       </summary>
-      <fieldset className="absolute right-0 z-10 mt-2 w-56 rounded-lg border border-line bg-card p-3 shadow-lg">
+      <fieldset className="absolute right-0 z-10 mt-2 w-56 rounded-2xl border border-line bg-card p-3 shadow-lg">
         <legend className="sr-only">{t('Page background')}</legend>
         <div className="space-y-1">
           <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover">

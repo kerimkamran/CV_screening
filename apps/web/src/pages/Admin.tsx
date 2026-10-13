@@ -784,6 +784,7 @@ interface AssistantSettingsData {
   enabled: boolean;
   name: string;
   modelRowId: string | null;
+  understandModelRowId?: string | null;
   features: {
     challenge: boolean;
     compare: boolean;
@@ -986,6 +987,23 @@ export function AssistantSettings() {
                 ))}
               </select>
             </Field>
+            <Field
+              label="Faster model for reading questions (optional)"
+              hint="Only reads what the person typed, so it can be a smaller, cheaper model. Leave empty to use the model above. If it fails, the model above reads the question. The data terms you confirm below cover both."
+            >
+              <select
+                className={input}
+                value={form.understandModelRowId ?? ''}
+                onChange={(e) => set('understandModelRowId', e.target.value || null)}
+              >
+                <option value="">Same as the model above</option>
+                {data.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.provider} · {m.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -1023,7 +1041,10 @@ export function AssistantSettings() {
                   'rediscovery',
                   'Suggest candidates from other vacancies (keep off until Legal confirms the notice)',
                 ],
-                ['linkReview', 'Read links candidates gave (keep off; needs recorded consent)'],
+                [
+                  'linkReview',
+                  'Read pages that candidates linked in their resume (keep off until Legal confirms; every resume also needs a recorded consent)',
+                ],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="flex items-center gap-2">
@@ -1171,6 +1192,9 @@ export function AssistantSettings() {
         </section>
       )}
 
+      <MonitoringCard assistantName={data.settings.name} />
+      <SkillsCard assistantName={data.settings.name} />
+
       <Card title="What was sent to the model">
         <p className="mb-2 text-sm text-ink-2">
           Only these fields may leave the system, and only as shown here: the field names, their
@@ -1196,5 +1220,248 @@ export function AssistantSettings() {
         )}
       </Card>
     </div>
+  );
+}
+
+interface SkillRow {
+  id: string;
+  skillId: string;
+  label: string;
+  kind: string;
+  aliases: string[];
+  extends: string | null;
+  status: 'proposed' | 'approved' | 'rejected';
+  proposedBy: string;
+  decidedBy: string | null;
+  note: string | null;
+}
+
+/** Words the assistant reads as skills, added on top of the built-in dictionary. Recruiters suggest; an administrator decides. */
+interface Monitoring {
+  days: number;
+  total: number;
+  refused: number;
+  readBy: { rules: number; model: number };
+  unknown: number;
+  safeMode: number;
+  byKind: { name: string; n: number }[];
+  byIntent: { name: string; n: number }[];
+  flags: { name: string; n: number }[];
+  breaker: { open: boolean; until: string | null };
+}
+
+/** What the assistant did over the last weeks: counts only, never questions or names (plan E2). */
+function MonitoringCard({ assistantName }: { assistantName: string }) {
+  const [days, setDays] = useState(30);
+  const [m, setM] = useState<Monitoring | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let live = true;
+    api
+      .get<Monitoring>(`/admin/assistant/monitoring?days=${days}`)
+      .then((r) => live && r && typeof r.total === 'number' && setM(r))
+      .catch((e) => live && setError(errMsg(e)));
+    return () => {
+      live = false;
+    };
+  }, [days]);
+  const pct = (n: number) => (m && m.total ? `${Math.round((n / m.total) * 100)}%` : '—');
+  const list = (xs: { name: string; n: number }[]) =>
+    xs.length ? xs.map((x) => `${x.name.replace(/_/g, ' ')} ${x.n}`).join(' · ') : '—';
+  return (
+    <Card
+      title={`How ${assistantName} is doing`}
+      actions={
+        <select
+          className={`${input} w-auto`}
+          aria-label="Period"
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        >
+          <option value={7}>Last 7 days</option>
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+        </select>
+      }
+    >
+      {error && <Notice kind="error">{error}</Notice>}
+      {m && (
+        <div className="space-y-2 text-sm">
+          {m.breaker.open && (
+            <Notice kind="warn">
+              The AI reader is paused after repeated failures; questions are read by fixed rules
+              until it recovers or you press Test.
+            </Notice>
+          )}
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                ['Questions', String(m.total)],
+                ['Read by the AI', `${m.readBy.model} (${pct(m.readBy.model)})`],
+                ['Could not tell what was meant', `${m.unknown} (${pct(m.unknown)})`],
+                ['Refused', `${m.refused} (${pct(m.refused)})`],
+                ['Rules only (AI unavailable)', String(m.safeMode)],
+                ['Read by fixed rules', `${m.readBy.rules} (${pct(m.readBy.rules)})`],
+              ] as const
+            ).map(([k, v]) => (
+              <div key={k} className="rounded-xl bg-page p-3">
+                <dt className="text-xs text-ink-3">{k}</dt>
+                <dd className="text-lg font-semibold text-ink">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-ink-2">
+            <span className="font-medium text-ink">Kinds of answer:</span> {list(m.byKind)}
+          </p>
+          <p className="text-ink-2">
+            <span className="font-medium text-ink">What people asked for:</span> {list(m.byIntent)}
+          </p>
+          <p className="text-ink-2">
+            <span className="font-medium text-ink">Notes shown:</span> {list(m.flags)}
+          </p>
+          <p className="text-xs text-ink-3">
+            Counts only, from the audit trail. No questions and no names are shown here.
+          </p>
+        </div>
+      )}
+      {!m && !error && <p className="text-sm text-ink-3">Loading…</p>}
+    </Card>
+  );
+}
+
+function SkillsCard({ assistantName }: { assistantName: string }) {
+  const [rows, setRows] = useState<SkillRow[] | null>(null);
+  const [msg, setMsg] = useState<Msg | null>(null);
+  const [label, setLabel] = useState('');
+  const [kind, setKind] = useState('tool');
+  const [aliases, setAliases] = useState('');
+  const [ext, setExt] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get<SkillRow[]>('/admin/assistant/skills');
+      setRows(Array.isArray(r) ? r : []);
+    } catch (e) {
+      setMsg({ kind: 'error', text: errMsg(e) });
+    }
+  }, []);
+  useEffect(() => void load(), [load]);
+
+  async function add(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.post('/admin/assistant/skills', {
+        label,
+        kind,
+        aliases: aliases
+          .split(',')
+          .map((a) => a.trim())
+          .filter(Boolean),
+        extends: ext.trim() || null,
+      });
+      setLabel('');
+      setAliases('');
+      setExt('');
+      setMsg({ kind: 'ok', text: `${assistantName} reads this word now.` });
+      await load();
+    } catch (er) {
+      setMsg({ kind: 'error', text: errMsg(er) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function decide(id: string, to: 'approved' | 'rejected') {
+    setMsg(null);
+    try {
+      await api.post(`/admin/assistant/skills/${id}/decide`, { to });
+      await load();
+    } catch (er) {
+      setMsg({ kind: 'error', text: errMsg(er) });
+    }
+  }
+
+  return (
+    <Card title="Words the assistant knows">
+      <p className="mb-2 text-sm text-ink-2">
+        {assistantName} comes with about a hundred skills in Azerbaijani, English and Russian. Add
+        your own here, for example a telecom term, or more ways to write a skill it already has.
+        Recruiters can suggest words; nothing is read until you approve it.
+      </p>
+      {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+      <form onSubmit={(e) => void add(e)} className="mb-3 grid gap-2 sm:grid-cols-2">
+        <Field label="Skill name">
+          <input
+            className={input}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            required
+          />
+        </Field>
+        <Field label="Kind">
+          <select className={input} value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="tool">Tool</option>
+            <option value="language">Language</option>
+            <option value="domain">Domain</option>
+            <option value="certificate">Certificate</option>
+          </select>
+        </Field>
+        <Field label="Other ways it is written (separate with commas)">
+          <input className={input} value={aliases} onChange={(e) => setAliases(e.target.value)} />
+        </Field>
+        <Field label="Only more ways to write a built-in skill? Its id, for example excel (optional)">
+          <input className={input} value={ext} onChange={(e) => setExt(e.target.value)} />
+        </Field>
+        <div className="sm:col-span-2">
+          <button type="submit" className={btnPrimary} disabled={busy || !label.trim()}>
+            Add word
+          </button>
+        </div>
+      </form>
+      {rows === null ? (
+        <p className="text-sm text-ink-3">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-ink-3">No words added yet.</p>
+      ) : (
+        <ul className="divide-y divide-line text-sm" aria-label="Added words">
+          {rows.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span className="min-w-0">
+                <span className="font-medium">{r.label}</span>{' '}
+                <span className="text-ink-3">
+                  ({r.status}
+                  {r.extends ? `, more ways to write ${r.extends}` : ''}) · {r.aliases.join(', ')} ·
+                  by {r.proposedBy}
+                </span>
+              </span>
+              <span className="flex gap-1">
+                {r.status !== 'approved' && (
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    aria-label={`Approve ${r.label}`}
+                    onClick={() => void decide(r.id, 'approved')}
+                  >
+                    Approve
+                  </button>
+                )}
+                {r.status !== 'rejected' && (
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    aria-label={`${r.status === 'approved' ? 'Remove' : 'Reject'} ${r.label}`}
+                    onClick={() => void decide(r.id, 'rejected')}
+                  >
+                    {r.status === 'approved' ? 'Remove' : 'Reject'}
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

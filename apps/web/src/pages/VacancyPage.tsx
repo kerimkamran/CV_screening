@@ -68,7 +68,7 @@ function Runs({ id, rows }: { id: string; rows: Run[] | null }) {
     return <p className="text-sm text-ink-2">{t('No analysis has been run yet.')}</p>;
   return (
     <ul
-      className="divide-y divide-line rounded-lg border border-line bg-card"
+      className="divide-y divide-line rounded-2xl border border-line bg-card"
       aria-label={t('Runs')}
       data-vacancy={id}
     >
@@ -161,7 +161,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         <a href="#/vacancies" className="text-sm text-link hover:underline">
           {t('← Vacancies')}
         </a>
-        <h1 className="text-xl font-semibold">{t('New vacancy')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t('New vacancy')}</h1>
         <p className="text-sm text-ink-2">
           {t('Only the title is needed. You can add the rest now or later.')}
         </p>
@@ -192,9 +192,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
           {t('← Vacancies')}
         </a>
         <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">{v.title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{v.title}</h1>
           <span
-            className={`rounded px-1.5 py-0.5 text-xs font-medium ${v.archived ? 'bg-neutral text-ink-2' : STATUS_STYLE[v.status]}`}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${v.archived ? 'bg-neutral text-ink-2' : STATUS_STYLE[v.status]}`}
           >
             {v.archived ? t('Archived') : statusName(v.status)}
           </span>
@@ -245,7 +245,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
       {showHistory && (
         <section
           aria-label={t('History')}
-          className="rounded-lg border border-line bg-card p-4 text-sm"
+          className="rounded-2xl border border-line bg-card p-4 text-sm"
         >
           <div className="mb-2 flex items-center justify-between">
             <h2 className="font-semibold">{t('Changes to the requirements')}</h2>

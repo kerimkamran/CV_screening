@@ -262,6 +262,30 @@ describe('Role card', () => {
     expect(await screen.findByText('Saved.')).toBeInTheDocument();
   });
 
+  it("shows the assistant's wording suggestions after a save, and they can be dismissed", async () => {
+    open((url, init) => {
+      if (init?.method === 'PATCH')
+        return { body: view({ version: 4, title: 'Network Engineer II' }) };
+      if (url.includes('/assistant/jd-coach/'))
+        return {
+          body: {
+            headline: 'Network Engineer II: 1 thing to look at. Nothing was changed.',
+            tips: ['"young" can keep some people from applying.'],
+          },
+        };
+      return undefined;
+    });
+    render(<App check={up} />);
+    const title = await screen.findByLabelText('Position');
+    await userEvent.clear(title);
+    await userEvent.type(title, 'Network Engineer II');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const box = await screen.findByRole('region', { name: 'Suggestions about the wording' });
+    expect(within(box).getByText(/can keep some people from applying/)).toBeInTheDocument();
+    await userEvent.click(within(box).getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByRole('region', { name: 'Suggestions about the wording' })).toBeNull();
+  });
+
   it('says who changed the vacancy first when the version is old, and keeps the typing as a draft', async () => {
     open((url, init) =>
       init?.method === 'PATCH'
@@ -598,6 +622,69 @@ describe('Candidate report', () => {
     expect(screen.getByText('Nothing to show in the resume.')).toBeInTheDocument();
   });
 
+  it('shows links the candidate gave only when link review is on: consent first, then a button per page', async () => {
+    let state: Record<string, unknown> = {
+      enabled: true,
+      consent: null,
+      links: [
+        { url: 'https://example.org/aysel', host: 'example.org', blocked: false },
+        { url: 'https://www.linkedin.com/in/aysel', host: 'www.linkedin.com', blocked: true },
+      ],
+      reviews: [],
+    };
+    const calls = open((url, init) => {
+      if (url.endsWith('/assistant/config'))
+        return { body: { ...SENAI, features: { ...SENAI.features, linkReview: true } } };
+      if (url.endsWith(`/assistant/candidates/${MID}/links`)) return { body: state };
+      if (url.endsWith('/links/consent') && init?.method === 'POST') {
+        state = {
+          ...state,
+          consent: {
+            source: 'application_form',
+            evidence: 'Form 77',
+            recordedBy: 'Me',
+            recordedAt: new Date().toISOString(),
+          },
+        };
+        return { body: state };
+      }
+      if (url.endsWith('/links/review') && init?.method === 'POST') {
+        state = {
+          ...state,
+          reviews: [
+            {
+              id: 'R1',
+              url: 'https://example.org/aysel',
+              host: 'example.org',
+              text: 'Built network automation tools.',
+              words: 4,
+              flagged: false,
+              fetchedAt: new Date().toISOString(),
+            },
+          ],
+        };
+        return { body: state };
+      }
+      return undefined;
+    });
+    render(<App check={up} />);
+    const card = await screen
+      .findByRole('region', { name: 'Links the candidate gave' })
+      .catch(() => null);
+    const root = card ?? (await screen.findByText('Links the candidate gave')).closest('section')!;
+    // No consent yet: the page button is off, the social network is never offered.
+    expect(within(root).getByRole('button', { name: 'Read example.org' })).toBeDisabled();
+    expect(within(root).getByText('Social networks are never read')).toBeInTheDocument();
+    await userEvent.type(within(root).getByLabelText(/Reference/), 'Form 77');
+    await userEvent.click(within(root).getByRole('button', { name: /Record the candidate/ }));
+    const btn = await within(root).findByRole('button', { name: 'Read example.org' });
+    await waitFor(() => expect(btn).toBeEnabled());
+    expect(calls.some((c) => c.url.endsWith('/links/review'))).toBe(false);
+    await userEvent.click(btn);
+    expect(await within(root).findByText('Built network automation tools.')).toBeInTheDocument();
+    expect(within(root).getByText(/Candidate-provided link · example.org/)).toBeInTheDocument();
+  });
+
   it('moves the divider with the arrow keys, Home and End', async () => {
     open();
     render(<App check={up} />);
@@ -763,6 +850,61 @@ describe('SenAI Ask bar', () => {
     expect(within(panel).getByText(/As of/)).toBeInTheDocument();
   });
 
+  it('keeps the panel pinned top to bottom so a long result list scrolls inside it', async () => {
+    mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline: 'Many matches.',
+                notes: [],
+                vacancy: null,
+                options: [],
+                counts: null,
+                rows: Array.from({ length: 30 }, (_, i) => ({
+                  matchId: `m${i}`,
+                  label: `Candidate ${i}`,
+                  score: 50,
+                  band: 'partial',
+                  mustFound: 1,
+                  mustTotal: 2,
+                  decision: 'new',
+                  decisionLabel: 'New',
+                  outOfDate: false,
+                  strengths: [],
+                  missing: [],
+                })),
+                more: 0,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: [],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'show many{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    await within(panel).findByRole('link', { name: 'Candidate 29' });
+    // Regression: "sm:bottom-auto" dropped the bottom edge, so the panel grew past the screen and never scrolled.
+    expect(panel.className).not.toMatch(/bottom-auto/);
+    expect(panel.className).toMatch(/sm:inset-y-0/);
+    expect(panel.className).toMatch(/sm:h-dvh/);
+    const list = within(panel).getByLabelText('Conversation');
+    expect(list.className).toMatch(/overflow-y-auto/);
+    expect(list.className).toMatch(/min-h-0/);
+  });
+
   it('shows what a skill search found: the vacancy and how often the skill is written', async () => {
     mockFetch(
       base((url, init) => {
@@ -815,6 +957,99 @@ describe('SenAI Ask bar', () => {
     const panel = await screen.findByRole('complementary', { name: 'SenAI' });
     expect(await within(panel).findByText(/Excel ×3/)).toBeInTheDocument();
     expect(within(panel).getByText(/Finance Analyst/)).toBeInTheDocument();
+  });
+
+  it('offers to suggest a word the dictionary does not know, once', async () => {
+    const calls = mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/skills/suggest'))
+          return { body: { id: 'S1', status: 'proposed' } };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline: 'Candidates whose resume mentions Zorblax: 0 (all vacancies).',
+                notes: [],
+                vacancy: null,
+                options: [],
+                counts: null,
+                skills: ['Zorblax'],
+                unknownSkills: ['Zorblax'],
+                rows: [],
+                more: 0,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: ['skill_search'],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'Who knows Zorblax?{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    await userEvent.click(
+      await within(panel).findByRole('button', { name: /Suggest Zorblax to the administrator/ }),
+    );
+    expect(await within(panel).findByText(/An administrator will review it/)).toBeInTheDocument();
+    const sent = calls.filter((c) => c.url.endsWith('/assistant/skills/suggest'));
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(String(sent[0]!.init?.body))).toMatchObject({ label: 'Zorblax' });
+  });
+
+  it('offers "Analyze for this vacancy" only as a button, and says when it was added', async () => {
+    const calls = mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/rediscovery/analyze'))
+          return { body: { documentId: 'D2', vacancyId: VID, queued: true } };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline: '1 resume from other vacancies may fit Network Engineer.',
+                notes: [],
+                vacancy: { id: VID, title: 'Network Engineer', status: 'open' },
+                options: [],
+                counts: null,
+                rows: [],
+                analyze: [{ matchId: MID, vacancyId: VID, label: 'Aysel Mammadova' }],
+                more: 0,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: ['rediscovery'],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'rediscover candidates for Network Engineer{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    const btn = await within(panel).findByRole('button', {
+      name: 'Analyze Aysel Mammadova for Network Engineer',
+    });
+    expect(calls.some((c) => c.url.endsWith('/assistant/rediscovery/analyze'))).toBe(false);
+    await userEvent.click(btn);
+    expect(await within(panel).findByText(/was added to Network Engineer/)).toBeInTheDocument();
+    const sent = calls.filter((c) => c.url.endsWith('/assistant/rediscovery/analyze'));
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(String(sent[0]!.init?.body))).toEqual({ matchId: MID, vacancyId: VID });
   });
 
   it('shows the proof line, the chips, the receipt and a table; a chip can be taken off', async () => {

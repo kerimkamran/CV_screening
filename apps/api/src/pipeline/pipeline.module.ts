@@ -55,6 +55,7 @@ import { VacancyService } from './vacancy.service';
     CandidatesService,
     ReportService,
     RetentionService,
+    LINK_READER,
   ],
 })
 export class PipelineModule {}

@@ -469,7 +469,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
 
       {marked('shortlist') + marked('hold') + marked('reject') > 0 && (
         <div
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-edge p-3 text-sm"
+          className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-edge p-3 text-sm"
           aria-label={t('My marks')}
           role="group"
         >
@@ -650,7 +650,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           </button>
         )}
         {limited.length > 0 && (
-          <details className="rounded-lg border border-line bg-card p-3">
+          <details className="rounded-2xl border border-line bg-card p-3">
             <summary className="cursor-pointer font-medium">
               {t('Limited ({n}): fewer of the requirements found. Nobody is rejected.', {
                 n: limited.length,
@@ -677,7 +677,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           </details>
         )}
         {missedByOne.length > 0 && (
-          <details className="rounded-lg border border-line bg-card p-3">
+          <details className="rounded-2xl border border-line bg-card p-3">
             <summary className="cursor-pointer font-medium">
               {t('Missed by one must-have ({n})', { n: missedByOne.length })}
             </summary>
@@ -703,7 +703,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           </details>
         )}
         {human.length > 0 && (
-          <div className="rounded-lg border border-dashed border-edge p-3">
+          <div className="rounded-2xl border border-dashed border-edge p-3">
             <h3 className="font-medium">{t('Needs a human look ({n})', { n: human.length })}</h3>
             <p className="text-sm text-ink-3">
               {t('These could not be scored. Open the original and read it yourself.')}

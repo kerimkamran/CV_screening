@@ -11,7 +11,17 @@ export const BRAND_BY = 'by Azerconnect Group';
 export const BRAND_FULL = `${BRAND_NAME} ${BRAND_BY}`;
 
 /** Two viewpoints joined to one star (spec 2.2). Lines follow the text colour; the star is gold. */
-export function Mark({ size = 28, className = '' }: { size?: number; className?: string }) {
+export function Mark({
+  size = 28,
+  className = '',
+  fill = 'var(--c-card, #fff)',
+  star = 'var(--c-star, #F5C461)',
+}: {
+  size?: number;
+  className?: string;
+  fill?: string;
+  star?: string;
+}) {
   return (
     <svg
       width={size}
@@ -29,43 +39,46 @@ export function Mark({ size = 28, className = '' }: { size?: number; className?:
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle
-        cx="6"
-        cy="23"
-        r="3.2"
-        fill="var(--c-card, #fff)"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <circle
-        cx="22"
-        cy="23"
-        r="3.2"
-        fill="var(--c-card, #fff)"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <circle cx="14" cy="6" r="3.6" fill="var(--c-star, #F5C461)" />
+      <circle cx="6" cy="23" r="3.2" fill={fill} stroke="currentColor" strokeWidth="2" />
+      <circle cx="22" cy="23" r="3.2" fill={fill} stroke="currentColor" strokeWidth="2" />
+      <circle cx="14" cy="6" r="3.6" fill={star} />
     </svg>
   );
 }
 
 /** The lockup: mark, wordmark, endorsement line. `compact` drops the endorsement (spec 6.2.1). */
-export function Brand({ compact = false, size = 28 }: { compact?: boolean; size?: number }) {
+export function Brand({
+  compact = false,
+  size = 28,
+  onBrand = false,
+}: {
+  compact?: boolean;
+  size?: number;
+  /** On the navy header band: white wordmark, gold star. */
+  onBrand?: boolean;
+}) {
   return (
     <span
       className="inline-flex items-center gap-2.5"
       aria-label={compact ? BRAND_NAME : BRAND_FULL}
     >
-      <Mark size={size} className="text-link" />
+      <Mark
+        size={size}
+        className={onBrand ? 'text-on-brand' : 'text-link'}
+        fill={onBrand ? 'var(--c-brand)' : undefined}
+        star={onBrand ? '#F5C461' : undefined}
+      />
       <span
         aria-hidden="true"
-        className="text-[22px] font-extrabold leading-none tracking-[-0.03em] text-ink"
+        className={`text-[22px] font-extrabold leading-none tracking-[-0.03em] ${onBrand ? 'text-on-brand' : 'text-ink'}`}
       >
         {BRAND_NAME}
       </span>
       {!compact && (
-        <span aria-hidden="true" className="hidden text-[13px] font-semibold text-ink-3 sm:inline">
+        <span
+          aria-hidden="true"
+          className={`hidden text-[13px] font-semibold sm:inline ${onBrand ? 'text-on-brand/80' : 'text-ink-3'}`}
+        >
           {BRAND_BY}
         </span>
       )}

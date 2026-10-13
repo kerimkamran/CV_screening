@@ -67,7 +67,7 @@ function RowMenu({
         <span aria-hidden="true">⋯</span>
       </summary>
       <div
-        className="absolute right-0 z-10 mt-1 w-44 rounded-lg border border-line bg-card p-1 text-sm shadow-lg"
+        className="absolute right-0 z-10 mt-1 w-44 rounded-2xl border border-line bg-card p-1 text-sm shadow-lg"
         onKeyDown={(e) => e.key === 'Escape' && close()}
       >
         <a className={item} href={`#/vacancies/${v.id}`}>
@@ -187,7 +187,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">{t('Vacancies')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t('Vacancies')}</h1>
         {canCreate && (
           <a href="#/vacancies/new" className={btnPrimary}>
             {t('New vacancy')}
@@ -237,7 +237,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
       {rows === null && !error && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
 
       {empty && !filtered && (
-        <div className="rounded-lg border border-dashed border-edge bg-card p-10 text-center">
+        <div className="rounded-2xl border border-dashed border-edge bg-card p-10 text-center">
           <p className="text-base font-medium">{t('No vacancies yet. Add the first one.')}</p>
           {canCreate && (
             <a href="#/vacancies/new" className={`${btnPrimary} mt-4`}>
@@ -247,7 +247,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
         </div>
       )}
       {empty && filtered && (
-        <p className="rounded-lg border border-line bg-card p-6 text-center text-sm text-ink-2">
+        <p className="rounded-2xl border border-line bg-card p-6 text-center text-sm text-ink-2">
           {t('No vacancies match.')}{' '}
           <button
             type="button"
@@ -263,7 +263,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
       )}
 
       {rows && rows.length > 0 && (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-2xl border border-line bg-card">
           <div
             aria-hidden="true"
             className="hidden grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.3fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem] gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
@@ -281,12 +281,12 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
             {rows.map((v) => (
               <li
                 key={v.id}
-                className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3 text-sm lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.3fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
+                className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.3fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
               >
                 <div className="col-span-2 min-w-0 lg:col-span-1">
                   <a
                     href={`#/vacancies/${v.id}`}
-                    className="block truncate font-medium text-link hover:underline"
+                    className="block truncate text-[15px] font-semibold text-link hover:underline"
                   >
                     {v.title}
                   </a>
@@ -298,7 +298,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
                 </div>
                 <span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-medium ${v.archived ? 'bg-neutral text-ink-2' : STATUS_STYLE[v.status]}`}
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${v.archived ? 'bg-neutral text-ink-2' : STATUS_STYLE[v.status]}`}
                   >
                     {v.archived ? t('Archived') : statusName(v.status)}
                   </span>

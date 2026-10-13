@@ -264,10 +264,14 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="border-b bg-card">
+      <header className="bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <a href="#/" className="rounded focus-visible:outline-2" title={BRAND_FULL}>
-            <Brand />
+          <a
+            href="#/"
+            className="rounded-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+            title={BRAND_FULL}
+          >
+            <Brand onBrand />
           </a>
           {!me && <LanguageSwitch signedIn={false} />}
         </div>

@@ -353,11 +353,11 @@ export function CandidatePool({
     <div className="space-y-4">
       {!vacancyId && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">{t('Candidates')}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('Candidates')}</h1>
         </div>
       )}
 
-      <div className="space-y-3 rounded-lg border border-line bg-card p-3">
+      <div className="space-y-3 rounded-2xl border border-line bg-card p-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -513,7 +513,7 @@ export function CandidatePool({
       )}
 
       {summary && (
-        <div className="space-y-2 rounded-lg border border-line bg-card p-4">
+        <div className="space-y-2 rounded-2xl border border-line bg-card p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold">{summary.subject}</h2>
             <button type="button" className={btnSecondary} onClick={() => setSummary(null)}>
@@ -561,7 +561,7 @@ export function CandidatePool({
         <div
           role="region"
           aria-label={t('Selected candidates')}
-          className="sticky top-14 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-accent bg-sel p-2 text-sm shadow"
+          className="sticky top-14 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-accent bg-sel p-2 text-sm shadow"
         >
           <span className="font-medium">{t('{n} selected', { n: selected.size })}</span>
           <label className="flex items-center gap-2">
@@ -598,7 +598,7 @@ export function CandidatePool({
       )}
 
       {page && page.total === 0 && (
-        <div className="rounded-lg border border-dashed border-edge bg-card p-10 text-center text-sm text-ink-2">
+        <div className="rounded-2xl border border-dashed border-edge bg-card p-10 text-center text-sm text-ink-2">
           {filtered ? (
             <>
               {t('No candidates match.')}{' '}
@@ -617,7 +617,7 @@ export function CandidatePool({
       )}
 
       {shown.length > 0 && (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-2xl border border-line bg-card">
           <div
             role="row"
             className="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
@@ -725,7 +725,7 @@ export function CandidatePool({
                 <span className="col-span-3 flex flex-wrap items-center gap-1.5 lg:col-span-1">
                   <span className="font-medium tabular-nums">{Math.round(r.score)}%</span>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-medium ${BAND_STYLE[r.band]}`}
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
                   >
                     {t(BAND_NAME[r.band])}
                   </span>

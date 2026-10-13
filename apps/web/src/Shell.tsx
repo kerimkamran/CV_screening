@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Me } from './api';
+import { api, type Me } from './api';
 import { Appearance, LanguageSwitch } from './Appearance';
 import {
   askSenAI,
@@ -87,8 +87,8 @@ function AskBar() {
     >
       <label className="relative block">
         <span className="sr-only">{t('Ask {name}', { name: cfg.name })}</span>
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-link">
-          <Mark size={18} />
+        <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center">
+          <Mark size={18} className="text-on-brand" fill="var(--c-brand)" star="#F5C461" />
         </span>
         <input
           ref={ref}
@@ -96,10 +96,75 @@ function AskBar() {
           onChange={(e) => setQ(e.target.value)}
           maxLength={1000}
           placeholder={`${cfg.name}: ${SLOGAN}`}
-          className="block w-full rounded-full border border-edge bg-page py-1.5 pl-9 pr-3 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="block w-full rounded-full border border-white/25 bg-white/10 py-2 pl-10 pr-4 text-sm text-on-brand placeholder:text-white/80 transition-colors hover:bg-white/15 focus:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         />
       </label>
     </form>
+  );
+}
+
+/** What SenAI keeps about the person: only "show N", only if they asked for it. View, change, clear (plan F6). */
+function SenaiPrefs({ name }: { name: string }) {
+  const t = useT();
+  const [top, setTop] = useState<number | null | undefined>(undefined);
+  const [draft, setDraft] = useState('5');
+  useEffect(() => {
+    let live = true;
+    api.get<{ top: number | null }>('/assistant/preferences').then(
+      (r) => {
+        if (!live || !r || typeof r !== 'object' || !('top' in r)) return;
+        setTop(r.top);
+        if (r.top) setDraft(String(r.top));
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (top === undefined) return null;
+  const save = (v: number | null) =>
+    api.put<{ top: number | null }>('/assistant/preferences', { top: v }).then(
+      (r) => setTop(r.top),
+      () => undefined,
+    );
+  const n = Math.min(50, Math.max(1, Number(draft) || 5));
+  return (
+    <div className="border-t border-line px-2 py-2 text-xs text-ink-2">
+      <p className="font-medium text-ink">{t('What {name} remembers', { name })}</p>
+      <p className="mt-0.5">
+        {top
+          ? t('Shows the top {n} unless you ask for more.', { n: top })
+          : t('Nothing saved. Ask "always show top 5" or set it here.')}
+      </p>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={draft}
+          aria-label={t('How many to show')}
+          onChange={(e) => setDraft(e.target.value)}
+          className="w-16 rounded-lg border border-edge px-2 py-1 text-sm"
+        />
+        <button
+          type="button"
+          className="rounded-full border border-edge px-2.5 py-1 font-semibold hover:bg-hover"
+          onClick={() => void save(n)}
+        >
+          {t('Save')}
+        </button>
+        {top ? (
+          <button
+            type="button"
+            className="rounded-full px-2.5 py-1 font-semibold text-link hover:bg-hover"
+            onClick={() => void save(null)}
+          >
+            {t('Clear')}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -107,16 +172,19 @@ function AccountMenu({
   me,
   isAdmin,
   isGov,
+  isTa,
   onSignOut,
   onMe,
 }: {
   me: Me;
+  isTa: boolean;
   isAdmin: boolean;
   isGov: boolean;
   onSignOut: () => void;
   onMe: (f: (m: Me | null) => Me | null) => void;
 }) {
   const t = useT();
+  const cfg = useAssistantConfig();
   const ref = useRef<HTMLDetailsElement>(null);
   const name = me.displayName ?? me.email ?? '';
   const initials = name
@@ -126,17 +194,17 @@ function AccountMenu({
     .map((w) => w[0]!.toUpperCase())
     .join('');
   const close = () => ref.current?.removeAttribute('open');
-  const link = 'block rounded px-2 py-1.5 hover:bg-hover';
+  const link = 'block rounded-lg px-2 py-1.5 hover:bg-hover';
   return (
     <details ref={ref} className="relative shrink-0">
       <summary
         aria-label={t('Account menu')}
-        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-accent text-sm font-semibold text-on-accent focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-white text-sm font-bold text-brand focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand focus-visible:outline-none"
       >
         {initials || '·'}
       </summary>
       <div
-        className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-line bg-card p-2 text-sm shadow-lg"
+        className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-line bg-card p-2 text-sm text-ink shadow-xl"
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('a')) close();
         }}
@@ -169,6 +237,7 @@ function AccountMenu({
             {t('Security')}
           </a>
         </div>
+        {isTa && cfg && <SenaiPrefs name={cfg.name} />}
         <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-2">
           <LanguageSwitch signedIn />
           <Appearance
@@ -237,22 +306,33 @@ export function Shell({
   const open = useAssistantOpen();
   const rail = isTa;
   const link = (active: boolean) =>
-    `flex flex-col items-center gap-1 rounded-md px-2 py-2 text-xs font-medium ${active ? 'bg-sel text-link' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
+    `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="sticky top-0 z-20 border-b bg-card">
-        <div className="flex items-center gap-3 px-4 py-2">
-          <a href={isTa ? '#/vacancies' : '#/'} className="shrink-0 rounded" title={BRAND_FULL}>
+      <header className="sticky top-0 z-20 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]">
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <a
+            href={isTa ? '#/vacancies' : '#/'}
+            className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+            title={BRAND_FULL}
+          >
             <span className="hidden sm:inline">
-              <Brand />
+              <Brand onBrand />
             </span>
             <span className="sm:hidden">
-              <Brand compact />
+              <Brand compact onBrand />
             </span>
           </a>
           <AskBar />
-          <AccountMenu me={me} isAdmin={isAdmin} isGov={isGov} onSignOut={onSignOut} onMe={onMe} />
+          <AccountMenu
+            me={me}
+            isTa={isTa}
+            isAdmin={isAdmin}
+            isGov={isGov}
+            onSignOut={onSignOut}
+            onMe={onMe}
+          />
         </div>
       </header>
 
@@ -260,7 +340,7 @@ export function Shell({
         {rail && (
           <nav
             aria-label={t('Main')}
-            className="sticky top-[53px] hidden h-[calc(100vh-53px)] w-20 shrink-0 flex-col gap-1 border-r bg-card p-2 sm:flex"
+            className="sticky top-[57px] hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
           >
             {NAV.map(([href, label]) => (
               <a

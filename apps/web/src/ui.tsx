@@ -3,12 +3,12 @@ import type { ReqStatus } from './api';
 import { locale, tr } from './i18n';
 
 export const btn =
-  'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
 export const btnPrimary = `${btn} bg-accent text-on-accent hover:bg-accent-hover`;
-export const btnSecondary = `${btn} border border-edge bg-card text-ink hover:bg-page`;
+export const btnSecondary = `${btn} border border-edge bg-card text-ink hover:bg-hover`;
 export const btnDanger = `${btn} bg-danger text-on-accent hover:bg-danger-hover`;
 export const input =
-  'block w-full rounded-md border border-edge px-2.5 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus';
+  'block w-full rounded-xl border border-edge px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus';
 
 export function Field({
   label,
@@ -38,7 +38,7 @@ export function Card({
   actions?: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-line bg-card p-4 shadow-sm">
+    <section className="rounded-2xl border border-line bg-card p-5 shadow-[0_1px_2px_rgb(11_31_58/0.05),0_6px_20px_-12px_rgb(11_31_58/0.18)]">
       {(title || actions) && (
         <div className="mb-3 flex items-center justify-between gap-2">
           {title && <h2 className="text-base font-semibold text-ink">{title}</h2>}
@@ -66,7 +66,7 @@ export function Notice({
   return (
     <div
       role={kind === 'error' ? 'alert' : 'status'}
-      className={`rounded-md border px-3 py-2 text-sm ${c}`}
+      className={`rounded-xl border px-3.5 py-2.5 text-sm ${c}`}
     >
       {children}
     </div>
@@ -87,7 +87,9 @@ export const statusLabel = (s: ReqStatus) => tr(STATUS[s][0]);
 export function StatusBadge({ status }: { status: ReqStatus | null }) {
   if (!status) return <span className="text-xs text-ink-3">—</span>;
   const [label, cls] = STATUS[status];
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{tr(label)}</span>;
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{tr(label)}</span>
+  );
 }
 
 const BAND: Record<string, [string, string]> = {
@@ -99,7 +101,9 @@ const BAND: Record<string, [string, string]> = {
 export function BandBadge({ band }: { band: string | null }) {
   if (!band) return <span className="text-xs text-ink-3">—</span>;
   const [label, cls] = BAND[band] ?? [band, 'bg-neutral'];
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{tr(label)}</span>;
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{tr(label)}</span>
+  );
 }
 
 export const OUTCOME: Record<string, [string, string]> = {
@@ -161,7 +165,7 @@ export function UndoBar({
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-20 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-card px-4 py-2 text-sm shadow-lg sm:bottom-6"
+      className="fixed bottom-20 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-card px-4 py-2.5 text-sm shadow-lg sm:bottom-6"
     >
       <span>{toast.text}</span>
       <button

@@ -401,6 +401,68 @@ describe('Assistant settings (admin)', () => {
     log: [],
   });
 
+  it('lists suggested words and lets the administrator approve one or add their own', async () => {
+    let rows = [
+      {
+        id: '0000000000000000000000SK01',
+        skillId: 'open-ran',
+        label: 'Open RAN',
+        kind: 'domain',
+        aliases: ['open ran', 'oran'],
+        extends: null,
+        status: 'proposed',
+        proposedBy: 'Aysel',
+        decidedBy: null,
+        note: null,
+      },
+    ];
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/admin/assistant/audit')) return { body: { turns: [] } };
+      if (url.endsWith('/admin/assistant/skills') && init?.method === 'POST') {
+        rows = [
+          { ...rows[0]!, id: '0000000000000000000000SK02', label: 'Zorblax', status: 'approved' },
+          ...rows,
+        ];
+        return { body: rows[0] };
+      }
+      if (url.includes('/admin/assistant/skills/') && init?.method === 'POST') {
+        rows = rows.map((r) => ({ ...r, status: 'approved' }));
+        return { body: rows[0] };
+      }
+      if (url.endsWith('/admin/assistant/skills')) return { body: rows };
+      return { body: overview() };
+    });
+    render(<AssistantSettings />);
+    const list = await screen.findByRole('list', { name: 'Added words' });
+    expect(within(list).getByText('Open RAN')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Open RAN' }));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.endsWith('/skills/0000000000000000000000SK01/decide') &&
+            JSON.parse(String(c.init?.body)).to === 'approved',
+        ),
+      ).toBe(true),
+    );
+    await userEvent.type(screen.getByLabelText('Skill name'), 'Zorblax');
+    await userEvent.type(
+      screen.getByLabelText(/Other ways it is written/),
+      'zorblax suite, zorblaxx',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Add word' }));
+    await waitFor(() => {
+      const post = calls.find(
+        (c) => c.url.endsWith('/admin/assistant/skills') && c.init?.method === 'POST',
+      );
+      expect(JSON.parse(String(post?.init?.body))).toMatchObject({
+        label: 'Zorblax',
+        aliases: ['zorblax suite', 'zorblaxx'],
+        extends: null,
+      });
+    });
+  });
+
   it('shows the state, usage and a test button, and saves what the administrator chose', async () => {
     const calls = mockFetch((url, init) => {
       if (url.endsWith('/admin/assistant/audit')) return { body: { turns: [] } };

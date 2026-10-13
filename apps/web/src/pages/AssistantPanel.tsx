@@ -486,7 +486,7 @@ function AnswerView({
     a.facts.length > 0 ||
     a.questions.length > 0;
   return (
-    <div className={`mr-4 space-y-2 rounded-lg border p-3 text-sm ${tone}`}>
+    <div className={`mr-4 space-y-2 rounded-2xl border p-3 text-sm ${tone}`}>
       <p>
         <span
           className="mr-2 rounded border border-edge px-1 text-xs font-semibold text-ink-2"

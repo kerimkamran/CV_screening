@@ -258,7 +258,48 @@ export const AZ_POOL: Record<string, string> = {
   'How many candidates for {vacancy}?': '{vacancy} üçün neçə namizəd var?',
   'Show the Shortlist for {vacancy}': '{vacancy} üçün qısa siyahını göstərin',
   'Show all ({n} more)': 'Hamısını göstərin (daha {n})',
+  'Words not in the dictionary': 'Lüğətdə olmayan sözlər',
+  '"{word}" is not in the dictionary, so it was searched as written.':
+    '"{word}" lüğətdə yoxdur, ona görə yazıldığı kimi axtarıldı.',
+  'Suggested. An administrator will review it.': 'Təklif göndərildi. Administrator baxacaq.',
+  'Suggest {word} to the administrator': '{word} sözünü administratora təklif edin',
+  'Could not send. Try again': 'Göndərilmədi. Yenidən cəhd edin',
+  'Suggest it': 'Təklif edin',
+  'Suggestions about the wording': 'Mətnin yazılışı barədə təkliflər',
+  Dismiss: 'Bağlayın',
+  'Links the candidate gave': 'Namizədin verdiyi keçidlər',
+  'A page is read only with the candidate’s recorded consent and only when you press the button. Contact details and the name are removed, and the text is not scored.':
+    'Səhifə yalnız namizədin qeydə alınmış razılığı ilə və yalnız siz düyməni basanda oxunur. Əlaqə məlumatları və ad silinir, mətnə bal verilmir.',
+  'Consent recorded: {source} ({evidence}) by {name} {when}.':
+    'Razılıq qeydə alındı: {source} ({evidence}), {name}, {when}.',
+  'Withdraw consent and delete what was read': 'Razılığı geri götürün və oxunanları silin',
+  'Where the consent came from': 'Razılıq haradan gəlib',
+  'Reference (form number, date, e-mail subject)':
+    'İstinad (forma nömrəsi, tarix, e-poçtun mövzusu)',
+  'Record the candidate’s consent': 'Namizədin razılığını qeyd edin',
+  'Application form': 'Müraciət forması',
+  'HR system': 'HR sistemi',
+  'E-mail from the candidate': 'Namizədin e-poçtu',
+  'Links in the resume': 'Rezümedəki keçidlər',
+  'Social networks are never read': 'Sosial şəbəkələr heç vaxt oxunmur',
+  'Read {host}': '{host} səhifəsini oxuyun',
+  'Reading…': 'Oxunur…',
+  'Read this page': 'Bu səhifəni oxuyun',
+  'Candidate-provided link · {host} · read {when} · not assessed':
+    'Namizədin verdiyi keçid · {host} · oxundu {when} · qiymətləndirilməyib',
+  'This page contains instructions aimed at an AI. They were ignored.':
+    'Bu səhifədə süni intellektə yönəlmiş göstərişlər var. Onlara əməl edilmədi.',
+  'Analyze for this vacancy': 'Bu vakansiya üçün analiz edin',
+  'Analyze {name} for {vacancy}': '{name} adlı namizədi {vacancy} üçün analiz edin',
+  '{name} was added to {vacancy}. The analysis is running.':
+    '{name} {vacancy} vakansiyasına əlavə edildi. Analiz gedir.',
   '{name} finds candidates in your pool. It shows the matches; it does not decide.':
     '{name} namizəd bazanızda axtarış aparır. Uyğunluqları göstərir, qərar vermir.',
   '{name} is looking…': '{name} axtarır…',
+  'What {name} remembers': '{name} nəyi yadda saxlayır',
+  'Shows the top {n} unless you ask for more.': 'Daha çox istəməsəniz, ilk {n} nəticəni göstərir.',
+  'Nothing saved. Ask "always show top 5" or set it here.':
+    'Heç nə saxlanmayıb. "həmişə ilk 5-i göstər" yazın və ya burada təyin edin.',
+  'How many to show': 'Neçəsini göstərmək',
+  Clear: 'Təmizlə',
 };

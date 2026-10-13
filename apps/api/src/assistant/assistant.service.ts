@@ -43,6 +43,8 @@ export interface Settings {
   enabled: boolean;
   name: string;
   modelRowId: string | null;
+  /** Optional faster model that only reads questions; empty means the answer model reads them. */
+  understandModelRowId: string | null;
   features: {
     challenge: boolean;
     compare: boolean;
@@ -115,6 +117,7 @@ export class AssistantService {
       enabled: boolean;
       name: string;
       model_row_id: string | null;
+      understand_model_id: string | null;
       feat_challenge: boolean;
       feat_compare: boolean;
       feat_interview: boolean;
@@ -138,6 +141,7 @@ export class AssistantService {
       enabled: r.enabled,
       name: r.name,
       modelRowId: r.model_row_id,
+      understandModelRowId: r.understand_model_id,
       features: {
         challenge: r.feat_challenge,
         compare: r.feat_compare,

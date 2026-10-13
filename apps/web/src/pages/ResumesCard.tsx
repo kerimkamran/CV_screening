@@ -147,7 +147,7 @@ export function ResumesCard({
                 setDragging(false);
                 void filesFromDrop(e.dataTransfer).then(addFiles);
               }}
-              className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
+              className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
             >
               <p className="font-medium">{t('Drop resumes here')}</p>
               <p className="text-sm text-ink-3">

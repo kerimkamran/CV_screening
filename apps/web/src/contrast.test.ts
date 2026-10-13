@@ -57,6 +57,7 @@ const TEXT_ON_SURFACE: [string, string[]][] = [
   ['warn-text', ['bg', 'card']],
 ];
 const PAIRS: [string, string][] = [
+  ['on-brand', 'brand'],
   ['on-accent', 'accent'],
   ['on-accent', 'accent-hover'],
   ['on-accent', 'danger'],
