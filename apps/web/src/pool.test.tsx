@@ -1305,4 +1305,95 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
       ).not.toBeNull(),
     );
   });
+
+  it('offers the requirements of a similar vacancy in the Role card, and adds them only on a click', async () => {
+    sessionStorage.setItem(`cv-copy-reqs:${VID}`, 'OTHER');
+    window.location.hash = `/vacancies/${VID}/runs`;
+    mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/vacancies/OTHER'))
+          return {
+            body: view({
+              id: 'OTHER',
+              title: 'Backend Engineer',
+              requirements: [
+                { id: 'X1', text: 'BGP routing', classification: 'mandatory', weight: 10 },
+                { id: 'X2', text: 'Docker', classification: 'mandatory', weight: 8 },
+              ],
+            }),
+          };
+        if (url.endsWith(`/vacancies/${VID}`) && isGet(init)) return { body: view() };
+        if (url.endsWith(`/vacancies/${VID}/runs`)) return { body: [] };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const box = await screen.findByRole('region', { name: 'Requirements from a similar vacancy' });
+    expect(within(box).getByText(/Add 1 requirements from “Backend Engineer”/)).toBeInTheDocument();
+    expect(within(box).getByText('Docker')).toBeInTheDocument();
+    expect(screen.getAllByText('Docker')).toHaveLength(1); // only in the offer
+    await userEvent.click(within(box).getByRole('button', { name: 'Add them to the form' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: 'Requirements from a similar vacancy' }),
+      ).toBeNull(),
+    );
+    expect(screen.getAllByText('Docker').length).toBeGreaterThan(0); // now in the form
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    expect(sessionStorage.getItem(`cv-copy-reqs:${VID}`)).toBeNull();
+  });
+
+  it('heads skill-search results by vacancy and says they are mentioned, not assessed', async () => {
+    mockFetch(
+      base((url, init) => {
+        if (url.endsWith('/assistant/config')) return { body: SENAI };
+        if (url.includes('/vacancies?')) return { body: [listItem()] };
+        if (url.endsWith('/assistant/ask') && init?.method === 'POST')
+          return {
+            body: {
+              conversationId: 'C1',
+              messageId: 'A1',
+              answer: {
+                kind: 'pool',
+                headline:
+                  'Candidates whose resume mentions Huawei core network: 2 (all vacancies).',
+                notes: [],
+                vacancy: null,
+                options: [],
+                counts: null,
+                skills: ['Huawei core network'],
+                groups: [{ vacancyId: VID, title: 'Network Engineer', total: 2 }],
+                rows: [
+                  {
+                    ...poolRow(1),
+                    strengths: [],
+                    missing: [],
+                    passages: [
+                      {
+                        skill: 'Huawei core network',
+                        text: 'core network by Huawei',
+                        hit: 'Huawei',
+                      },
+                    ],
+                  },
+                ],
+                more: 1,
+                asOf: '2026-10-08T09:00:00Z',
+                suggestions: [],
+                flags: ['skill_search'],
+                language: 'en',
+              },
+            },
+          };
+        return undefined;
+      }),
+    );
+    render(<App check={up} />);
+    const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
+    await userEvent.type(bar, 'Huawei core network?{Enter}');
+    const panel = await screen.findByRole('complementary', { name: 'SenAI' });
+    expect(await within(panel).findByText('2 resumes mention it')).toBeInTheDocument();
+    expect(within(panel).getByText('Mentioned in the resume, not assessed')).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /Show all \(1 more\)/ })).toBeInTheDocument();
+  });
 });

@@ -55,6 +55,18 @@ const STATUS: Record<string, TKey> = {
   not_applicable: 'st_not_applicable',
 };
 
+/** Words that ask to remember rather than say what to look for, in three languages. */
+const RECALL_STOP = new Set(
+  (
+    'what did we conclude about decide decided say said last week month day days yesterday today earlier ' +
+    'before previous conversation conversations chat chats remember recall the and for with that this on ' +
+    'ne nə dedik qərar verdik verdim keçən həftə ay gün dünən bu əvvəl əvvəlki söhbət söhbətdə barədə haqqında ' +
+    'что мы решили вчера неделе прошлой разговор разговоре про по о об'
+  )
+    .split(' ')
+    .flatMap((w) => [w, fold(w)]),
+);
+
 const bakuDate = (d: Date): string =>
   new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Baku',
@@ -511,19 +523,34 @@ export class PoolTools {
 
   // ------------------------------------------------------------------ recall, about
 
-  /** What the person concluded before: their own conversations only, headlines only. */
+  /**
+   * What the person concluded before (plan S2): their own conversations only. The question's own
+   * words (a candidate's name, a vacancy, a skill) and a date ("last week") narrow it; the answer is the
+   * stored headline, never a new opinion. Other people's conversations are never read.
+   */
   private async recall(c: ToolCtx) {
     const { a, q } = c;
     const lang = a.language;
-    const terms = q.skills.map((s) => `%${s.label}%`);
-    const { rows } = await this.db.query<{ title: string; headline: string; at: Date }>(
-      `SELECT cv.title, m.content->>'headline' AS headline, m.created_at AS at
+    const words = tokens(c.text).filter((w) => w.length >= 3 && !RECALL_STOP.has(w));
+    const terms = [
+      ...new Set([...q.skills.map((s) => s.label.toLowerCase()), ...words.slice(0, 6)]),
+    ].map((t) => `%${t.replace(/[\\%_]/g, '')}%`);
+    const from = q.since ? new Date(`${q.since}T00:00:00+04:00`).toISOString() : null;
+    const { rows } = await this.db.query<{
+      title: string;
+      headline: string;
+      vacancy: string | null;
+      at: Date;
+    }>(
+      `SELECT cv.title, m.content->>'headline' AS headline, m.content->'vacancy'->>'title' AS vacancy,
+              m.created_at AS at
          FROM assistant_pool_message m JOIN assistant_conversation cv ON cv.id = m.conversation_id
         WHERE cv.user_id = $1 AND cv.deleted_at IS NULL AND m.role = 'assistant'
-          AND m.content->>'kind' = 'pool'
-          AND ($2::text[] = '{}' OR m.content->>'headline' ILIKE ANY($2::text[]) OR cv.title ILIKE ANY($2::text[]))
-        ORDER BY m.created_at DESC LIMIT 5`,
-      [c.p.userId, terms],
+          AND m.content->>'kind' IN ('pool','help')
+          AND ($3::timestamptz IS NULL OR m.created_at >= $3)
+          AND ($2::text[] = '{}' OR m.content::text ILIKE ANY($2::text[]) OR cv.title ILIKE ANY($2::text[]))
+        ORDER BY m.created_at DESC LIMIT 8`,
+      [c.p.userId, terms, from],
     );
     a.kind = 'help';
     a.flags = ['recall'];
@@ -533,11 +560,17 @@ export class PoolTools {
     }
     a.headline = tsay(lang, 'recallHead');
     a.table = {
-      head: [tsay(lang, 'hWhen'), tsay(lang, 'hQuestion'), tsay(lang, 'hAnswer')],
+      head: [
+        tsay(lang, 'hWhen'),
+        tsay(lang, 'hQuestion'),
+        tsay(lang, 'hVacancy'),
+        tsay(lang, 'hAnswer'),
+      ],
       rows: rows.map((r) => ({
-        cells: [bakuDate(new Date(r.at)), r.title, r.headline ?? ''],
+        cells: [bakuDate(new Date(r.at)), r.title, r.vacancy ?? '', r.headline ?? ''],
       })),
     };
+    a.notes = [tsay(lang, 'recallNote')];
   }
 
   private about(c: ToolCtx) {

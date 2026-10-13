@@ -132,6 +132,9 @@ export function RoleCard({
   const [linkInput, setLinkInput] = useState('');
   const [linkRead, setLinkRead] = useState<{ host: string; words: number } | null>(null);
   const [problem, setProblem] = useState('');
+  const [copyOffer, setCopyOffer] = useState<{ title: string; reqs: VacancyRequirement[] } | null>(
+    null,
+  );
   const [coach, setCoach] = useState<{ headline: string; tips: string[] } | null>(null);
   const [readText, setReadText] = useState<string | null>(
     vacancy?.requirements.length ? vacancy.description : null,
@@ -152,6 +155,35 @@ export function RoleCard({
     setForm((cur) => (same(cur, saved) ? next : cur));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancy?.version, vacancy?.requirementsVersion]);
+
+  // SenAI's similar-vacancy answer sends the person here; nothing is copied until they press the button.
+  useEffect(() => {
+    if (!id) return;
+    let from: string | null = null;
+    try {
+      from = sessionStorage.getItem(`cv-copy-reqs:${id}`);
+      if (from) sessionStorage.removeItem(`cv-copy-reqs:${id}`);
+    } catch {
+      /* the offer is a convenience only */
+    }
+    if (!from) return;
+    let live = true;
+    api.get<VacancyView>(`/vacancies/${from}`).then(
+      (o) => live && setCopyOffer({ title: o.title, reqs: o.requirements }),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim();
+  const copyNew = copyOffer
+    ? copyOffer.reqs.filter(
+        (r) =>
+          r.classification !== 'disqualifier' &&
+          !form.reqs.some((m) => norm(m.text) === norm(r.text)),
+      )
+    : [];
 
   // The browser draft: written while there are unsaved changes, offered on the next visit.
   useEffect(() => {
@@ -474,6 +506,56 @@ export function RoleCard({
 
   return (
     <Card title={t('The role')}>
+      {copyOffer && !locked && (
+        <section
+          aria-label={t('Requirements from a similar vacancy')}
+          className="mb-3 rounded-xl border border-info-line bg-info p-3 text-sm text-info-ink"
+        >
+          <p className="font-medium">
+            {copyNew.length
+              ? t('Add {n} requirements from “{title}” that this vacancy does not have yet?', {
+                  n: copyNew.length,
+                  title: copyOffer.title,
+                })
+              : t('Everything in “{title}” is already here.', { title: copyOffer.title })}
+          </p>
+          {copyNew.length > 0 && (
+            <ul className="mt-1 list-disc pl-5">
+              {copyNew.slice(0, 8).map((r) => (
+                <li key={r.text}>{r.text}</li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2 flex gap-2">
+            {copyNew.length > 0 && (
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => {
+                  setForm((f) => ({
+                    ...f,
+                    reqs: [
+                      ...f.reqs,
+                      ...copyNew.map((r) => {
+                        const c = { ...r };
+                        delete c.id;
+                        return c;
+                      }),
+                    ],
+                  }));
+                  setInfo(t('Added. Read them, then save.'));
+                  setCopyOffer(null);
+                }}
+              >
+                {t('Add them to the form')}
+              </button>
+            )}
+            <button type="button" className={btnSecondary} onClick={() => setCopyOffer(null)}>
+              {t('No thanks')}
+            </button>
+          </div>
+        </section>
+      )}
       <form
         className="space-y-4"
         onSubmit={(e) => {

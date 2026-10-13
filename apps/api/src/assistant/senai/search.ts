@@ -36,6 +36,49 @@ export interface SkillHits {
   passages: PassageRef[];
 }
 
+/** How close words must be, in letters, to count as one phrase written in another order or with words between. */
+const NEAR = 90;
+
+/**
+ * "Huawei core network" is also found as "core network (Huawei RAN)": every word of a phrase, in any
+ * order, within a short stretch. Used only when the phrase is not written as asked, so an exact phrase
+ * always wins and the passage shows the stretch itself.
+ */
+export function nearMentions(
+  f: Folded,
+  raw: string,
+  phrase: string,
+): { start: number; end: number }[] {
+  const words = phrase
+    .split(/[\s,;/]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2);
+  if (words.length < 2 || words.length > 5) return [];
+  const per = words.map((w) => mentionsOf(f, phraseRegex(w), raw));
+  if (per.some((m) => m.length === 0)) return [];
+  const anchor = per.reduce((a, b) => (b.length < a.length ? b : a));
+  const out: { start: number; end: number }[] = [];
+  for (const m of anchor) {
+    let start = m.start;
+    let end = m.end;
+    let ok = true;
+    for (const list of per) {
+      if (list === anchor) continue;
+      const near = list
+        .filter((x) => Math.abs(x.start - m.start) <= NEAR)
+        .sort((x, y) => Math.abs(x.start - m.start) - Math.abs(y.start - m.start))[0];
+      if (!near) {
+        ok = false;
+        break;
+      }
+      start = Math.min(start, near.start);
+      end = Math.max(end, near.end);
+    }
+    if (ok && !out.some((o) => o.start === start && o.end === end)) out.push({ start, end });
+  }
+  return out;
+}
+
 export function termRegex(t: SkillTerm): RegExp | null {
   if (t.id) {
     const s = skillById(t.id);
@@ -54,7 +97,9 @@ export function searchText(
   const f = folded ?? foldMapped(raw);
   const per = terms.map((t) => {
     const re = termRegex(t);
-    return { t, found: re ? mentionsOf(f, re, raw) : [] };
+    let found = re ? mentionsOf(f, re, raw) : [];
+    if (!found.length && !t.id && t.phrase) found = nearMentions(f, raw, t.phrase);
+    return { t, found };
   });
   const ok = any ? per.some((p) => p.found.length > 0) : per.every((p) => p.found.length > 0);
   if (!ok) return null;

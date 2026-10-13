@@ -138,6 +138,11 @@ const W = {
     az: 'Uyğun gələn əvvəlki söhbətləriniz:',
     ru: 'Ваши прошлые разговоры по теме:',
   },
+  recallNote: {
+    en: 'This is what the answers said at the time, from your own conversations. It is not a new answer: ask again for the current list.',
+    az: 'Bu, öz söhbətlərinizdə o vaxt verilən cavablardır. Yeni cavab deyil: indiki siyahı üçün yenidən soruşun.',
+    ru: 'Это то, что говорили ответы в ваших разговорах в то время. Это не новый ответ: спросите ещё раз, чтобы увидеть текущий список.',
+  },
   recallNone: {
     en: "I found nothing in your earlier conversations about that. I only see your own conversations, never other people's.",
     az: 'Əvvəlki söhbətlərinizdə bu barədə heç nə tapmadım. Yalnız sizin söhbətlərinizi görürəm, başqalarınınkını yox.',
@@ -241,6 +246,7 @@ const W = {
     ru: 'А если «{req}» было бы обязательным?',
   },
   hWhat: { en: 'What', az: 'Nə', ru: 'Что' },
+  hVacancy: { en: 'Vacancy', az: 'Vakansiya', ru: 'Вакансия' },
   hWhen: { en: 'When', az: 'Nə vaxt', ru: 'Когда' },
   hNow: { en: 'Now', az: 'İndi', ru: 'Сейчас' },
   hIf: { en: 'If changed', az: 'Dəyişsə', ru: 'Если изменить' },

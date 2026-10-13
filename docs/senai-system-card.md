@@ -39,6 +39,13 @@ Hire or reject, rank people for a decision, guess age, gender, ethnicity, health
 | Read links candidates gave                  | off     | Needs a recorded consent from the candidate (see below)      |
 | Faster model for reading questions          | empty   | Optional second model slot; the answer model is the fallback |
 
+## Finding things inside parallax (plan section 5.4, S1 to S4)
+
+- **S1 deep search.** "Who has worked with Huawei core network?" searches the resume text on the server. A phrase is found as written, or with its words in another order within about 90 letters ("core network equipment by Huawei"). Across vacancies the answer is grouped by vacancy: at most 5 vacancies, 3 resumes each, each group headed by its vacancy and the number of resumes that mention it; "Show all" lifts the caps. Each passage is labelled "Mentioned in the resume, not assessed". Only the offsets of passages are stored; the text is read again when shown, so an erased resume leaves nothing in a conversation. The search never scores or ranks anyone: the order is the pool's. Retrieval is by words, not by meaning (see the embeddings limit below).
+- **S2 recall.** "What did we conclude about Excel last week?" looks only in the person's own conversations, narrowed by the words in the question (a name, a vacancy, a skill) and by a date, and returns the stored answers with their date, question and vacancy. It says it is not a new answer. Other people's conversations are never read.
+- **S3 consented link review.** See the next section.
+- **S4 similar vacancies.** Lists vacancies that share at least half the requirements and offers a button per vacancy. The button opens this vacancy's Role card with a banner: "Add N requirements from X that this vacancy does not have yet?". Nothing is copied until the person presses "Add them to the form", and even then it is only a change to the form that they read and save themselves, so SenAI never changes a requirement.
+
 ## Reading links candidates gave (switch, off)
 
 Built in October 2026, behind a switch that stays off until Legal confirms the privacy notice. A recruiter records the candidate's consent (`candidate_consent`) and a link the candidate gave; the guarded link reader fetches the page (same protections as the vacancy link reader; social networks are never read). The text is redacted, shown as a short review next to the resume, never scored, never sent to a model, and deleted when the consent is withdrawn or the candidate's data is erased. A page that contains instructions aimed at an AI is shown with a notice and the instructions are ignored.

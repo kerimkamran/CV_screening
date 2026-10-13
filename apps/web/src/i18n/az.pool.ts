@@ -302,4 +302,16 @@ export const AZ_POOL: Record<string, string> = {
     'Heç nə saxlanmayıb. "həmişə ilk 5-i göstər" yazın və ya burada təyin edin.',
   'How many to show': 'Neçəsini göstərmək',
   Clear: 'Təmizlə',
+  '{n} resumes mention it': '{n} CV bunu qeyd edir',
+  'Mentioned in the resume, not assessed': 'CV-də qeyd olunub, qiymətləndirilməyib',
+  'Requirements from a similar vacancy': 'Oxşar vakansiyanın tələbləri',
+  'Add {n} requirements from “{title}” that this vacancy does not have yet?':
+    '“{title}” vakansiyasından bu vakansiyada hələ olmayan {n} tələbi əlavə edək?',
+  'Everything in “{title}” is already here.': '“{title}” vakansiyasındakı hər şey artıq buradadır.',
+  'Add them to the form': 'Formaya əlavə et',
+  'Added. Read them, then save.': 'Əlavə olundu. Oxuyun, sonra yadda saxlayın.',
+  'No thanks': 'Xeyr, sağ olun',
+  'Copy requirements': 'Tələbləri köçür',
+  'Review the requirements of {title} to copy':
+    '{title} vakansiyasının tələblərinə baxın və köçürün',
 };

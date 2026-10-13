@@ -44,6 +44,10 @@ export interface PoolAnswer {
   analyze?: { matchId: string; vacancyId: string; label: string }[];
   /** Words searched as written because the dictionary does not know them. */
   unknownSkills?: string[];
+  /** Skill search across vacancies: each vacancy shown with how many resumes mention the skills. */
+  groups?: { vacancyId: string; title: string; total: number }[];
+  /** Similar vacancies: an offer to review their requirements in this vacancy's Role card. */
+  copy?: { fromId: string; toId: string; title: string; shared: number; of: number }[];
   /** Compare, doctor, changes, what-if, recall: a small table written by the server. */
   table?: { head: string[]; rows: { cells: string[]; tag?: 'must' | 'nice' }[] };
   /** Where to go next: a candidate or a vacancy. */
@@ -513,6 +517,28 @@ function PoolAnswerView({
           </table>
         </div>
       )}
+      {a.copy && a.copy.length > 0 && (
+        <ul className="space-y-1" aria-label={t('Copy requirements')}>
+          {a.copy.map((c) => (
+            <li key={c.fromId}>
+              <button
+                type="button"
+                className="rounded-full border border-edge px-3 py-1 text-left hover:bg-hover"
+                onClick={() => {
+                  try {
+                    sessionStorage.setItem(`cv-copy-reqs:${c.toId}`, c.fromId);
+                  } catch {
+                    /* without storage the person opens the vacancy and copies by hand */
+                  }
+                  window.location.hash = `#/vacancies/${c.toId}`;
+                }}
+              >
+                {t('Review the requirements of {title} to copy', { title: c.title })}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {a.analyze && a.analyze.length > 0 && a.vacancy && (
         <AnalyzeHere items={a.analyze} vacancyTitle={a.vacancy.title} />
       )}
@@ -550,6 +576,16 @@ function PoolAnswerView({
         <ol className="divide-y divide-line" aria-label={t('Candidates')}>
           {a.rows.map((r, i) => (
             <li key={r.matchId} className="py-2">
+              {a.groups && a.rows[i - 1]?.vacancyTitle !== r.vacancyTitle && (
+                <p className="mb-1 flex flex-wrap items-baseline gap-x-2 border-b border-line pb-1 text-sm font-semibold text-ink">
+                  <span>{r.vacancyTitle}</span>
+                  <span className="text-xs font-normal text-ink-2">
+                    {t('{n} resumes mention it', {
+                      n: a.groups.find((g) => g.title === r.vacancyTitle)?.total ?? 0,
+                    })}
+                  </span>
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="w-5 text-ink-3">{i + 1}.</span>
                 <a
@@ -580,6 +616,11 @@ function PoolAnswerView({
                 <p className="ml-7 text-xs font-medium text-ink">
                   {t('In the resume')}:{' '}
                   {r.skillHits.map((h) => `${h.skill} ×${h.count}`).join(', ')}
+                </p>
+              )}
+              {r.passages?.some((p) => p.text) && (
+                <p className="ml-7 mt-1 text-xs italic text-ink-3">
+                  {t('Mentioned in the resume, not assessed')}
                 </p>
               )}
               {r.passages

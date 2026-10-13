@@ -95,6 +95,10 @@ export interface PoolAnswer {
   skills?: string[];
   /** Skill search: words the dictionary does not know, searched as written (a person may suggest them). */
   unknownSkills?: string[];
+  /** Skill search across vacancies: the vacancies shown, each with how many resumes mention the skills. */
+  groups?: { vacancyId: string; title: string; total: number }[];
+  /** Similar vacancies: an offer to review their requirements in this vacancy's Role card. */
+  copy?: { fromId: string; toId: string; title: string; shared: number; of: number }[];
   /** Compare, doctor, changes, what-if, recall: a small table the tool filled. */
   table?: AnswerTable;
   /** Where to go next (open a candidate or a vacancy). */
@@ -881,8 +885,37 @@ export class PoolAssistantService {
       ? say(lang, 'skillFound', { skills, n: sel.length, scope: place })
       : say(lang, 'skillNone', { skills, scope: place });
     if (sel.length && !q.countOnly) {
-      const limit = q.showAll || showAll ? 50 : (q.top ?? 10);
-      await this.fill(a, sel, limit);
+      const all = q.showAll || showAll;
+      // Across vacancies (plan S1): at most 5 vacancies, the first 3 resumes of each, each group
+      // headed by its vacancy; "Show all" lifts the caps.
+      let view = sel;
+      if (list.length > 1 && !all) {
+        const order: string[] = [];
+        for (const r of sel) if (!order.includes(r.vacancyId)) order.push(r.vacancyId);
+        const keep = new Set(order.slice(0, 5));
+        const per = new Map<string, number>();
+        view = sel.filter((r) => {
+          if (!keep.has(r.vacancyId)) return false;
+          const n = (per.get(r.vacancyId) ?? 0) + 1;
+          per.set(r.vacancyId, n);
+          return n <= (q.top ?? 3);
+        });
+      }
+      if (list.length > 1) {
+        const total = new Map<string, { title: string; n: number }>();
+        for (const r of sel) {
+          const g = total.get(r.vacancyId) ?? { title: r.vacancyTitle, n: 0 };
+          g.n += 1;
+          total.set(r.vacancyId, g);
+        }
+        a.groups = [...new Set(view.map((r) => r.vacancyId))].map((id) => ({
+          vacancyId: id,
+          title: total.get(id)!.title,
+          total: total.get(id)!.n,
+        }));
+      }
+      await this.fill(a, view, all ? 50 : list.length > 1 ? 50 : (q.top ?? 10));
+      a.more = Math.max(0, sel.length - a.rows.length);
       for (const row of a.rows) {
         const src = sel.find((r) => r.matchId === row.matchId)!;
         const f = found.get(src.documentId)!;

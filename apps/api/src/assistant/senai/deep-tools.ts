@@ -376,6 +376,16 @@ export class DeepTools {
       rows: out.slice(0, 6).map((x) => ({ cells: [x.v.title, `${x.shared} / ${mine.length}`] })),
     };
     c.a.actions = out.slice(0, 3).map((x) => ({ label: x.v.title, href: `#/vacancies/${x.v.id}` }));
+    // "Copy them?": a button on the screen that opens this vacancy's Role card with the offer. SenAI
+    // changes nothing; the person reads the requirements and saves them as their own edit.
+    if (v.status !== 'closed')
+      c.a.copy = out.slice(0, 3).map((x) => ({
+        fromId: x.v.id,
+        toId: v.id,
+        title: x.v.title,
+        shared: x.shared,
+        of: mine.length,
+      }));
   }
 
   // ------------------------------------------------------------------ rediscovery (switch)
