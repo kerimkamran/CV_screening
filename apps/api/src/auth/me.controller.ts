@@ -6,7 +6,7 @@ import { AnyAuthenticated, CurrentPrincipal } from './decorators';
 import type { Principal } from './principal';
 
 /** Page backgrounds (design spec 4.2). `null` means "match my device". */
-export const BACKGROUNDS = ['white', 'grey', 'sky', 'dark'] as const;
+export const BACKGROUNDS = ['white', 'grey', 'cream', 'dark'] as const;
 export type Background = (typeof BACKGROUNDS)[number];
 /** Interface languages (design spec 13). `null` means "follow the browser". */
 export const LANGUAGES = ['en', 'az'] as const;

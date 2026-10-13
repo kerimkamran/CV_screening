@@ -1,6 +1,6 @@
 # Design tokens (Development Plan WP 0.3)
 
-All colour in the app comes from CSS variables in `apps/web/src/index.css`. A page never writes a colour of its own: it uses a Tailwind name (`bg-card`, `text-ink-2`, `border-line`), which points at a variable, so the four page backgrounds (White, White-grey, Sky, Dark) are four sets of values for the same names.
+All colour in the app comes from CSS variables in `apps/web/src/index.css`. A page never writes a colour of its own: it uses a Tailwind name (`bg-card`, `text-ink-2`, `border-line`), which points at a variable, so the four page backgrounds (White, White-grey, Cream-white, Dark) are four sets of values for the same names.
 
 | Group    | Names (Tailwind)                                                    | Used for                                                           |
 | -------- | ------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -29,3 +29,7 @@ Rules that the pool screens follow:
 - **Palette** is anchored on Azerconnect navy `#133e72`, the only brand colour Azerconnect publishes (its `theme-color` on azerconnect.az). No full brand guide was found, so the other values (soft blue-grey surfaces, the link blue `#1558b0`, the focus blue, the gold star) are chosen to sit with that navy and to pass `contrast.test.ts`. Replace them if the brand team sends an official palette: change the variables in `index.css`, nothing else.
 - **Shape**: pills and buttons are fully rounded, cards and fields `rounded-2xl`/`rounded-xl`, soft shadows, a faint navy wash at the top of each page (`--c-glow`).
 - **Header** is a navy band on every page, signed in or not, with the SenAI Ask bar as the one prominent control; focus rings on it are white. Left rail and phone bottom bar mark the current section with a rounded tint and an accent edge.
+
+## Backgrounds, October 2026 (second change)
+
+The picker offers White, White-grey, Cream-white and Dark. Cream-white (`data-bg='cream'`) replaces Sky: warm page `#f7f1e3`, near-white card `#fffdf8`, warm line and edge, navy ink and navy tags, so the Azerconnect navy stays the brand on every background. A person who had chosen Sky is moved to White-grey by migration 0034. The default (nothing chosen) still follows the device: White-grey in light mode, Dark in dark mode. The browser theme colour and the favicon use the navy `#133e72`.

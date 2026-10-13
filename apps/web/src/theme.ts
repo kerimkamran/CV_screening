@@ -1,11 +1,11 @@
 /** Page backgrounds (spec 4.2). `null` means "match my device". */
-export const BACKGROUNDS = ['white', 'grey', 'sky', 'dark'] as const;
+export const BACKGROUNDS = ['white', 'grey', 'cream', 'dark'] as const;
 export type Background = (typeof BACKGROUNDS)[number];
 
 export const BACKGROUND_LABEL: Record<Background, string> = {
   white: 'White',
   grey: 'White-grey',
-  sky: 'Sky',
+  cream: 'Cream-white',
   dark: 'Dark',
 };
 
@@ -13,7 +13,7 @@ export const BACKGROUND_LABEL: Record<Background, string> = {
 export const BACKGROUND_SWATCH: Record<Background, string> = {
   white: '#ffffff',
   grey: '#f6f8fc',
-  sky: '#dceafb',
+  cream: '#f7f1e3',
   dark: '#0a1530',
 };
 

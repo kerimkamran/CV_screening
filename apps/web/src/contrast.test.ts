@@ -21,7 +21,7 @@ const base = block(':root');
 const THEMES: Record<string, Record<string, string>> = {
   white: { ...base, ...block(":root[data-bg='white']") },
   grey: { ...base, ...block(":root[data-bg='grey']") },
-  sky: { ...base, ...block(":root[data-bg='sky']") },
+  cream: { ...base, ...block(":root[data-bg='cream']") },
   dark: { ...base, ...block(":root[data-bg='dark']") },
 };
 

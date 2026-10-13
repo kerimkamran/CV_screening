@@ -57,8 +57,8 @@ describeDb('Names, Focus on skills and the vacancy list (design spec 6.2.6, 6.4)
       background: null,
       focusOnSkills: true,
     });
-    expect((await r.api.put('/me/preferences', { background: 'sky' })).json()).toMatchObject({
-      background: 'sky',
+    expect((await r.api.put('/me/preferences', { background: 'cream' })).json()).toMatchObject({
+      background: 'cream',
       focusOnSkills: true,
     });
     expect((await r.api.put('/me/preferences', { background: null })).json()).toMatchObject({

@@ -6,16 +6,16 @@ and code-level audit; it has **not** been checked with a screen reader on real d
 
 ## What is checked automatically (tests in `apps/web/src/contrast.test.ts` and `a11y.test.tsx`)
 
-| Area              | Check                                                                                                                                                                                                   | Result           |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| Colour contrast   | Body, secondary and tertiary text, links, status texts on page, card, selected and hover surfaces, on **all four backgrounds** (white, white-grey, sky, dark), measured from the real stylesheet: 4.5:1 | Pass (128 pairs) |
-| Colour contrast   | Text on buttons, tags, info, success, warning and error panels: 4.5:1                                                                                                                                   | Pass             |
-| Non-text contrast | Keyboard focus ring and control edges against page and card, all four backgrounds: 3:1                                                                                                                  | Pass             |
-| Star map          | Every star is a real button with a 44 by 44 px target, a name and band in its label                                                                                                                     | Pass             |
-| Star map          | Arrow keys, Home and End move focus along the ranking; Enter selects                                                                                                                                    | Added and tested |
-| Star map          | A spoken text summary (top five, count, how to use the keys) is attached to the region; the map itself is a picture of the list that follows it                                                         | Added and tested |
-| Assistant panel   | Landmark named "Assistant", labelled input, every button named, opens from the rail by keyboard, Escape closes, answer completion announced once in a polite live region                                | Tested           |
-| Page              | `lang="en"`, viewport allows zoom                                                                                                                                                                       | Tested           |
+| Area              | Check                                                                                                                                                                                                           | Result           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| Colour contrast   | Body, secondary and tertiary text, links, status texts on page, card, selected and hover surfaces, on **all four backgrounds** (white, white-grey, cream-white, dark), measured from the real stylesheet: 4.5:1 | Pass (128 pairs) |
+| Colour contrast   | Text on buttons, tags, info, success, warning and error panels: 4.5:1                                                                                                                                           | Pass             |
+| Non-text contrast | Keyboard focus ring and control edges against page and card, all four backgrounds: 3:1                                                                                                                          | Pass             |
+| Star map          | Every star is a real button with a 44 by 44 px target, a name and band in its label                                                                                                                             | Pass             |
+| Star map          | Arrow keys, Home and End move focus along the ranking; Enter selects                                                                                                                                            | Added and tested |
+| Star map          | A spoken text summary (top five, count, how to use the keys) is attached to the region; the map itself is a picture of the list that follows it                                                                 | Added and tested |
+| Assistant panel   | Landmark named "Assistant", labelled input, every button named, opens from the rail by keyboard, Escape closes, answer completion announced once in a polite live region                                        | Tested           |
+| Page              | `lang="en"`, viewport allows zoom                                                                                                                                                                               | Tested           |
 
 ## Code-level findings
 

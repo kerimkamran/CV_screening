@@ -18,7 +18,7 @@ export const AZ_SHELL: Record<string, string> = {
   'Match my device': 'Cihazıma uyğun',
   White: 'Ağ',
   'White-grey': 'Ağ-boz',
-  Sky: 'Səma',
+  'Cream-white': 'Krem-ağ',
   Dark: 'Tünd',
   'Focus on skills': 'Bacarıqlara fokus',
   'Hides file names and "Reveal all names" so the first look is only about skills. Hidden on screen, not a guarantee.':

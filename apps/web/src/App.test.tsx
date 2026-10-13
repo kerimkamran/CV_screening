@@ -425,9 +425,9 @@ describe('page background', () => {
   };
 
   it('applies the background saved for the user when they sign in', async () => {
-    signedIn('sky');
+    signedIn('cream');
     render(<App check={up} />);
-    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('sky'));
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('cream'));
   });
 
   it('follows the device when nothing is saved', async () => {
@@ -443,15 +443,15 @@ describe('page background', () => {
     signedIn(null, saved);
     render(<App check={up} />);
     await userEvent.click(await screen.findByText('Background'));
-    for (const name of ['White', 'White-grey', 'Sky', 'Dark'])
+    for (const name of ['White', 'White-grey', 'Cream-white', 'Dark'])
       expect(screen.getByLabelText(name)).toBeInTheDocument();
-    await userEvent.click(screen.getByLabelText('Sky'));
-    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('sky'));
-    expect(saved).toEqual([{ background: 'sky' }]);
-    expect(localStorage.getItem('cv-background')).toBe('sky');
+    await userEvent.click(screen.getByLabelText('Cream-white'));
+    await waitFor(() => expect(document.documentElement.dataset.bg).toBe('cream'));
+    expect(saved).toEqual([{ background: 'cream' }]);
+    expect(localStorage.getItem('cv-background')).toBe('cream');
     await userEvent.click(screen.getByLabelText('Match my device'));
     await waitFor(() => expect(document.documentElement.dataset.bg).toBeUndefined());
-    expect(saved).toEqual([{ background: 'sky' }, { background: null }]);
+    expect(saved).toEqual([{ background: 'cream' }, { background: null }]);
   });
 });
 

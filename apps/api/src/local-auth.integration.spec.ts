@@ -324,8 +324,8 @@ describeDb('Local accounts', () => {
         headers: { authorization: `Bearer ${token}` },
       });
     expect((await get('/me', adminToken)).json().background).toBeNull();
-    expect((await put(adminToken, { background: 'sky' })).statusCode).toBe(200);
-    expect((await get('/me', adminToken)).json().background).toBe('sky');
+    expect((await put(adminToken, { background: 'cream' })).statusCode).toBe(200);
+    expect((await get('/me', adminToken)).json().background).toBe('cream');
     expect((await put(adminToken, { background: 'dark' })).statusCode).toBe(200);
     expect((await get('/me', adminToken)).json().background).toBe('dark');
     const rows = await db.owner.query('SELECT user_id FROM user_preference');
@@ -335,8 +335,13 @@ describeDb('Local accounts', () => {
     expect((await put(adminToken, { background: null })).statusCode).toBe(200);
     expect((await get('/me', adminToken)).json().background).toBeNull();
     expect(
-      (await app.inject({ method: 'PUT', url: '/me/preferences', payload: { background: 'sky' } }))
-        .statusCode,
+      (
+        await app.inject({
+          method: 'PUT',
+          url: '/me/preferences',
+          payload: { background: 'cream' },
+        })
+      ).statusCode,
     ).toBe(401);
   });
 });

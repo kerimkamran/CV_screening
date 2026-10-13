@@ -75,20 +75,22 @@
   color-scheme: light;
 }
 
-:root[data-bg='sky'] {
-  --c-star: #7f4d00;
-  --c-bg: #d9e8fb;
-  --c-card: #f4f9ff;
-  --c-sel: #d3e4fa;
-  --c-hover: #e6f0fd;
+:root[data-bg='cream'] {
+  --c-star: #8a5300;
+  --c-bg: #f7f1e3;
+  --c-card: #fffdf8;
+  --c-sel: #efe3c6;
+  --c-hover: #f3ead3;
   --c-field: #ffffff;
-  --c-line: #a9c0e0;
-  --c-edge: #566a91;
+  --c-line: #e0d3b6;
+  --c-edge: #7c6d4d;
+  --c-glow: rgb(150 105 30 / 0.09);
   --c-ink: #0b1f3a;
-  --c-ink-2: #33466b;
-  --c-ink-3: #3b4d72;
-  --c-tag: #c5daf6;
+  --c-ink-2: #3a4560;
+  --c-ink-3: #4b5068;
+  --c-tag: #ece0c2;
   --c-tag-ink: #133e72;
+  --c-neutral: #ebe3d0;
   --c-warn-text: #7f4d00;
   --c-ok-text: #0b5a33;
   color-scheme: light;
