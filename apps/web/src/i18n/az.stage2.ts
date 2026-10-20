@@ -178,4 +178,8 @@ export const AZ_STAGE2: Record<string, string> = {
   'CV {a} of {b}: {name}': 'CV {a} / {b}: {name}',
   Analysis: 'Təhlil',
   'Only the first part of this CV is shown.': 'Bu CV-nin yalnız ilk hissəsi göstərilir.',
+  'The pages of this Word file are being prepared. They appear here by themselves; the text below was read from the file.':
+    'Bu Word faylının səhifələri hazırlanır. Onlar burada özü görünəcək; aşağıdakı mətn fayldan oxunub.',
+  'These pages were made from the Word file, so the layout can differ a little.':
+    'Bu səhifələr Word faylından hazırlanıb, ona görə düzülüş bir qədər fərqli ola bilər.',
 };

@@ -14,6 +14,26 @@ if (!ownerUrl) {
   process.exit(1);
 }
 
+// 0. Word pages (S2-BE7) need LibreOffice. Without it Word CVs still work, shown as text only.
+{
+  const soffice = process.env.RENDITION_SOFFICE || 'soffice';
+  const probe = spawnSync(soffice, ['--version'], { encoding: 'utf8', timeout: 20000 });
+  if (process.env.RENDITION_ENABLED === 'false') console.log('Word pages: turned off');
+  else if (probe.status === 0) console.log(`Word pages: ${String(probe.stdout).trim()}`);
+  else
+    console.warn(
+      `WARNING: LibreOffice (${soffice}) was not found; Word CVs will be shown as text only.`,
+    );
+  // The memory limit the guard works against (cgroup v2, then v1).
+  for (const f of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+    if (!existsSync(f)) continue;
+    const r = spawnSync('cat', [f], { encoding: 'utf8' });
+    const v = String(r.stdout).trim();
+    console.log(`Memory limit: ${/^\d+$/.test(v) ? `${Math.round(Number(v) / 2 ** 20)} MB` : v}`);
+    break;
+  }
+}
+
 // 1. Migrations run as the database owner.
 const mig = spawnSync(process.execPath, [join(here, 'migrate.mjs'), 'up'], {
   stdio: 'inherit',

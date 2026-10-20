@@ -437,8 +437,8 @@ export class IntakeService {
         await tx.query(
           `INSERT INTO cv_document
              (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
-              parse_status, parse_error, uploaded_by, page_starts)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+              parse_status, parse_error, uploaded_by, page_starts, rendition_state)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
           [
             docId,
             ctx.vacancyId,
@@ -453,6 +453,8 @@ export class IntakeService {
             parseError,
             ctx.principal.userId,
             readable && pageStarts ? JSON.stringify(pageStarts) : null,
+            // A Word file waits for its pages (S2-BE7); everything else has none to make.
+            kind === 'docx' ? 'pending' : null,
           ],
         );
         await tx.query(

@@ -142,8 +142,8 @@ export function CvReview({
     if (d) heading.current?.focus({ preventScroll: true });
   }, [d?.documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The result appears by itself while the CV is still being analyzed.
-  const analyzing = d?.status === 'analyzing';
+  // The result (or the pages of a Word file) appear by themselves while they are still being made.
+  const analyzing = d?.status === 'analyzing' || d?.original.view === 'pending';
   useEffect(() => {
     if (!analyzing) return;
     let timer: ReturnType<typeof setTimeout>;

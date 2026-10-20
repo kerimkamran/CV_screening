@@ -17,6 +17,7 @@ import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { CandidateViewService } from './candidate-view.service';
 import { PoolService } from './pool.service';
+import { RenditionService } from './rendition.service';
 
 /** What a CV is, from its name: the review screen shows each kind differently. */
 export type DocKind = 'pdf' | 'docx' | 'txt';
@@ -44,6 +45,7 @@ export class DocumentReviewController {
     private readonly scope: VacancyScope,
     private readonly pool: PoolService,
     private readonly view: CandidateViewService,
+    private readonly rendition: RenditionService,
   ) {}
 
   private async visible(p: Principal, id: string): Promise<string> {
@@ -147,13 +149,26 @@ export class DocumentReviewController {
     };
 
     const kind = kindOf(d.filename, d.mime);
-    const view: OriginalView = !d.hasContent
+    // A Word file is shown through the PDF made from it (S2-BE7), once that is ready.
+    let view: OriginalView = !d.hasContent
       ? 'unavailable'
       : kind === 'pdf'
         ? 'pdf'
         : kind === 'txt'
           ? 'none'
           : 'unavailable';
+    let source: 'file' | 'rendition' = 'file';
+    if (kind === 'docx' && d.hasContent && !d.erased) {
+      const rs = await this.rendition.stateOf(did);
+      source = 'rendition';
+      if (rs.state === 'ready' && rs.pdf) view = 'pdf';
+      else if (rs.state === 'failed') view = 'failed';
+      else if (this.rendition.available) {
+        view = 'pending';
+        // Someone is looking: its pages go to the front of the line.
+        void this.rendition.prioritise(did).catch(() => undefined);
+      }
+    }
     const reason =
       status === 'needs_look'
         ? sc?.knockout
@@ -186,7 +201,7 @@ export class DocumentReviewController {
       matchId:
         analysis?.matchId ??
         (sc && (sc.state === 'manual' || sc.state === 'completed') ? sc.id : null),
-      original: { available: d.hasContent && !d.erased, view },
+      original: { available: d.hasContent && !d.erased, view, source },
       text: { available: d.hasText && !d.erased },
       decision,
       analysis,
@@ -211,8 +226,15 @@ export class DocumentReviewController {
     const did = parse(ulidSchema, id);
     const vid = await this.visible(p, did);
     const d = (
-      await this.db.query<{ filename: string; mime: string; content: Buffer | null }>(
-        `SELECT filename, mime, content FROM cv_document WHERE id = $1 AND erased_at IS NULL`,
+      await this.db.query<{
+        filename: string;
+        mime: string;
+        content: Buffer | null;
+        rendition: Buffer | null;
+        state: string | null;
+      }>(
+        `SELECT filename, mime, content, rendition_pdf AS rendition, rendition_state AS state
+           FROM cv_document WHERE id = $1 AND erased_at IS NULL`,
         [did],
       )
     ).rows[0];
@@ -223,11 +245,24 @@ export class DocumentReviewController {
         message: 'A text file has no pages to show.',
         code: 'NO_PREVIEW',
       });
-    if (kind === 'docx')
-      throw new ConflictException({
-        message: 'This Word file cannot be shown as pages.',
-        code: 'RENDITION_FAILED',
-      });
+    let bytes = d.content;
+    if (kind === 'docx') {
+      if (d.state === 'ready' && d.rendition) bytes = d.rendition;
+      else if (
+        this.rendition.available &&
+        (d.state === 'pending' || d.state === 'processing' || d.state === null)
+      ) {
+        void this.rendition.prioritise(did).catch(() => undefined);
+        throw new ConflictException({
+          message: 'The pages of this Word file are being prepared.',
+          code: 'RENDITION_PENDING',
+        });
+      } else
+        throw new ConflictException({
+          message: 'This Word file cannot be shown as pages.',
+          code: 'RENDITION_FAILED',
+        });
+    }
     await this.db.withTx((tx) =>
       this.audit.record(tx, {
         actorId: p.userId,
@@ -236,17 +271,20 @@ export class DocumentReviewController {
         action: 'document.opened',
         entityType: 'document',
         entityId: did,
-        after: { as: 'pdf', vacancyId: vid },
+        after: { as: 'pdf', vacancyId: vid, ...(kind === 'docx' ? { rendition: true } : {}) },
       }),
     );
     void reply
       .header('content-type', 'application/pdf')
-      .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.filename)}`)
+      .header(
+        'content-disposition',
+        `inline; filename*=UTF-8''${encodeURIComponent(kind === 'docx' ? d.filename.replace(/\.docx$/i, '.pdf') : d.filename)}`,
+      )
       .header('x-content-type-options', 'nosniff')
       // Even opened directly in a tab, the file may not run anything or load anything.
       .header('content-security-policy', "default-src 'none'; sandbox")
       .header('x-frame-options', 'DENY')
       .header('cache-control', 'no-store')
-      .send(d.content);
+      .send(bytes);
   }
 }

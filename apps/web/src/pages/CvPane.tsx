@@ -46,7 +46,10 @@ export function CvPane({
   const erased = data.status === 'erased';
   const canPages = !erased && data.original.view === 'pdf';
   const canText = !erased && data.text.available;
-  const [tab, setTab] = useState<Tab>(canPages ? 'original' : 'text');
+  // Until the person picks a tab, the pages are shown as soon as there are any (a Word file's pages
+  // can arrive while the CV is open).
+  const [picked, setTab] = useState<Tab | null>(null);
+  const tab: Tab = picked ?? (canPages ? 'original' : 'text');
   const [text, setText] = useState<ResumeData | null>(null);
   const [textError, setTextError] = useState('');
   const [problem, setProblem] = useState<PdfProblem | null>(null);
@@ -71,13 +74,19 @@ export function CvPane({
     };
   }, [tab, text, textError, canText, data.documentId]);
 
-  // "Show in CV": go to the page of the first line when there are pages, else show the lines.
+  // "Show in CV": go to the page of the first line when there are pages, else show the lines. A PDF
+  // carries its page numbers; for Word the pages are searched for the quote.
   const page = quotePage(anchors);
   useEffect(() => {
     if (!focus) return;
-    if (canPages && !problem && page) {
+    if (canPages && !problem) {
       setTab('original');
-      pdf.current?.goTo(page);
+      if (page) return void pdf.current?.goTo(page);
+      const quote = anchors.find((a) => a.quote)?.quote;
+      if (quote)
+        void pdf.current?.find(quote).then((n) => {
+          if (n) pdf.current?.goTo(n);
+        });
     } else if (canText) setTab('text');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -154,27 +163,41 @@ export function CvPane({
           </div>
         );
       return (
-        <Suspense
-          fallback={
-            <p role="status" className="p-4 text-sm text-ink-3">
-              {t('Loading the pages…')}
+        <>
+          {data.original.source === 'rendition' && (
+            <p className="px-1 pb-2 text-xs text-ink-3">
+              {t('These pages were made from the Word file, so the layout can differ a little.')}
             </p>
-          }
-        >
-          <PdfPages
-            documentId={data.documentId}
-            zoom={zoom}
-            ref={pdf}
-            onPages={setPages}
-            onProblem={setProblem}
-          />
-        </Suspense>
+          )}
+          <Suspense
+            fallback={
+              <p role="status" className="p-4 text-sm text-ink-3">
+                {t('Loading the pages…')}
+              </p>
+            }
+          >
+            <PdfPages
+              documentId={data.documentId}
+              zoom={zoom}
+              ref={pdf}
+              onPages={setPages}
+              onProblem={setProblem}
+            />
+          </Suspense>
+        </>
       );
     }
     // The text view, with the reason when it cannot be shown.
     return (
       <div className="space-y-2">
-        {data.kind === 'docx' && (
+        {data.kind === 'docx' && data.original.view === 'pending' && (
+          <Notice kind="info">
+            {t(
+              'The pages of this Word file are being prepared. They appear here by themselves; the text below was read from the file.',
+            )}
+          </Notice>
+        )}
+        {data.kind === 'docx' && data.original.view !== 'pending' && !canPages && (
           <Notice kind="info">
             {t(
               'The pages of this Word file are not available. The text below was read from the file; the original can be downloaded.',

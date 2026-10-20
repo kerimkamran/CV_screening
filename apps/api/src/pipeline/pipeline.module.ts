@@ -12,6 +12,7 @@ import { DocumentsController } from './documents.controller';
 import { ExportService } from './export.service';
 import { IntakeService } from './intake.service';
 import { ProcessorService } from './processor.service';
+import { RenditionService } from './rendition.service';
 import { ReportService } from './report.service';
 import { RetentionController } from './retention.controller';
 import { RetentionService } from './retention.service';
@@ -47,6 +48,7 @@ import { VacancyService } from './vacancy.service';
     ProcessorService,
     ExportService,
     IntakeService,
+    RenditionService,
     AdjustmentService,
     CandidatesService,
     ReportService,

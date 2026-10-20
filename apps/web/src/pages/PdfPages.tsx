@@ -19,6 +19,24 @@ export type PdfProblem = 'password' | 'broken' | 'missing' | 'unavailable';
 export interface PdfApi {
   /** Scroll to a page and flash it. Safe to call before the pages have loaded. */
   goTo: (page: number) => void;
+  /** The page whose text holds this quote, or null (the server does not know pages for Word). */
+  find: (quote: string) => Promise<number | null>;
+}
+
+/** Lower case, letters and digits only: a quote still matches across line breaks and hyphens. */
+export const squash = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+/** The first page whose text contains the start of the quote (S2-FE4, findQuotePage). */
+export async function findQuotePage(doc: PDFDocumentProxy, quote: string): Promise<number | null> {
+  const needle = squash(quote).slice(0, 48);
+  if (needle.length < 6) return null;
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n);
+    const content = await page.getTextContent();
+    const text = squash(content.items.map((i) => ('str' in i ? i.str : '')).join(' '));
+    if (text.includes(needle)) return n;
+  }
+  return null;
 }
 
 const MAX_DPR = 2;
@@ -206,6 +224,7 @@ export default function PdfPages({
     goTo: (page) => {
       if (!jump(page)) pending.current = page;
     },
+    find: async (quote) => (doc ? findQuotePage(doc, quote) : null),
   }));
   useEffect(() => {
     if (doc && pending.current !== null && jump(pending.current)) pending.current = null;

@@ -15,9 +15,15 @@ RUN npm run build -w packages/shared && npm run build -w apps/api && npm run bui
 
 FROM node:22-bookworm-slim AS run
 ENV NODE_ENV=production
-# poppler-utils provides pdftotext, used to read PDF CVs.
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
- && rm -rf /var/lib/apt/lists/*
+# poppler-utils provides pdftotext, used to read PDF CVs. LibreOffice Writer (headless, no GUI) turns
+# Word CVs into PDF pages for the review screen (Stage 2, S2-BE7); the metric-compatible fonts keep the
+# layout close to Word, and DejaVu covers Azerbaijani and Russian letters (ə ğ ı ö ş ü ç, Cyrillic).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      poppler-utils libreoffice-writer-nogui fontconfig \
+      fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
+ && fc-cache -f \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/*
+ENV RENDITION_SOFFICE=/usr/bin/soffice
 WORKDIR /repo
 COPY --from=build --chown=node:node /repo/node_modules node_modules
 COPY --from=build --chown=node:node /repo/packages/shared/package.json packages/shared/package.json

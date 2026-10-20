@@ -8,16 +8,17 @@ import { resetReviewCacheForTests } from './pages/CvReview';
 
 // pdf.js does not run in a test browser; the pane only needs to know it was asked to show a page.
 const goTo = vi.fn();
+const find = vi.fn(async (_quote: string) => 3);
 vi.mock('./pages/PdfPages', async () => {
   const React = await import('react');
   function PdfPagesMock({
     ref,
     documentId,
   }: {
-    ref?: React.Ref<{ goTo: (n: number) => void }>;
+    ref?: React.Ref<{ goTo: (n: number) => void; find: (q: string) => Promise<number | null> }>;
     documentId: string;
   }) {
-    React.useImperativeHandle(ref, () => ({ goTo }));
+    React.useImperativeHandle(ref, () => ({ goTo, find }));
     return <div data-testid="pdf-pages">pages of {documentId}</div>;
   }
   return { default: PdfPagesMock };
@@ -78,6 +79,7 @@ beforeEach(() => {
   rememberUser('U1');
   setAssistantOpen(false);
   goTo.mockClear();
+  find.mockClear();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -462,6 +464,109 @@ describe('Candidate list with CVs that have no result', () => {
     expect(stored.find((l) => l.id === m[2])).toMatchObject({
       ids: [DID, DID2],
       back: '/candidates',
+    });
+  });
+  describe('a Word file (its pages are made on the server)', () => {
+    const word = (view: string, over: Record<string, unknown> = {}) =>
+      doc({
+        filename: 'aysel.docx',
+        kind: 'docx',
+        status: 'needs_look',
+        statusDetail: { reason: 'No score could be given.', retryable: false },
+        original: { available: true, view, source: 'rendition' },
+        text: { available: true },
+        ...over,
+      });
+    const textReply = {
+      body: { text: 'BGP routing here', truncated: false, pageStarts: [0], blocks: [] },
+    };
+
+    it('shows the text with a notice while the pages are being prepared, then the pages when ready', async () => {
+      let ready = false;
+      open(`/cv/${DID}`, (url) =>
+        url.endsWith(`/documents/${DID}`)
+          ? { body: word(ready ? 'pdf' : 'pending') }
+          : url.endsWith(`/documents/${DID}/text`)
+            ? textReply
+            : undefined,
+      );
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      render(<App check={up} />);
+      expect(
+        await screen.findByText(/The pages of this Word file are being prepared/),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('pdf-pages')).toBeNull();
+      expect(await screen.findByText('BGP routing here')).toBeInTheDocument();
+      ready = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(await screen.findByTestId('pdf-pages')).toBeInTheDocument();
+      expect(screen.getByText(/These pages were made from the Word file/)).toBeInTheDocument();
+    });
+
+    it('says the pages are not available when they could not be made, and keeps the text', async () => {
+      open(`/cv/${DID}`, (url) =>
+        url.endsWith(`/documents/${DID}`)
+          ? { body: word('failed') }
+          : url.endsWith(`/documents/${DID}/text`)
+            ? textReply
+            : undefined,
+      );
+      render(<App check={up} />);
+      expect(
+        await screen.findByText(/The pages of this Word file are not available/),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('pdf-pages')).toBeNull();
+      expect(await screen.findByText('BGP routing here')).toBeInTheDocument();
+    });
+
+    it('finds the quote in the pages when a line has no page number', async () => {
+      const analysis = {
+        matchId: MID,
+        documentId: DID,
+        label: 'Aysel Mammadova',
+        name: 'Aysel Mammadova',
+        pseudonym: 'Candidate 01',
+        email: null,
+        filename: 'aysel.docx',
+        vacancy: { id: VID, title: 'Network Engineer', status: 'open', archived: false },
+        score: 80,
+        band: 'strong',
+        mustFound: 1,
+        mustTotal: 1,
+        summary: 'Strong.',
+        analyzedAt: new Date().toISOString(),
+        outOfDate: null,
+        reanalyzing: false,
+        decision: { mark: 'new', note: null, version: 0, decidedAt: null, decidedBy: null },
+        history: [],
+        requirements: [
+          {
+            requirementId: 'R1',
+            text: 'BGP routing',
+            kind: 'must',
+            state: 'matched',
+            unclear: false,
+            notFound: false,
+            confidence: 'high',
+            rationale: 'Stated.',
+            anchors: [{ start: 0, end: 3, quote: 'BGP routing', page: null, block: 0 }],
+          },
+        ],
+      };
+      open(`/cv/${DID}`, (url) =>
+        url.endsWith(`/documents/${DID}`)
+          ? { body: word('pdf', { status: 'analyzed', analysis }) }
+          : url.endsWith(`/documents/${DID}/text`)
+            ? textReply
+            : undefined,
+      );
+      render(<App check={up} />);
+      await screen.findByTestId('pdf-pages');
+      await userEvent.click(await screen.findByRole('button', { name: 'Show in CV' }));
+      await waitFor(() => expect(find).toHaveBeenCalledWith('BGP routing'));
+      await waitFor(() => expect(goTo).toHaveBeenCalledWith(3));
     });
   });
 });

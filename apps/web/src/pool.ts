@@ -247,7 +247,12 @@ export interface CvReviewData {
   statusDetail: { error?: string; reason?: string; retryable: boolean };
   screeningId: string | null;
   matchId: string | null;
-  original: { available: boolean; view: 'pdf' | 'pending' | 'failed' | 'none' | 'unavailable' };
+  original: {
+    available: boolean;
+    view: 'pdf' | 'pending' | 'failed' | 'none' | 'unavailable';
+    /** Pages from the file itself, or made from it (Word). */
+    source?: 'file' | 'rendition';
+  };
   text: { available: boolean };
   decision: {
     mark: Mark;

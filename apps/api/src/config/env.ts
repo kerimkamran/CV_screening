@@ -64,6 +64,10 @@ const EnvSchema = z.object({
   /** A ZIP of resumes (spec 6.1.4): the archive itself, and the most resumes one run may hold. */
   MAX_ZIP_MB: z.coerce.number().int().min(1).max(500).default(100),
   MAX_RESUMES_PER_RUN: z.coerce.number().int().min(1).max(5000).default(500),
+  /** Word CVs are converted to PDF pages in the background (Stage 2). Off: Word shows its text only. */
+  RENDITION_ENABLED: z.enum(['true', 'false']).default('true'),
+  /** The converter, by name or path. Missing on a host without LibreOffice: Word shows its text only. */
+  RENDITION_SOFFICE: z.string().default('soffice'),
   /** CVs being read (text extraction) at once across all uploads; a ZIP takes every permit. */
   INTAKE_MAX_CONCURRENT: z.coerce.number().int().min(1).max(8).default(3),
   /**

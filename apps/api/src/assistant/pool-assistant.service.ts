@@ -248,9 +248,12 @@ export class PoolAssistantService {
       text: string | null;
       truncated: boolean;
       pageStarts: unknown;
+      renditionPdf: Buffer | null;
+      renditionState: string | null;
     }>(
       `SELECT d.id, d.vacancy_id AS "vacancyId", d.filename, d.mime, d.size_bytes AS size, d.sha256 AS sha,
-              d.content, d.text, d.text_truncated AS truncated, d.page_starts AS "pageStarts"
+              d.content, d.text, d.text_truncated AS truncated, d.page_starts AS "pageStarts",
+              d.rendition_pdf AS "renditionPdf", d.rendition_state AS "renditionState"
          FROM screening m JOIN cv_document d ON d.id = m.document_id
         WHERE m.id = $1 AND d.erased_at IS NULL AND d.parse_status = 'parsed'`,
       [matchId],
@@ -275,8 +278,8 @@ export class PoolAssistantService {
       await tx.query(
         `INSERT INTO cv_document
            (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
-            parse_status, uploaded_by, page_starts, copied_from)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'parsed',$10,$11,$12)`,
+            parse_status, uploaded_by, page_starts, copied_from, rendition_pdf, rendition_state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'parsed',$10,$11,$12,$13,$14)`,
         [
           docId,
           vacancyId,
@@ -290,6 +293,9 @@ export class PoolAssistantService {
           p.userId,
           d.pageStarts ? JSON.stringify(d.pageStarts) : null,
           d.id,
+          // The pages made for the original come with the copy (S2-BE7).
+          d.renditionState === 'ready' ? d.renditionPdf : null,
+          d.renditionState === 'ready' ? 'ready' : d.renditionState ? 'pending' : null,
         ],
       );
       await tx.query(
