@@ -361,6 +361,63 @@ describeDb('Upload batches and reliable intake (Stage 2, S2-BE2, S2-BE3)', () =>
     });
   });
 
+  it('retries one failed CV on its own, and the candidate list can be limited to one upload', async () => {
+    const r = await h.recruiter('one@azerconnect.test');
+    const vid = await ready(r.api);
+    const first = [file('One Alpha Person'), file('One Beta Person')];
+    const second = [file('One Gamma Person')];
+    const b1 = (
+      await batch(
+        r.api,
+        vid,
+        first.map((f) => ({ name: f.name, size: f.data.length })),
+      )
+    ).json();
+    for (const [k, i] of b1.items.entries()) await send(r.api, vid, (i as any).itemId, first[k]!);
+    const b2 = (
+      await batch(
+        r.api,
+        vid,
+        second.map((f) => ({ name: f.name, size: f.data.length })),
+      )
+    ).json();
+    await send(r.api, vid, b2.items[0].itemId, second[0]!);
+    await h.app.get(ProcessorService).drain();
+
+    // The pool lists only the CVs of the chosen upload.
+    const all = (await r.api.get(`/candidates?vacancy=${vid}`)).json();
+    expect(all.total).toBe(3);
+    const only1 = (await r.api.get(`/candidates?vacancy=${vid}&batch=${b1.batchId}`)).json();
+    const only2 = (await r.api.get(`/candidates?vacancy=${vid}&batch=${b2.batchId}`)).json();
+    expect([only1.total, only2.total]).toEqual([2, 1]);
+    expect((await r.api.get(`/candidates?batch=${'0'.repeat(26)}`)).statusCode).toBe(404);
+
+    // Two failed CVs; retrying one by its document leaves the other alone.
+    const mine = (await r.api.get(`/upload-batches/${b1.batchId}?items=1`)).json().items;
+    for (const i of mine) {
+      await h.db.owner.query(
+        `UPDATE screening SET state = 'failed', score = NULL, band = NULL, breakdown = NULL WHERE document_id = $1`,
+        [i.documentId],
+      );
+    }
+    const one = await r.api.post(`/vacancies/${vid}/retry-failed`, {
+      batchId: b1.batchId,
+      documentId: mine[0].documentId,
+    });
+    expect(one.json().requeued).toBe(1);
+    const left = await h.db.owner.query(
+      `SELECT count(*)::int AS n FROM screening s JOIN cv_document d ON d.id = s.document_id
+        WHERE d.vacancy_id = $1 AND s.state = 'failed'`,
+      [vid],
+    );
+    expect(left.rows[0].n).toBe(1);
+    await h.app.get(ProcessorService).drain();
+    const audit = await h.db.owner.query(
+      `SELECT after FROM audit_event WHERE action = 'screening.retried' ORDER BY seq DESC LIMIT 1`,
+    );
+    expect(audit.rows[0].after).toMatchObject({ scope: 'one', count: 1 });
+  });
+
   it('keeps the legacy 50-file route working and answers the same shape', async () => {
     const r = await h.recruiter('legacy@azerconnect.test');
     const vid = await ready(r.api);

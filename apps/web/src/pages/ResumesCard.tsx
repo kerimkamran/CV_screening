@@ -1,105 +1,136 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { UPLOAD_CODE_MESSAGE } from '@cv/shared';
 import { api } from '../api';
 import { useT, tr } from '../i18n';
-import { filesFromDrop, isZip, startIntake, useIntake } from '../intake';
+import { useAssistantConfig } from '../assistant';
+import { trackBatch, prepareSignals } from '../done-signals';
+import {
+  checkFiles,
+  DEFAULT_LIMITS,
+  fetchIntakeInfo,
+  filesFromDrop,
+  folderPickingSupported,
+  FOLDER_LIMIT,
+  RECOMMENDED_PER_UPLOAD,
+  startBatch,
+  summarize,
+  useRun,
+  type Checked,
+  type IntakeInfo,
+} from '../intake';
 import { type VacancyView } from '../pool';
 import { btnPrimary, btnSecondary, Card, errMsg, Notice } from '../ui';
 import { NOTICE_TEXT } from './Vacancy';
 import { skillCount } from './RoleCard';
 
 /**
- * The Resumes card (Development Plan, Phase 1 and 2): add resumes to this vacancy and run the
- * analysis. It opens up once the role is saved with at least one skill. "Find the best fit" the
- * first time, "Re-analyze" when the requirements changed or more resumes were added.
+ * The CVs card (Stage 2, S2-FE7): add CVs to this vacancy and run the analysis. Every file is checked
+ * before anything is sent (wrong type, empty, too big, old Word format), the person sees how many
+ * CVs the vacancy already holds, and a long list is summarised instead of printed.
+ * "Find the best fit" the first time, "Re-analyze" when the requirements changed or CVs were added.
  */
 
 const COLLAPSE_ABOVE = 8;
 const plural = (n: number, one: string, many: string) => tr(n === 1 ? one : many, { n });
-const okFile = (f: File) => /\.(pdf|docx|txt|zip)$/i.test(f.name);
-/** Operating-system litter inside a dropped folder: never worth a line. */
-const litter = (f: File) => /^(\.|~\$|Thumbs\.db$|desktop\.ini$)/i.test(f.name);
-const label = (f: File) =>
-  (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-const fileKey = (f: File) => `${label(f)}:${f.size}`;
+const mb = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+export function problemText(p: NonNullable<Checked['problem']>): string {
+  return tr(UPLOAD_CODE_MESSAGE[p.code], { n: p.n ?? 0 });
+}
 
 export function ResumesCard({
   vacancy,
   roleDirty,
   onStarted,
+  user,
 }: {
   vacancy: VacancyView;
   /** The Role card has changes that are not saved yet. */
   roleDirty: boolean;
   onStarted: () => void;
+  /** Who is signed in (for the "ready" signals). */
+  user: { id: string };
 }) {
   const t = useT();
-  const [files, setFiles] = useState<File[]>([]);
-  const [skipped, setSkipped] = useState<{ name: string; reason: string }[]>([]);
+  const [rows, setRows] = useState<Checked[]>([]);
+  const [ignored, setIgnored] = useState(0);
+  const [repeated, setRepeated] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [showList, setShowList] = useState(false);
-  const [showSkipped, setShowSkipped] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
+  const [info, setInfo] = useState<IntakeInfo | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const zipRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
-  const intake = useIntake(vacancy.id);
+  const run = useRun(vacancy.id);
+  const assistant = useAssistantConfig()?.name ?? 'parallax';
+  const folders = useMemo(() => folderPickingSupported(), []);
 
+  const refreshInfo = useCallback(() => {
+    fetchIntakeInfo(vacancy.id).then(setInfo, () => undefined);
+  }, [vacancy.id]);
+  useEffect(refreshInfo, [refreshInfo, run?.batchId, vacancy.counts.documents]);
+
+  const limits = info ? { maxFileMb: info.maxFileMb, maxZipMb: info.maxZipMb } : DEFAULT_LIMITS;
   const c = vacancy.counts;
   const skills = skillCount(vacancy);
   const confirmed = !!vacancy.candidateNoticeConfirmedAt;
   const everRan = c.analyzed > 0 || c.running > 0 || vacancy.hasFrozen;
   const locked = !vacancy.canEdit || vacancy.archived;
   const noticeOk = confirmed || notice;
-  const newWork =
-    files.length > 0 || c.outOfDate > 0 || c.needsLook > 0 || c.stopped > 0 || !everRan;
-  const hasResumes = files.length > 0 || c.documents > 0;
+  const sum = summarize(rows);
+  const room = info ? Math.max(info.limit - info.used, 0) : Infinity;
+  const newWork = sum.ready > 0 || c.outOfDate > 0 || c.needsLook > 0 || c.stopped > 0 || !everRan;
+  const hasResumes = sum.ready > 0 || c.documents > 0;
   const ready = skills > 0 && !roleDirty && noticeOk && newWork && hasResumes && !busy && !locked;
 
-  function addFiles(list: File[]) {
-    const skip: { name: string; reason: string }[] = [];
-    const good: File[] = [];
-    for (const f of list) {
-      if (litter(f)) continue;
-      if (okFile(f)) good.push(f);
-      else skip.push({ name: label(f), reason: 'only PDF, DOCX and TXT files can be read.' });
-    }
-    setFiles((cur) => {
-      const have = new Set(cur.map(fileKey));
-      const fresh = good.filter((f) => {
-        const dup = have.has(fileKey(f));
-        have.add(fileKey(f));
-        if (dup) skip.push({ name: label(f), reason: 'added twice.' });
-        return !dup;
-      });
-      return [...cur, ...fresh];
-    });
-    setSkipped(skip);
-    setShowSkipped(false);
+  function addFiles(list: File[], wasTruncated = false) {
+    const have = new Set(rows.map((r) => r.key));
+    const r = checkFiles(list, limits, have);
+    setRows((cur) => [...cur, ...r.added]);
+    setIgnored(r.ignored);
+    setRepeated(r.repeated);
+    setTruncated(wasTruncated);
   }
 
-  async function run() {
+  async function begin() {
     if (!ready) return;
+    // Synchronous, inside the click: the browser only allows these while the click is fresh.
+    prepareSignals(user.id);
     setBusy(true);
     setError('');
     setDone('');
     try {
-      // Freeze the requirements and open the vacancy first, so uploaded resumes are analyzed at once.
+      // Freeze the requirements and open the vacancy first, so uploaded CVs are analyzed at once.
       const r = await api.post<{ queued: number }>(`/vacancies/${vacancy.id}/start`, {
         confirmNotice: noticeOk,
       });
-      if (files.length) {
-        await startIntake(vacancy.id, files);
-        setFiles([]);
-      }
-      setDone(
-        files.length
-          ? t('Started. The resumes are being read.')
-          : r.queued > 0
-            ? plural(r.queued, '{n} resume queued.', '{n} resumes queued.')
+      if (sum.ready > 0) {
+        const batchId = await startBatch(vacancy.id, rows);
+        trackBatch({
+          vacancyId: vacancy.id,
+          batchId,
+          userId: user.id,
+          assistant,
+        });
+        setRows([]);
+        setIgnored(0);
+        setRepeated(0);
+        setDone(t('Started. The CVs are being read.'));
+      } else {
+        setDone(
+          r.queued > 0
+            ? plural(r.queued, '{n} CV queued.', '{n} CVs queued.')
             : t('Nothing new to analyze.'),
-      );
+        );
+      }
       onStarted();
     } catch (e) {
       setError(errMsg(e));
@@ -111,20 +142,33 @@ export function ResumesCard({
   const needs: string[] = [];
   if (roleDirty) needs.push(t('Save the role first.'));
   else if (skills === 0) needs.push(t('Add at least one skill on the role card.'));
-  if (!hasResumes) needs.push(t('Add at least one resume.'));
+  if (!hasResumes) needs.push(t('Add at least one CV.'));
   if (!noticeOk) needs.push(t('Confirm the candidate notice.'));
 
   const button = everRan ? t('Re-analyze') : t('Find the best fit →');
+  const problems = rows.filter((r) => r.problem);
+  const readyRows = rows.filter((r) => !r.problem);
+  const overRoom = Math.max(readyRows.length - room, 0);
+  const shownRows = showList ? rows : rows.filter((r) => r.problem);
+  const sending = !!run && run.items.some((i) => i.client === 'waiting' || i.client === 'sending');
   return (
-    <Card title={t('Resumes')}>
+    <Card title={t('CVs')}>
       <div className="space-y-3">
         {error && <Notice kind="error">{error}</Notice>}
         {done && <Notice kind="ok">{done}</Notice>}
         <p className="text-sm text-ink-2" role="status">
-          {c.documents === 0
-            ? t('No resumes in this vacancy yet.')
-            : [
-                plural(c.documents, '{n} resume', '{n} resumes'),
+          {info
+            ? t('{used} of {limit} CVs used in this vacancy', {
+                used: info.used,
+                limit: info.limit,
+              })
+            : c.documents === 0
+              ? t('No CVs in this vacancy yet.')
+              : plural(c.documents, '{n} CV', '{n} CVs')}
+          {c.documents > 0 && (
+            <>
+              {' · '}
+              {[
                 t('{n} analyzed', { n: c.analyzed }),
                 c.running > 0 ? t('{n} running', { n: c.running }) : '',
                 c.outOfDate > 0 ? t('{n} out of date', { n: c.outOfDate }) : '',
@@ -132,6 +176,8 @@ export function ResumesCard({
               ]
                 .filter(Boolean)
                 .join(' · ')}
+            </>
+          )}
         </p>
 
         {!locked && (
@@ -145,13 +191,15 @@ export function ResumesCard({
               onDrop={(e) => {
                 e.preventDefault();
                 setDragging(false);
-                void filesFromDrop(e.dataTransfer).then(addFiles);
+                void filesFromDrop(e.dataTransfer).then((r) => addFiles(r.files, r.truncated));
               }}
               className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
             >
-              <p className="font-medium">{t('Drop resumes here')}</p>
+              <p className="font-medium">{t('Drop CVs here')}</p>
               <p className="text-sm text-ink-3">
-                {t('PDF, DOCX or TXT files, a whole folder, or a ZIP of resumes')}
+                {folders
+                  ? t('PDF, DOCX or TXT files, a whole folder, or a ZIP of CVs')
+                  : t('PDF, DOCX or TXT files, or a ZIP of CVs')}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <button
@@ -161,12 +209,21 @@ export function ResumesCard({
                 >
                   {t('Choose files')}
                 </button>
+                {folders && (
+                  <button
+                    type="button"
+                    className={btnSecondary}
+                    onClick={() => folderRef.current?.click()}
+                  >
+                    {t('Choose a folder')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={btnSecondary}
-                  onClick={() => folderRef.current?.click()}
+                  onClick={() => zipRef.current?.click()}
                 >
-                  {t('Choose a folder')}
+                  {t('Add a ZIP')}
                 </button>
               </div>
               <input
@@ -175,10 +232,11 @@ export function ResumesCard({
                 multiple
                 // @ts-expect-error webkitdirectory is not in the DOM typings
                 webkitdirectory=""
-                aria-label={t('Choose a folder of resumes')}
+                aria-label={t('Choose a folder of CVs')}
                 className="sr-only"
                 onChange={(e) => {
-                  addFiles(Array.from(e.target.files ?? []));
+                  const list = Array.from(e.target.files ?? []);
+                  addFiles(list.slice(0, FOLDER_LIMIT.files), list.length > FOLDER_LIMIT.files);
                   e.target.value = '';
                 }}
               />
@@ -186,8 +244,19 @@ export function ResumesCard({
                 ref={fileRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.txt,.zip"
-                aria-label={t('Choose resume files')}
+                accept=".pdf,.docx,.txt,.md,.doc"
+                aria-label={t('Choose CV files')}
+                className="sr-only"
+                onChange={(e) => {
+                  addFiles(Array.from(e.target.files ?? []));
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={zipRef}
+                type="file"
+                accept=".zip"
+                aria-label={t('Choose a ZIP of CVs')}
                 className="sr-only"
                 onChange={(e) => {
                   addFiles(Array.from(e.target.files ?? []));
@@ -195,68 +264,128 @@ export function ResumesCard({
                 }}
               />
             </div>
-            {skipped.length > 0 && skipped.length <= 3 && (
-              <p role="alert" className="text-sm text-warn-text">
-                {skipped.map((x) => `${x.name}: ${t(x.reason)}`).join(' ')}
+
+            {truncated && (
+              <Notice kind="warn">
+                {t(
+                  'The folder is very large, so only the first {n} files were read. Choose a smaller folder for the rest.',
+                  { n: FOLDER_LIMIT.files },
+                )}
+              </Notice>
+            )}
+            {(ignored > 0 || repeated > 0) && (
+              <p className="text-xs text-ink-3" role="status">
+                {[
+                  ignored > 0
+                    ? plural(ignored, '{n} system file left out.', '{n} system files left out.')
+                    : '',
+                  repeated > 0
+                    ? plural(repeated, '{n} repeat left out.', '{n} repeats left out.')
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               </p>
             )}
-            {skipped.length > 3 && (
-              <div className="text-sm text-warn-text" role="status">
-                {t('{n} skipped,', { n: skipped.length })}{' '}
-                <button
-                  type="button"
-                  className="underline"
-                  aria-expanded={showSkipped}
-                  onClick={() => setShowSkipped((v) => !v)}
-                >
-                  {showSkipped ? t('hide which') : t('see which')}
-                </button>
-                {showSkipped && (
-                  <ul className="mt-1 max-h-40 list-disc overflow-auto pl-5">
-                    {skipped.map((x, i) => (
-                      <li key={i}>
-                        {x.name}: {t(x.reason)}
-                      </li>
-                    ))}
+
+            {rows.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium" role="status" data-testid="check-summary">
+                  {[
+                    plural(sum.files, '{n} file', '{n} files'),
+                    mb(sum.bytes),
+                    t('{n} ready', { n: sum.ready }),
+                    sum.problems > 0 ? t('{n} need attention', { n: sum.problems }) : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                {sum.ready > RECOMMENDED_PER_UPLOAD && (
+                  <Notice kind="warn">
+                    {t(
+                      'You chose {n} CVs. Up to {rec} per upload is recommended so results arrive sooner. You can still send all of them.',
+                      { n: sum.ready, rec: RECOMMENDED_PER_UPLOAD },
+                    )}
+                  </Notice>
+                )}
+                {overRoom > 0 && (
+                  <Notice kind="warn">
+                    {t('Only {room} more CVs fit in this vacancy. The last {n} will not be sent.', {
+                      room,
+                      n: overRoom,
+                    })}
+                  </Notice>
+                )}
+                {shownRows.length > 0 && (
+                  <ul className="max-h-64 divide-y divide-line overflow-auto text-sm">
+                    {shownRows.map((r) => {
+                      const idx = readyRows.indexOf(r);
+                      const full = !r.problem && idx >= room;
+                      return (
+                        <li key={r.key} className="flex items-center justify-between gap-2 py-1.5">
+                          <span className="min-w-0">
+                            <span className="block truncate">{r.path}</span>
+                            <span
+                              className={`block text-xs ${r.problem || full ? 'text-err-ink' : 'text-ink-3'}`}
+                            >
+                              {mb(r.size)}
+                              {r.problem && ` · ${problemText(r.problem)}`}
+                              {full && ` · ${t('Vacancy full')}`}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 text-link hover:underline"
+                            aria-label={t('Remove {name}', { name: r.path })}
+                            onClick={() => setRows((cur) => cur.filter((x) => x.key !== r.key))}
+                          >
+                            {t('Remove')}
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
-              </div>
-            )}
-            {files.length > 0 && (
-              <div>
-                <p className="text-sm font-medium" role="status">
-                  {plural(files.length, '{n} resume added', '{n} resumes added')}
-                  {files.some(isZip) && ' ' + t('(a ZIP is unpacked when you start)')}
-                  {files.length > COLLAPSE_ABOVE && (
-                    <>
-                      {' · '}
-                      <button
-                        type="button"
-                        className="font-normal text-link underline"
-                        aria-expanded={showList}
-                        onClick={() => setShowList((v) => !v)}
-                      >
-                        {showList ? t('Hide the list') : t('Show the list')}
-                      </button>
-                    </>
-                  )}
-                </p>
-                {(files.length <= COLLAPSE_ABOVE || showList) && (
-                  <ul className="mt-1 max-h-56 divide-y divide-line overflow-auto text-sm">
-                    {files.map((f, i) => (
-                      <li key={fileKey(f)} className="flex items-center justify-between gap-2 py-1">
-                        <span className="truncate">{label(f)}</span>
+                {readyRows.length > 0 && (rows.length > COLLAPSE_ABOVE || problems.length > 0) && (
+                  <button
+                    type="button"
+                    className="text-sm text-link underline"
+                    aria-expanded={showList}
+                    onClick={() => setShowList((v) => !v)}
+                  >
+                    {showList
+                      ? t('Show only the files that need attention')
+                      : t('Show all {n} files', { n: rows.length })}
+                  </button>
+                )}
+                {rows.length <= COLLAPSE_ABOVE && problems.length === 0 && (
+                  <ul className="max-h-56 divide-y divide-line overflow-auto text-sm">
+                    {rows.map((r) => (
+                      <li key={r.key} className="flex items-center justify-between gap-2 py-1.5">
+                        <span className="min-w-0">
+                          <span className="block truncate">{r.path}</span>
+                          <span className="block text-xs text-ink-3">{mb(r.size)}</span>
+                        </span>
                         <button
                           type="button"
                           className="shrink-0 text-link hover:underline"
-                          aria-label={t('Remove {name}', { name: label(f) })}
-                          onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
+                          aria-label={t('Remove {name}', { name: r.path })}
+                          onClick={() => setRows((cur) => cur.filter((x) => x.key !== r.key))}
                         >
                           {t('Remove')}
                         </button>
                       </li>
                     ))}
                   </ul>
+                )}
+                {problems.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-sm text-link underline"
+                    onClick={() => setRows((cur) => cur.filter((r) => !r.problem))}
+                  >
+                    {t('Remove all files that need attention')}
+                  </button>
                 )}
               </div>
             )}
@@ -291,9 +420,9 @@ export function ResumesCard({
               <button
                 type="button"
                 className={`${btnPrimary} h-11 px-5`}
-                disabled={busy}
+                disabled={busy || sending}
                 aria-disabled={!ready}
-                onClick={() => void run()}
+                onClick={() => void begin()}
               >
                 {busy ? t('Starting…') : button}
               </button>
@@ -310,26 +439,16 @@ export function ResumesCard({
                 </p>
               )}
               <p className="text-xs text-ink-3">
-                {t('Resumes are read by the AI provider your administrator has chosen.')}
+                {t('CVs are read by the AI provider your administrator has chosen.')}
+              </p>
+              <p className="text-xs text-ink-3">
+                {t(
+                  'When you start, your browser may ask to show a notification when the CVs are ready.',
+                )}
               </p>
             </div>
           </>
         )}
-
-        {intake && intake.sent < intake.total && (
-          <Notice kind="info">
-            <span role="status">
-              {t(
-                'Sending {sent} of {total} files. You can start looking now: the rest appear here as they are read.',
-                {
-                  sent: intake.sent,
-                  total: intake.total,
-                },
-              )}
-            </span>
-          </Notice>
-        )}
-        {intake?.error && <Notice kind="error">{intake.error}</Notice>}
       </div>
     </Card>
   );

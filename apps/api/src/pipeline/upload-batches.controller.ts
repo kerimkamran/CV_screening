@@ -326,7 +326,10 @@ export class UploadBatchesController {
   ) {
     const vid = parse(ulidSchema, id);
     await this.scope.assertEdit(p, vid);
-    const { batchId } = parse(z.object({ batchId: ulidSchema.optional() }).default({}), body ?? {});
+    const { batchId, documentId } = parse(
+      z.object({ batchId: ulidSchema.optional(), documentId: ulidSchema.optional() }).default({}),
+      body ?? {},
+    );
     if (batchId) {
       const ok = await this.db.query(
         `SELECT 1 FROM upload_batch WHERE id = $1 AND vacancy_id = $2`,
@@ -344,8 +347,9 @@ export class UploadBatchesController {
             AND s.requirement_set_id = (SELECT id FROM requirement_set
                   WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1)
             AND ($2::text IS NULL OR d.id IN (SELECT document_id FROM upload_item WHERE batch_id = $2 AND document_id IS NOT NULL))
+            AND ($3::text IS NULL OR d.id = $3)
           RETURNING s.id`,
-        [vid, batchId ?? null],
+        [vid, batchId ?? null, documentId ?? null],
       );
       await this.audit.record(tx, {
         actorId: p.userId,
@@ -355,7 +359,7 @@ export class UploadBatchesController {
         entityType: 'vacancy',
         entityId: vid,
         after: {
-          scope: batchId ? 'batch' : 'vacancy',
+          scope: documentId ? 'one' : batchId ? 'batch' : 'vacancy',
           batchId: batchId ?? null,
           count: r.rowCount,
         },

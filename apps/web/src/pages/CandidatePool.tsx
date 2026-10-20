@@ -34,6 +34,8 @@ type Order = 'asc' | 'desc';
 
 interface State {
   vacancy: string;
+  /** "Latest upload": only the CVs of one upload batch (Stage 2, S2-FE8). */
+  batch: string;
   bands: Band[];
   marks: Mark[];
   outOfDate: boolean;
@@ -44,6 +46,7 @@ interface State {
 }
 const DEFAULT: State = {
   vacancy: '',
+  batch: '',
   bands: [],
   marks: [],
   outOfDate: false,
@@ -65,6 +68,7 @@ function remembered(vacancyId?: string): State {
     const j = JSON.parse(sessionStorage.getItem(stateKey(vacancyId)) ?? '{}') as Partial<State>;
     return {
       vacancy: typeof j.vacancy === 'string' ? j.vacancy : '',
+      batch: typeof j.batch === 'string' ? j.batch : '',
       bands: Array.isArray(j.bands) ? j.bands.filter((b) => BANDS.includes(b)) : [],
       marks: Array.isArray(j.marks) ? j.marks.filter((m) => MARKS.includes(m)) : [],
       outOfDate: j.outOfDate === true,
@@ -86,6 +90,7 @@ const params = (s: State, vacancyId?: string) => {
   const p = new URLSearchParams();
   const v = vacancyId ?? s.vacancy;
   if (v) p.set('vacancy', v);
+  if (s.batch) p.set('batch', s.batch);
   if (s.bands.length) p.set('band', s.bands.join(','));
   if (s.marks.length) p.set('decision', s.marks.join(','));
   if (s.outOfDate) p.set('outOfDate', 'true');
@@ -151,6 +156,25 @@ export function CandidatePool({
     api
       .get<VacancyListItem[]>('/vacancies?sort=title&order=asc')
       .then(setVacancies, () => undefined);
+  }, [vacancyId]);
+
+  // "See results" on the batch panel limits this list to that upload.
+  useEffect(() => {
+    if (!vacancyId) return;
+    const take = () => {
+      try {
+        const b = sessionStorage.getItem(`cv-batch-filter:${vacancyId}`);
+        if (b) {
+          sessionStorage.removeItem(`cv-batch-filter:${vacancyId}`);
+          setS((cur) => ({ ...cur, batch: b, scroll: 0 }));
+        }
+      } catch {
+        /* a convenience only */
+      }
+    };
+    take();
+    window.addEventListener('cv-batch-filter', take);
+    return () => window.removeEventListener('cv-batch-filter', take);
   }, [vacancyId]);
 
   const query = params(s, vacancyId).toString();
@@ -383,6 +407,7 @@ export function CandidatePool({
     s.bands.length > 0 ||
     s.marks.length > 0 ||
     s.outOfDate ||
+    s.batch !== '' ||
     s.q.trim() !== '' ||
     (!vacancyId && s.vacancy !== '');
   const remaining = page ? page.total - rows.length : 0;
@@ -490,6 +515,15 @@ export function CandidatePool({
             />
             {t('Out of date only')}
           </label>
+          {s.batch && (
+            <button
+              type="button"
+              className="rounded-full border border-edge bg-sel px-3 py-1 text-sm"
+              onClick={() => patch({ batch: '' })}
+            >
+              {t('Latest upload only')} ×
+            </button>
+          )}
           {filtered && (
             <button
               type="button"

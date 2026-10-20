@@ -64,6 +64,57 @@ const TWINKLE: { x: number; y: number; size: number; delay: number }[] = [
   { x: 93, y: 68, size: 3, delay: 1.2 },
 ];
 
+/** Number of stars drawn in the constellations (the waiting screen lights them one by one). */
+export const STAR_COUNT = SHAPES.reduce((n, s) => n + s.dots.length, 0);
+const DOT_INDEX = new Map<string, number>(
+  SHAPES.flatMap((s) => s.dots).map(([x, y], i) => [`${x},${y}`, i]),
+);
+
+/**
+ * The constellations as a progress picture: the first `lit` stars are gold, the rest dim, and a line
+ * shows once both of its ends are lit. Changes use `transform` and `opacity` only (CSS classes
+ * `sky-star` and `sky-line` in index.css).
+ */
+export function LitConstellations({ lit }: { lit: number }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 800 220"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      {SHAPES.flatMap((s) => s.lines).map(([a, b, c, d], i) => {
+        const on = DOT_INDEX.get(`${a},${b}`)! < lit && DOT_INDEX.get(`${c},${d}`)! < lit;
+        return (
+          <line
+            key={i}
+            x1={a}
+            y1={b}
+            x2={c}
+            y2={d}
+            stroke="#8FB4FF"
+            strokeWidth="1.4"
+            className={`sky-line ${on ? 'sky-line-on' : ''}`}
+            data-on={on ? 'true' : 'false'}
+          />
+        );
+      })}
+      {SHAPES.flatMap((s) => s.dots).map(([x, y], i) => (
+        <circle
+          key={i}
+          cx={x}
+          cy={y}
+          r="3.2"
+          fill={i < lit ? '#F5C461' : '#B9C8F2'}
+          className={`sky-star ${i < lit ? 'sky-star-on' : ''}`}
+          data-lit={i < lit ? 'true' : 'false'}
+          style={{ transformOrigin: `${x}px ${y}px` }}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function Constellations({ line, dot, dimmed }: { line: string; dot: string; dimmed?: boolean }) {
   return (
     <svg
@@ -92,13 +143,24 @@ export function calmSky(): boolean {
   );
 }
 
-export function Sky({ children }: { children: ReactNode }) {
+export function Sky({
+  children,
+  lit,
+  className,
+}: {
+  children?: ReactNode;
+  /** When set, the sky is a progress picture (see `LitConstellations`) and the cursor effects are off. */
+  lit?: number;
+  /** Replaces the default banner shape and padding. */
+  className?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const calm = calmSky();
+  const still = calm || lit !== undefined; // no cursor effects
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || calm) return;
+    if (!el || still) return;
     const move = (e: MouseEvent) => {
       const r = el.getBoundingClientRect();
       el.style.setProperty('--mx', `${e.clientX - r.left}px`);
@@ -114,14 +176,14 @@ export function Sky({ children }: { children: ReactNode }) {
       el.removeEventListener('mousemove', move);
       el.removeEventListener('mouseleave', leave);
     };
-  }, [calm]);
+  }, [still]);
 
   return (
     <div
       ref={ref}
       data-testid="sky"
       data-calm={calm ? 'true' : 'false'}
-      className="relative overflow-hidden rounded-3xl px-6 py-8 text-white"
+      className={`relative overflow-hidden text-white ${className ?? 'rounded-3xl px-6 py-8'}`}
       style={
         {
           background: '#0A1530',
@@ -153,9 +215,13 @@ export function Sky({ children }: { children: ReactNode }) {
           }}
         />
       ))}
-      {/* 3. Dim constellations */}
-      <Constellations line="#5C93FF" dot="#B9C8F2" dimmed />
-      {!calm && (
+      {/* 3. Dim constellations, or the progress picture */}
+      {lit !== undefined ? (
+        <LitConstellations lit={lit} />
+      ) : (
+        <Constellations line="#5C93FF" dot="#B9C8F2" dimmed />
+      )}
+      {!still && (
         <>
           {/* 4. Cursor glow */}
           <div

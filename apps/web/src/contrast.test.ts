@@ -67,6 +67,7 @@ const PAIRS: [string, string][] = [
   ['ok-ink', 'ok'],
   ['warn-ink', 'warn'],
   ['err-ink', 'err'],
+  ['cafe-chalk', 'cafe-board'], // the chalk board in the waiting scene (S2-FE11)
 ];
 
 describe.each(Object.entries(THEMES))('contrast on the %s background', (_name, t) => {

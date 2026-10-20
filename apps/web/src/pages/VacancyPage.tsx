@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type Me } from '../api';
 import { setAssistantScope } from '../assistant';
 import { tr, useT } from '../i18n';
 import { go } from '../route';
@@ -7,6 +7,7 @@ import { ago, STATUS_STYLE, statusName, type VacancyView } from '../pool';
 import { btnSecondary, errMsg, Notice, when } from '../ui';
 import { CandidatePool } from './CandidatePool';
 import { Report } from './Report';
+import { BatchPanel } from './BatchPanel';
 import { ResumesCard } from './ResumesCard';
 import { Results } from './Results';
 import { RoleCard } from './RoleCard';
@@ -121,16 +122,24 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   useEffect(() => void reload(), [reload]);
   useEffect(() => void loadRuns(), [loadRuns]);
 
+  const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => {
+    api.get<Me>('/me').then(setMe, () => undefined);
+  }, []);
+  // While the batch panel watches an upload it brings the numbers; this page's own poll rests.
+  const [batchWatching, setBatchWatching] = useState(false);
+  const [justStarted, setJustStarted] = useState(false);
+
   // While resumes are being read, the counts move: look again every few seconds.
   const running = v?.counts.running ?? 0;
   useEffect(() => {
-    if (!running) return;
+    if (!running || batchWatching) return;
     const h = setInterval(() => {
       void reload();
       void loadRuns();
     }, 4000);
     return () => clearInterval(h);
-  }, [running, reload, loadRuns]);
+  }, [running, batchWatching, reload, loadRuns]);
 
   // The Ask bar searches inside this vacancy unless the question names another.
   useEffect(() => {
@@ -244,6 +253,18 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
+      {me && (
+        <BatchPanel
+          vacancy={v}
+          user={{ id: me.userId, displayName: me.displayName }}
+          justStarted={justStarted}
+          onWatching={setBatchWatching}
+          onChanged={() => {
+            void reload();
+            void loadRuns();
+          }}
+        />
+      )}
       {v.archived && (
         <Notice kind="warn">
           {t('This vacancy is archived. Marks and edits are off.')}{' '}
@@ -339,7 +360,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         <ResumesCard
           vacancy={v}
           roleDirty={dirty}
+          user={{ id: me?.userId ?? '' }}
           onStarted={() => {
+            setJustStarted(true);
             void reload();
             void loadRuns();
             go(`/vacancies/${v.id}/candidates`);

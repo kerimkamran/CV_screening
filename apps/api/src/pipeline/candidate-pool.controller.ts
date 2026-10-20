@@ -53,6 +53,8 @@ const list = (s: string | undefined) =>
 
 const query = z.object({
   vacancy: z.string().optional(),
+  /** "Latest upload": only the CVs linked from one upload batch (Stage 2, S2-BE2). */
+  batch: ulidSchema.optional(),
   band: z.string().optional(),
   decision: z.string().optional(),
   outOfDate: z.enum(['true', 'false']).optional(),
@@ -115,6 +117,7 @@ export class CandidatePoolController {
     // is not continued, because rows may have moved (spec 6.8).
     const sig = JSON.stringify([
       q.vacancy,
+      q.batch,
       q.band,
       q.decision,
       q.outOfDate,
@@ -154,11 +157,27 @@ export class CandidatePoolController {
 
   /** The filtered, ordered rows for a query: shared by the list, the Excel export and the summary. */
   private async select(p: Principal, q: z.infer<typeof query>): Promise<PoolRow[]> {
-    const ids = await this.scope.visibleIds(p, q.archived === 'true');
+    let ids = await this.scope.visibleIds(p, q.archived === 'true');
+    let inBatch: Set<string> | null = null;
+    if (q.batch) {
+      const b = await this.db.query<{ vacancyId: string; documentId: string | null }>(
+        `SELECT b.vacancy_id AS "vacancyId", i.document_id AS "documentId"
+           FROM upload_batch b LEFT JOIN upload_item i ON i.batch_id = b.id
+          WHERE b.id = $1`,
+        [q.batch],
+      );
+      const vid = b.rows[0]?.vacancyId;
+      // A batch of a vacancy this person cannot see is "not found", never an empty list.
+      if (!vid || !ids.includes(vid)) throw new NotFoundException();
+      ids = [vid];
+      inBatch = new Set(b.rows.flatMap((r) => (r.documentId ? [r.documentId] : [])));
+    }
     const want = list(q.vacancy);
-    const rows = await this.pool.rows(want.length ? ids.filter((i) => want.includes(i)) : ids, {
-      withSkills: !!q.q,
-    });
+    const rows = (
+      await this.pool.rows(want.length ? ids.filter((i) => want.includes(i)) : ids, {
+        withSkills: !!q.q,
+      })
+    ).filter((r) => !inBatch || inBatch.has(r.documentId));
     const bands = list(q.band).filter((b) => (POOL_BANDS as readonly string[]).includes(b));
     const marks = list(q.decision).filter((m) => (MARKS as readonly string[]).includes(m));
     const filtered = rows.filter(
