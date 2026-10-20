@@ -5,6 +5,7 @@ import {
   BAND_LABEL,
   bandMoves,
   isPending,
+  isNotAnalyzed,
   layoutStars,
   linkStars,
   matchBand,
@@ -117,7 +118,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     ordered.filter((r) => b.includes(bandOf.get(r.documentId)!));
   const ranked = inBand('strong', 'good', 'partial');
   const limited = inBand('limited');
-  const human = inBand('human').filter((r) => !isPending(r) && r.state !== 'stopped');
+  const human = inBand('human').filter(
+    (r) => !isPending(r) && !isNotAnalyzed(r) && r.state !== 'stopped',
+  );
   const scored = [...ranked, ...limited];
   const stoppedCount = data?.counts.stopped ?? 0;
   const read = (data?.counts.total ?? 0) - pending - stoppedCount;

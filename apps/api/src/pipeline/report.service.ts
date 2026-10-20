@@ -2,6 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import {
   experienceLine,
   isPending,
+  isNotAnalyzed,
   KIND_NAME,
   matchBand,
   mustHaveTally,
@@ -200,7 +201,10 @@ export class ReportService {
       bands: Object.fromEntries(
         BANDS.map((b) => [
           b,
-          all.filter((r) => matchBand(r) === b && !isPending(r) && r.state !== 'stopped').length,
+          all.filter(
+            (r) =>
+              matchBand(r) === b && !isPending(r) && !isNotAnalyzed(r) && r.state !== 'stopped',
+          ).length,
         ]),
       ) as Record<MatchBand, number>,
       candidates,

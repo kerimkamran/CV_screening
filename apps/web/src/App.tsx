@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   api,
   ApiError,
@@ -29,7 +29,6 @@ import { applyBackground, isBackground } from './theme';
 import { go } from './route';
 import { Notice } from './ui';
 
-const IDLE_MS = 30 * 60 * 1000; // IAM-06: idle sign-out
 const REFRESH_MS = 20 * 60 * 1000;
 
 const HEALTH_LABEL: Record<ApiHealth['state'], string> = {
@@ -75,7 +74,6 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   const [health, setHealth] = useState<ApiHealth>({ state: 'checking' });
   const [note, setNote] = useState('');
   const route = useRoute();
-  const lastActive = useRef(0);
 
   const signOut = useCallback((why = '') => {
     session.set(null);
@@ -105,26 +103,31 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     return subscribeUnauthorized(() => signOut(tr('Your session ended. Please sign in again.')));
   }, [check, loadMe, signOut]);
 
-  // Idle sign-out and keep-alive while the user is active.
+  // S2-FE16: the sign-in stays open for as long as the tab is open. There is no idle sign-out; the
+  // token is renewed on a timer (and when the tab comes back to the front), never lengthened.
+  // Sign out, closing the tab, a disabled account, or a device asleep longer than one token
+  // lifetime still end the session (the next call answers 401).
   useEffect(() => {
     if (!me) return;
-    const touch = () => (lastActive.current = Date.now());
-    touch();
-    const events = ['pointerdown', 'keydown'] as const;
-    events.forEach((e) => window.addEventListener(e, touch));
-    const t = setInterval(() => {
-      if (Date.now() - lastActive.current > IDLE_MS)
-        return signOut(tr('You were signed out after 30 minutes of inactivity.'));
+    let lastRefresh = Date.now();
+    const refresh = () => {
+      lastRefresh = Date.now();
       void api.post<Session>('/auth/refresh').then(
         (s) => session.set(s.token),
         () => undefined,
       );
-    }, REFRESH_MS);
+    };
+    const t = setInterval(refresh, REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRefresh > REFRESH_MS)
+        refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      events.forEach((e) => window.removeEventListener(e, touch));
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(t);
     };
-  }, [me, signOut]);
+  }, [me]);
 
   const isTa = !!me?.roles.some((r) => r === 'TA_PARTNER' || r === 'TA_LEAD');
   const isAdmin = !!me?.roles.includes('ADMIN');

@@ -20,6 +20,8 @@ export const FETCH = Symbol('FETCH');
  * the window, calls to that model stop for a while instead of every question waiting for a timeout.
  * A "Test connection" always goes through and, when it works, closes the breaker.
  */
+/** The wording of a call refused because the breaker is open (the worker recognises it). */
+export const PAUSED_TEXT = 'paused for a minute after repeated failures';
 export const BREAKER = { threshold: 5, windowMs: 120_000, openMs: 60_000 };
 
 type Connection = Omit<Target, 'model'>;
@@ -49,6 +51,20 @@ export class AiGateway {
     return rows[0] ?? null;
   }
 
+  /**
+   * Is the ACTIVE model paused by the breaker right now? The worker claims nothing while it is, so
+   * an outage burns no attempts (Stage 2, S2-BE4). Other models' breakers do not matter here.
+   */
+  async activePaused(): Promise<boolean> {
+    if (this.breaker.size === 0) return false;
+    const { rows } = await this.db.query<{ company: string; model: string }>(
+      `SELECT c.company, m.model_id AS model
+         FROM ai_setting s JOIN ai_model m ON m.id = s.active_model
+         JOIN ai_connection c ON c.id = m.connection_id`,
+    );
+    return !!rows[0] && this.isOpen(`${rows[0].company}:${rows[0].model}`);
+  }
+
   /** Uses the active model, or the given model (by its row id) when testing one specifically. */
   async complete(
     req: CompletionRequest,
@@ -59,7 +75,7 @@ export class AiGateway {
     const name = COMPANIES[target.company].name;
     const key = `${target.company}:${target.model}`;
     if (!opts.probe && this.isOpen(key))
-      throw new ProviderError(`${name}: paused for a minute after repeated failures`, false, 503);
+      throw new ProviderError(`${name}: ${PAUSED_TEXT}`, false, 503);
     try {
       const r = await this.attemptWithFallback(target, req, name);
       this.breaker.delete(key);

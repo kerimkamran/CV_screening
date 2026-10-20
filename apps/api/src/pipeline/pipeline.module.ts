@@ -9,6 +9,7 @@ import { CriteriaController } from './criteria.controller';
 import { CriteriaSets } from './criteria-sets';
 import { DocumentsController } from './documents.controller';
 import { ExportService } from './export.service';
+import { IntakeService } from './intake.service';
 import { ProcessorService } from './processor.service';
 import { ReportService } from './report.service';
 import { RetentionController } from './retention.controller';
@@ -19,6 +20,7 @@ import { LINK_READER } from './link-reader.token';
 import { LinkReader } from './link-reader';
 import { PoolService } from './pool.service';
 import { VacancyPoolController } from './vacancy-pool.controller';
+import { UploadBatchesController } from './upload-batches.controller';
 import { VacancyService } from './vacancy.service';
 
 @Module({
@@ -28,6 +30,7 @@ import { VacancyService } from './vacancy.service';
     CandidatePoolController,
     CriteriaController,
     DocumentsController,
+    UploadBatchesController,
     ScreeningsController,
     AdjustmentsController,
     ReportsController,
@@ -41,6 +44,7 @@ import { VacancyService } from './vacancy.service';
     CriteriaSets,
     ProcessorService,
     ExportService,
+    IntakeService,
     AdjustmentService,
     CandidatesService,
     ReportService,
@@ -51,6 +55,7 @@ import { VacancyService } from './vacancy.service';
     PoolService,
     CriteriaSets,
     ProcessorService,
+    IntakeService,
     AdjustmentService,
     CandidatesService,
     ReportService,

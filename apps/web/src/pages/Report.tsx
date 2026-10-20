@@ -4,6 +4,7 @@ import {
   BAND_LABEL,
   experienceLine,
   isPending,
+  isNotAnalyzed,
   KIND_NAME,
   matchBand,
   mustHaveTally,
@@ -167,7 +168,9 @@ export function Report({
   const frozen = criteria.versions.filter((v) => v.frozenAt).sort((a, b) => a.version - b.version);
   const changes = frozen.slice(1);
   const bandCount = (b: MatchBand) =>
-    all.filter((r) => matchBand(r) === b && !isPending(r) && r.state !== 'stopped').length;
+    all.filter(
+      (r) => matchBand(r) === b && !isPending(r) && !isNotAnalyzed(r) && r.state !== 'stopped',
+    ).length;
   const aiLine = (() => {
     const d = Object.values(details).find((x): x is Detail => typeof x === 'object' && !!x.aiModel);
     return d

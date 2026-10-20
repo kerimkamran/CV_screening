@@ -12,7 +12,7 @@ export const AZ_POOL: Record<string, string> = {
   // Vacancy list
   All: 'Hamısı',
   Draft: 'Layihə',
-  Open: 'Açıq',
+  Open: 'Açın',
   'On hold': 'Gözləmədə',
   Closed: 'Bağlı',
   Archived: 'Arxivdə',
@@ -32,7 +32,7 @@ export const AZ_POOL: Record<string, string> = {
   Decisions: 'Qərarlar',
   Owner: 'Məsul şəxs',
   Updated: 'Yenilənib',
-  Status: 'Status',
+  Status: 'Vəziyyət',
   Strong: 'Güclü',
   Refresh: 'Yeniləyin',
   Undo: 'Geri qaytarın',
@@ -143,7 +143,7 @@ export const AZ_POOL: Record<string, string> = {
   Decision: 'Qərar',
   'Out of date only': 'Yalnız köhnələnlər',
   'As of {time}': '{time} vəziyyətinə görə',
-  'Export to Excel': 'Excel-ə köçürün',
+  'Export to Excel': 'Excel-ə ixrac edin',
   'Shortlist summary': 'Qısa siyahının xülasəsi',
   'Choose a vacancy first': 'Əvvəlcə vakansiya seçin',
   'This list was opened a while ago. Reload it to continue.':
@@ -151,7 +151,7 @@ export const AZ_POOL: Record<string, string> = {
   Reload: 'Yenidən yükləyin',
   Close: 'Bağla',
   Copy: 'Kopyalayın',
-  'Copied.': 'Kopyalandı.',
+  'Copied.': 'Köçürüldü.',
   'Open in e-mail': 'E-poçtda açın',
   'Nothing is sent from here. You send it yourself.':
     'Buradan heç nə göndərilmir. Özünüz göndərirsiniz.',
@@ -182,7 +182,7 @@ export const AZ_POOL: Record<string, string> = {
   '{n} candidate': '{n} namizəd',
   '{n} candidates': '{n} namizəd',
   New: 'Yeni',
-  Shortlist: 'Qısa siyahı',
+  Shortlist: 'Qısa siyahıya alın',
   Maybe: 'Bəlkə',
   'Not now': 'İndi yox',
   Good: 'Yaxşı',
@@ -326,7 +326,7 @@ export const AZ_POOL: Record<string, string> = {
     'Düymələr: J və K keçid, S qısa siyahı, M bəlkə, N indi yox, Enter hesabatı açır.',
 
   // Vacancy page summary strip (Oct 2026)
-  Resumes: 'Rezyumelər',
+  Resumes: 'CV-lər',
   'Need a look': 'Baxış tələb edir',
   'Could not be read': 'Oxunmadı',
   'Reading now': 'İndi oxunur',

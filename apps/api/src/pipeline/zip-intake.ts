@@ -24,8 +24,13 @@ export interface ZipLimits {
 
 export interface Unpacked {
   files: { name: string; data: Buffer }[];
-  skipped: { name: string; reason: string }[];
+  skipped: { name: string; reason: string; code?: string }[];
 }
+
+/** One thing found in a ZIP: a file to take in, or an entry that was skipped (with its reason). */
+export type ZipEntry =
+  | { kind: 'file'; index: number; name: string; data: Buffer }
+  | { kind: 'skipped'; index: number; name: string; reason: string; code: string };
 
 export class ZipProblem extends Error {}
 
@@ -67,35 +72,47 @@ function readCapped(entry: JSZip.JSZipObject, cap: number): Promise<Buffer | 'to
   });
 }
 
-export async function unpackZip(buf: Buffer, limits: ZipLimits): Promise<Unpacked> {
+/**
+ * Entries one at a time (S2-BE2): only one unpacked file is in memory at once, so a ZIP of 100 CVs
+ * costs the size of its largest CV, not the sum. `index` counts the examined entries, in order, and
+ * is the stable position of the entry inside its parent upload item.
+ */
+export async function* iterateZip(buf: Buffer, limits: ZipLimits): AsyncGenerator<ZipEntry> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(buf, { checkCRC32: false });
   } catch {
     throw new ZipProblem("Couldn't open this ZIP file");
   }
-  const out: Unpacked = { files: [], skipped: [] };
   let total = 0;
   let seen = 0;
+  let index = 0;
   for (const [rawName, entry] of Object.entries(zip.files)) {
     if (entry.dir) continue;
     const name = rawName.replaceAll('\\', '/');
     if (isLitter(name)) continue;
     const label = name.split('/').slice(-2).join('/').slice(0, 200);
+    const skip = (reason: string, code: string): ZipEntry => ({
+      kind: 'skipped',
+      index: index++,
+      name: label,
+      reason,
+      code,
+    });
     if (++seen > limits.maxEntries) {
-      out.skipped.push({ name: label, reason: 'Too many files in the ZIP' });
+      yield skip('Too many files in the ZIP', 'too_many_entries');
       continue;
     }
     if (name.startsWith('/') || /^[a-zA-Z]:/.test(name) || name.split('/').includes('..')) {
-      out.skipped.push({ name: label, reason: 'Unsafe file path' });
+      yield skip('Unsafe file path', 'unsafe_path');
       continue;
     }
     if (ARCHIVE.test(name)) {
-      out.skipped.push({ name: label, reason: 'An archive inside the ZIP is not opened' });
+      yield skip('An archive inside the ZIP is not opened', 'nested_archive');
       continue;
     }
     if (!WANTED.test(name)) {
-      out.skipped.push({ name: label, reason: 'Only PDF, DOCX and TXT files' });
+      yield skip('Only PDF, DOCX and TXT files', 'wrong_type');
       continue;
     }
     const meta = (
@@ -104,15 +121,15 @@ export async function unpackZip(buf: Buffer, limits: ZipLimits): Promise<Unpacke
     const declared = meta?.uncompressedSize ?? 0;
     const packed = Math.max(meta?.compressedSize ?? 1, 1);
     if (declared > limits.maxEntryBytes) {
-      out.skipped.push({ name: label, reason: 'Over the size limit' });
+      yield skip('Over the size limit', 'too_large');
       continue;
     }
     if (declared / packed > limits.maxRatio && declared > 1024 * 1024) {
-      out.skipped.push({ name: label, reason: 'Unusually compressed, not opened' });
+      yield skip('Unusually compressed, not opened', 'suspicious_ratio');
       continue;
     }
     if (total + declared > limits.maxTotalBytes) {
-      out.skipped.push({ name: label, reason: 'The ZIP is larger than the limit' });
+      yield skip('The ZIP is larger than the limit', 'zip_too_large');
       continue;
     }
     const data = await readCapped(
@@ -120,11 +137,19 @@ export async function unpackZip(buf: Buffer, limits: ZipLimits): Promise<Unpacke
       Math.min(limits.maxEntryBytes, limits.maxTotalBytes - total),
     );
     if (data === 'too-big') {
-      out.skipped.push({ name: label, reason: 'Over the size limit' });
+      yield skip('Over the size limit', 'too_large');
       continue;
     }
     total += data.length;
-    out.files.push({ name: label, data });
+    yield { kind: 'file', index: index++, name: label, data };
+  }
+}
+
+export async function unpackZip(buf: Buffer, limits: ZipLimits): Promise<Unpacked> {
+  const out: Unpacked = { files: [], skipped: [] };
+  for await (const e of iterateZip(buf, limits)) {
+    if (e.kind === 'file') out.files.push({ name: e.name, data: e.data });
+    else out.skipped.push({ name: e.name, reason: e.reason, code: e.code });
   }
   return out;
 }

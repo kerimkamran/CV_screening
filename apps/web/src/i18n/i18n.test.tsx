@@ -4,7 +4,16 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Login } from '../pages/Login';
 import { applyLang, getLang, tr } from './index';
+import { CV_STATUS_LABEL, UPLOAD_CODE_MESSAGE } from '@cv/shared';
 import { AZ } from './az';
+import { AZ_ASSISTANT } from './az.assistant';
+import { AZ_HOME } from './az.home';
+import { AZ_MONITORING } from './az.monitoring';
+import { AZ_POOL } from './az.pool';
+import { AZ_REPORT } from './az.report';
+import { AZ_RESULTS } from './az.results';
+import { AZ_SHELL } from './az.shell';
+import { AZ_STAGE2 } from './az.stage2';
 
 const SRC = join(process.cwd(), 'src');
 const files = (dir: string): string[] =>
@@ -32,6 +41,52 @@ describe('Azerbaijani interface', () => {
         if (!(en in AZ)) missing.push(`${f.replace(SRC, '')}: ${en}`);
       }
     }
+    expect(missing).toEqual([]);
+  });
+
+  it('also covers the sentences passed to plural()', () => {
+    const PLURAL =
+      /\bplural\(\s*[^'"`]*?,\s*(['"])((?:\\.|(?!\1).)*)\1\s*,\s*(['"])((?:\\.|(?!\3).)*)\3/gs;
+    const missing: string[] = [];
+    for (const f of files(SRC)) {
+      for (const m of readFileSync(f, 'utf8').matchAll(PLURAL)) {
+        for (const en of [unescape(m[2]!), unescape(m[4]!)]) {
+          if (!(en in AZ)) missing.push(`${f.replace(SRC, '')}: ${en}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('never gives one sentence two different Azerbaijani texts in two files', () => {
+    const seen = new Map<string, { az: string; file: string }>();
+    const conflicts: string[] = [];
+    const parts: [string, Record<string, string>][] = [
+      ['pool', AZ_POOL],
+      ['shell', AZ_SHELL],
+      ['home', AZ_HOME],
+      ['results', AZ_RESULTS],
+      ['report', AZ_REPORT],
+      ['assistant', AZ_ASSISTANT],
+      ['monitoring', AZ_MONITORING],
+      ['stage2', AZ_STAGE2],
+    ];
+    for (const [file, dict] of parts) {
+      for (const [en, az] of Object.entries(dict)) {
+        const prev = seen.get(en);
+        if (prev && prev.az !== az)
+          conflicts.push(`${en}: ${prev.file}="${prev.az}" vs ${file}="${az}"`);
+        else seen.set(en, { az, file });
+      }
+    }
+    expect(conflicts).toEqual([]);
+  });
+
+  it('has an Azerbaijani text for every CV status label and upload message', () => {
+    const missing = [
+      ...Object.values(CV_STATUS_LABEL),
+      ...Object.values(UPLOAD_CODE_MESSAGE),
+    ].filter((en) => !(en in AZ));
     expect(missing).toEqual([]);
   });
 

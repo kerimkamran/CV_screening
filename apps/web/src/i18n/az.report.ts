@@ -179,7 +179,7 @@ export const AZ_REPORT: Record<string, string> = {
   Good: 'Yaxşı',
   Partial: 'Qismən',
   Limited: 'Məhdud',
-  'Needs a human look': 'İnsan baxışı lazımdır',
+  'Needs a human look': 'İnsan baxışı tələb edir',
   Found: 'Tapıldı',
   'Partly found': 'Qismən tapıldı',
   'Not found': 'Tapılmadı',

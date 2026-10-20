@@ -36,6 +36,12 @@ export interface RankRow {
 
 export const isPending = (r: { state: string }) => r.state === 'queued' || r.state === 'processing';
 
+/**
+ * Readable but not analyzed on the current criteria (S2-BE1). Not pending: nothing is coming, so
+ * it must not keep any poll alive. It is also not "needs a human look" and is left out of the bands.
+ */
+export const isNotAnalyzed = (r: { state: string }) => r.state === 'not_analyzed';
+
 export function matchBand(r: Pick<RankRow, 'state' | 'score' | 'band'>): MatchBand {
   if (r.state !== 'completed' || r.score === null || r.band === 'needs_review') return 'human';
   const v = r.score.value;

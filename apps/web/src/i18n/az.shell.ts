@@ -1,7 +1,7 @@
 /** Sign-in, menu, footer, shared labels, and the server messages people meet most often. */
 export const AZ_SHELL: Record<string, string> = {
   // header, menu, footer
-  'New screening': 'Yeni yoxlama',
+  'New screening': 'Yeni skan',
   'Past scans': 'Keçmiş yoxlamalar',
   'Shared with me': 'Mənimlə paylaşılanlar',
   Admin: 'İdarə',
@@ -36,8 +36,6 @@ export const AZ_SHELL: Record<string, string> = {
   'Service unavailable': 'Xidmət əlçatan deyil',
   'Your session ended. Please sign in again.':
     'Sessiyanız bitdi. Zəhmət olmasa yenidən daxil olun.',
-  'You were signed out after 30 minutes of inactivity.':
-    '30 dəqiqə hərəkətsizlikdən sonra sistemdən çıxarıldınız.',
   'Data retention': 'Məlumatın saxlanma müddəti',
   // two-step sign-in
   Security: 'Təhlükəsizlik',
@@ -101,14 +99,14 @@ export const AZ_SHELL: Record<string, string> = {
   'Possible match': 'Mümkün uyğunluq',
   'Weak match': 'Zəif uyğunluq',
   'Needs review': 'Baxış tələb olunur',
-  Shortlisted: 'Qısa siyahıda',
+  Shortlisted: 'Qısa siyahıya salındı',
   Maybe: 'Bəlkə',
   'Not now': 'İndi yox',
   Strong: 'Güclü',
   Good: 'Yaxşı',
   Partial: 'Qismən',
   Limited: 'Məhdud',
-  'Needs a human look': 'İnsan baxışı lazımdır',
+  'Needs a human look': 'İnsan baxışı tələb edir',
   // common server messages
   'Something went wrong': 'Nəsə səhv getdi',
   'Invalid email or password': 'E-poçt və ya parol yanlışdır',

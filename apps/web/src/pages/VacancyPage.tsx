@@ -305,7 +305,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
               [c.analyzed, t('Analyzed')],
               [c.strong, t('Strong')],
               ...(c.needsLook > 0 ? [[c.needsLook, t('Need a look')]] : []),
-              ...(c.failed > 0 ? [[c.failed, t('Could not be read')]] : []),
+              ...(c.failed > 0 ? [[c.failed, t('Analysis failed')]] : []),
               ...(c.running > 0 ? [[c.running, t('Reading now')]] : []),
             ] as [number, string][]
           ).map(([n, label]) => (

@@ -39,7 +39,7 @@ export const AZ_MONITORING: Record<string, string> = {
   Scored: 'Qiymətləndirilib',
   'Average score': 'Orta bal',
   'Strong or Good': 'Güclü və ya Yaxşı',
-  'Needs a human look': 'İnsan baxışı lazımdır',
+  'Needs a human look': 'İnsan baxışı tələb edir',
   'Not readable': 'Oxunmur',
   'Compared with the best group': 'Ən yaxşı qrupla müqayisə',
   Flag: 'Qeyd',

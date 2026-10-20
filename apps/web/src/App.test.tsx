@@ -59,6 +59,31 @@ describe('sign-in and gates', () => {
     ).toBeInTheDocument();
   });
 
+  it('stays signed in with no activity and keeps renewing the token (S2-FE16)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      session.set('t1');
+      const calls = mockFetch((url) => {
+        if (url.endsWith('/me'))
+          return {
+            body: { userId: 'u', displayName: 'Ayla', email: 'a@x.az', roles: ['TA_PARTNER'] },
+          };
+        if (url.endsWith('/auth/refresh'))
+          return { body: { token: 't2', expiresIn: 3600, mustChangePassword: false } };
+        return { body: [] };
+      });
+      render(<App check={up} />);
+      await screen.findByText('Ayla');
+      await vi.advanceTimersByTimeAsync(50 * 60 * 1000);
+      expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+      expect(screen.queryByText(/inactivity/)).toBeNull();
+      expect(calls.filter((c) => c.url.endsWith('/auth/refresh')).length).toBeGreaterThanOrEqual(2);
+      expect(session.get()).toBe('t2');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('signs in, then lists vacancies for a recruiter', async () => {
     const calls = mockFetch((url) => {
       if (url.endsWith('/auth/login'))
