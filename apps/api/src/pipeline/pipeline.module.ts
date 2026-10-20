@@ -7,6 +7,7 @@ import { CandidateViewService } from './candidate-view.service';
 import { CandidatesService } from './candidates.service';
 import { CriteriaController } from './criteria.controller';
 import { CriteriaSets } from './criteria-sets';
+import { DocumentReviewController } from './document-review.controller';
 import { DocumentsController } from './documents.controller';
 import { ExportService } from './export.service';
 import { IntakeService } from './intake.service';
@@ -30,6 +31,7 @@ import { VacancyService } from './vacancy.service';
     CandidatePoolController,
     CriteriaController,
     DocumentsController,
+    DocumentReviewController,
     UploadBatchesController,
     ScreeningsController,
     AdjustmentsController,

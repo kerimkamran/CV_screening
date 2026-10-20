@@ -126,4 +126,56 @@ export const AZ_STAGE2: Record<string, string> = {
   '✓ Ready · parallax': '✓ Hazırdır · parallax',
   'about {m} minute left': 'təxminən {m} dəqiqə qalıb',
   'about {m} minutes left': 'təxminən {m} dəqiqə qalıb',
+  // The review screen, the CV pane and the lists (S2-FE2 to FE5)
+  'This CV is not available to you, or it no longer exists.':
+    'Bu CV sizin üçün əlçatan deyil və ya artıq mövcud deyil.',
+  'Ranked CVs': 'Sıralanmış CV-lər',
+  'All CVs': 'Bütün CV-lər',
+  'A CV without a result is marked on its own page.':
+    'Nəticəsi olmayan CV öz səhifəsində qiymətləndirilir.',
+  'No analyzed CVs yet. Add CVs to a vacancy and choose “Find the best fit”.':
+    'Hələ təhlil olunmuş CV yoxdur. Vakansiyaya CV əlavə edin və “Ən uyğununu tap” seçin.',
+  'Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the CV.':
+    'Düymələr: J və K hərəkət edir, S seçmə siyahısı, M bəlkə, N indi yox, Enter CV-ni açır.',
+  Original: 'Orijinal',
+  'This CV was erased. Its file and its text are gone.':
+    'Bu CV silinib. Faylı və mətni artıq yoxdur.',
+  'Show the text instead': 'Əvəzinə mətni göstər',
+  'Loading the pages…': 'Səhifələr yüklənir…',
+  'The pages of this Word file are not available. The text below was read from the file; the original can be downloaded.':
+    'Bu Word faylının səhifələri əlçatan deyil. Aşağıdakı mətn fayldan oxunub; orijinalı yükləmək olar.',
+  'This is a plain text file, so it has no pages.':
+    'Bu sadə mətn faylıdır, ona görə səhifələri yoxdur.',
+  'No text could be read from this file.': 'Bu fayldan mətn oxunmadı.',
+  'The lines found are marked here. The original pages are under Original.':
+    'Tapılan sətirlər burada işarələnib. Orijinal səhifələr “Orijinal” altındadır.',
+  CV: 'CV',
+  '{n} pages': '{n} səhifə',
+  Zoom: 'Miqyas',
+  'Zoom out': 'Kiçilt',
+  'Zoom in': 'Böyüt',
+  Download: 'Yüklə',
+  'Close full screen': 'Tam ekranı bağla',
+  'Full screen': 'Tam ekran',
+  'CV view': 'CV görünüşü',
+  'This CV is being analyzed.': 'Bu CV təhlil olunur.',
+  'The result appears here by itself. You can read the CV meanwhile.':
+    'Nəticə burada özü görünəcək. Bu arada CV-ni oxuya bilərsiniz.',
+  'The analysis of this CV did not finish.': 'Bu CV-nin təhlili başa çatmadı.',
+  'Retrying…': 'Yenidən cəhd edilir…',
+  'Retry the analysis': 'Təhlili yenidən cəhd et',
+  'Read the CV on the left and decide yourself.': 'CV-ni solda oxuyun və özünüz qərar verin.',
+  'The analysis was stopped before this CV.': 'Təhlil bu CV-yə çatmamış dayandırılıb.',
+  'Open the vacancy to continue': 'Davam etmək üçün vakansiyanı açın',
+  'Hide in CV': 'CV-də gizlət',
+  'Show in CV': 'CV-də göstər',
+  'Nothing to show in the CV.': 'CV-də göstəriləcək bir şey yoxdur.',
+  'Previous CV (K)': 'Əvvəlki CV (K)',
+  '‹ Previous CV': '‹ Əvvəlki CV',
+  'CV {a} of {b}': 'CV {a} / {b}',
+  'Next CV (J)': 'Növbəti CV (J)',
+  'Next CV ›': 'Növbəti CV ›',
+  'CV {a} of {b}: {name}': 'CV {a} / {b}: {name}',
+  Analysis: 'Təhlil',
+  'Only the first part of this CV is shown.': 'Bu CV-nin yalnız ilk hissəsi göstərilir.',
 };

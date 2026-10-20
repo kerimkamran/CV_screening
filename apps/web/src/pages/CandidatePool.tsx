@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Mark } from '@cv/shared';
+import { CV_STATUS_LABEL, type CvStatus, type Mark } from '@cv/shared';
 import { api, ApiError } from '../api';
 import { go } from '../route';
 import { tr, useT } from '../i18n';
@@ -11,12 +11,15 @@ import {
   MARKS,
   markName,
   type Band,
+  isRanked,
   type MarkResult,
+  type PoolItem,
   type PoolPage,
   type PoolRow,
   type VacancyListItem,
   mirrorNote,
 } from '../pool';
+import { openCv, reviewHref } from '../review';
 import { btnPrimary, btnSecondary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
 import { CandidatePreview, DECISION_KEY, useWide } from './CandidatePreview';
 import { MarkSelect } from './MarkSelect';
@@ -32,7 +35,31 @@ const BULK_MAX = 100;
 type SortKey = 'match' | 'updated' | 'candidate' | 'vacancy' | 'decision';
 type Order = 'asc' | 'desc';
 
+/** Which CVs the list shows: the ranked ones (default), every CV, or one kind that has no result. */
+export type ShowKey =
+  '' | 'all' | 'attention' | 'failed' | 'analyzing' | 'stopped' | 'not_analyzed';
+export const SHOW_STATUSES: Record<Exclude<ShowKey, '' | 'all'>, CvStatus[]> = {
+  attention: ['needs_look', 'unreadable'],
+  failed: ['failed'],
+  analyzing: ['analyzing'],
+  stopped: ['stopped'],
+  not_analyzed: ['not_analyzed'],
+};
+const SHOW_LABEL: Record<Exclude<ShowKey, ''>, string> = {
+  all: 'All CVs',
+  attention: CV_STATUS_LABEL.needs_look,
+  failed: CV_STATUS_LABEL.failed,
+  analyzing: CV_STATUS_LABEL.analyzing,
+  stopped: CV_STATUS_LABEL.stopped,
+  not_analyzed: CV_STATUS_LABEL.not_analyzed,
+};
+const isShow = (v: unknown): v is ShowKey =>
+  v === '' || v === 'all' || (typeof v === 'string' && v in SHOW_STATUSES);
+
 interface State {
+  /** The CV that was open when the person left (the row to come back to). */
+  active: string;
+  show: ShowKey;
   vacancy: string;
   /** "Latest upload": only the CVs of one upload batch (Stage 2, S2-FE8). */
   batch: string;
@@ -45,6 +72,8 @@ interface State {
   scroll: number;
 }
 const DEFAULT: State = {
+  active: '',
+  show: '',
   vacancy: '',
   batch: '',
   bands: [],
@@ -56,17 +85,12 @@ const DEFAULT: State = {
   scroll: 0,
 };
 const stateKey = (vacancyId?: string) => `cv-pool:${vacancyId ?? 'all'}`;
-export const ORIGIN_KEY = 'cv-pool-origin';
-export interface Origin {
-  ids: string[];
-  label: string;
-  back: string;
-}
-
 function remembered(vacancyId?: string): State {
   try {
     const j = JSON.parse(sessionStorage.getItem(stateKey(vacancyId)) ?? '{}') as Partial<State>;
     return {
+      active: typeof j.active === 'string' ? j.active : '',
+      show: isShow(j.show) ? j.show : '',
       vacancy: typeof j.vacancy === 'string' ? j.vacancy : '',
       batch: typeof j.batch === 'string' ? j.batch : '',
       bands: Array.isArray(j.bands) ? j.bands.filter((b) => BANDS.includes(b)) : [],
@@ -91,6 +115,8 @@ const params = (s: State, vacancyId?: string) => {
   const v = vacancyId ?? s.vacancy;
   if (v) p.set('vacancy', v);
   if (s.batch) p.set('batch', s.batch);
+  if (s.show === 'all') p.set('status', 'all');
+  else if (s.show) p.set('status', SHOW_STATUSES[s.show].join(','));
   if (s.bands.length) p.set('band', s.bands.join(','));
   if (s.marks.length) p.set('decision', s.marks.join(','));
   if (s.outOfDate) p.set('outOfDate', 'true');
@@ -121,7 +147,7 @@ export function CandidatePool({
   const t = useT();
   const [s, setS] = useState<State>(() => remembered(vacancyId));
   const [page, setPage] = useState<PoolPage | null>(null);
-  const [rows, setRows] = useState<PoolRow[]>([]);
+  const [rows, setRows] = useState<PoolItem[]>([]);
   const [error, setError] = useState('');
   const [expired, setExpired] = useState(false);
   const [more, setMore] = useState(false);
@@ -134,7 +160,9 @@ export function CandidatePool({
   const { toast, show, dismiss } = useUndoToast();
   const restored = useRef(false);
   const wide = useWide();
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => s.active || null);
+  // The whole ordered list as ids, for Previous and Next on the review screen (S2-FE5).
+  const allIds = useRef<{ key: string; ids: string[] } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // The state is kept for this tab, so coming back from a report lands where the person left.
@@ -190,6 +218,21 @@ export function CandidatePool({
       setError(errMsg(e));
     }
   }, [query]);
+  // The full ordered list, as ids only, so the review screen can walk all of it (S2-BE5).
+  useEffect(() => {
+    let dead = false;
+    allIds.current = null;
+    api.get<{ items: [string, string | null][] }>(`/candidates/ids?${query}`).then(
+      (r) => {
+        if (!dead && Array.isArray(r?.items))
+          allIds.current = { key: query, ids: r.items.map((i) => i[0]) };
+      },
+      () => undefined,
+    );
+    return () => {
+      dead = true;
+    };
+  }, [query]);
   // Typing in the search box waits a moment.
   useEffect(() => {
     const h = setTimeout(() => void load(), s.q ? 250 : 0);
@@ -230,19 +273,19 @@ export function CandidatePool({
     );
 
   // ---------------------------------------------------------------- marks
-  const setRow = (matchId: string, f: (r: PoolRow) => PoolRow) =>
-    setRows((cur) => cur.map((r) => (r.matchId === matchId ? f(r) : r)));
+  const setRow = (documentId: string, f: (r: PoolRow) => PoolRow) =>
+    setRows((cur) => cur.map((r) => (isRanked(r) && r.documentId === documentId ? f(r) : r)));
 
   async function mark(r: PoolRow, to: Mark) {
     if (to === r.decision) return;
     const before = { mark: r.decision, note: r.decisionNote, version: r.decisionVersion };
-    setRow(r.matchId, (x) => ({ ...x, decision: to, decisionVersion: x.decisionVersion + 1 }));
+    setRow(r.documentId, (x) => ({ ...x, decision: to, decisionVersion: x.decisionVersion + 1 }));
     try {
       const res = await api.put<MarkResult>(`/candidates/${r.matchId}/decision`, {
         mark: to,
         expectedVersion: before.version,
       });
-      setRow(r.matchId, (x) => ({
+      setRow(r.documentId, (x) => ({
         ...x,
         decision: res.mark,
         decisionVersion: res.version,
@@ -257,21 +300,33 @@ export function CandidatePool({
             note: before.note,
             expectedVersion: res.version,
           });
-          setRow(r.matchId, (x) => ({ ...x, decision: back.mark, decisionVersion: back.version }));
+          setRow(r.documentId, (x) => ({
+            ...x,
+            decision: back.mark,
+            decisionVersion: back.version,
+          }));
         } catch (e) {
           setError(errMsg(e));
           void load();
         }
       });
     } catch (e) {
-      setRow(r.matchId, (x) => ({ ...x, decision: before.mark, decisionVersion: before.version }));
+      setRow(r.documentId, (x) => ({
+        ...x,
+        decision: before.mark,
+        decisionVersion: before.version,
+      }));
       setError(errMsg(e));
       if (e instanceof ApiError && e.code === 'STALE_VERSION') void load();
     }
   }
 
   async function bulk(to: Mark) {
-    const ids = [...selected].slice(0, BULK_MAX);
+    // Only CVs with a result can be marked from the list; the others open on their own page.
+    const matchOf = new Map(rows.filter(isRanked).map((r) => [r.documentId, r.matchId]));
+    const ids = [...selected]
+      .flatMap((d) => (matchOf.has(d) ? [matchOf.get(d)!] : []))
+      .slice(0, BULK_MAX);
     if (!ids.length) return;
     try {
       const r = await api.post<{
@@ -287,6 +342,7 @@ export function CandidatePool({
       const done = r.results.filter((x) => x.ok);
       setRows((cur) =>
         cur.map((row) => {
+          if (!isRanked(row)) return row;
           const hit = done.find((x) => x.matchId === row.matchId);
           return hit
             ? { ...row, decision: to, decisionVersion: hit.version ?? row.decisionVersion }
@@ -345,24 +401,36 @@ export function CandidatePool({
     }
   }
 
-  const leave = (r: PoolRow) => {
+  const leave = (r: PoolItem) => {
+    const scroll = window.scrollY;
     try {
-      const origin: Origin = {
-        ids: rows.map((x) => x.matchId),
+      sessionStorage.setItem(
+        stateKey(vacancyId),
+        JSON.stringify({ ...s, active: r.documentId, scroll }),
+      );
+    } catch {
+      /* the CV still opens; Previous and Next just have no list */
+    }
+    const ids =
+      allIds.current?.key === query && allIds.current.ids.includes(r.documentId)
+        ? allIds.current.ids
+        : rows.map((x) => x.documentId);
+    openCv(
+      r.documentId,
+      {
         label: vacancyTitle ?? tr('Candidates'),
         back: window.location.hash.replace(/^#/, '') || '/candidates',
-      };
-      sessionStorage.setItem(ORIGIN_KEY, JSON.stringify(origin));
-      sessionStorage.setItem(stateKey(vacancyId), JSON.stringify({ ...s, scroll: window.scrollY }));
-    } catch {
-      /* the report still opens; Previous and Next just have no list */
-    }
-    go(`/candidates/${r.matchId}`);
+        ids,
+        scroll,
+      },
+      go,
+    );
   };
 
   const shown = rows;
-  const activeRow = shown.find((r) => r.matchId === activeId) ?? null;
-  const previewRow = wide && previewOpen ? activeRow : null;
+  const activeRow = shown.find((r) => r.documentId === activeId) ?? null;
+  const activeRanked = activeRow && isRanked(activeRow) ? activeRow : null;
+  const previewRow = wide && previewOpen ? activeRanked : null;
 
   // Keys (J and K move, S, M and N decide, Esc closes the panel, Enter opens the report). They do
   // nothing while a field has the focus, so typing a name never marks anyone.
@@ -373,24 +441,25 @@ export function CandidatePool({
     if (el && /^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(el.tagName)) return;
     if (el?.isContentEditable) return;
     const k = e.key.toLowerCase();
-    const i = shown.findIndex((r) => r.matchId === activeId);
+    const i = shown.findIndex((r) => r.documentId === activeId);
     if (k === 'j' || k === 'k') {
       if (!shown.length) return;
       const next =
         shown[Math.max(0, Math.min(shown.length - 1, i < 0 ? 0 : i + (k === 'j' ? 1 : -1)))]!;
-      setActiveId(next.matchId);
-      if (wide) setPreviewOpen(true);
-      document.getElementById(`cand-${next.matchId}`)?.scrollIntoView?.({ block: 'nearest' });
+      setActiveId(next.documentId);
+      if (wide && isRanked(next)) setPreviewOpen(true);
+      else setPreviewOpen(false);
+      document.getElementById(`cand-${next.documentId}`)?.scrollIntoView?.({ block: 'nearest' });
       e.preventDefault();
     } else if (k === 'escape') {
       setPreviewOpen(false);
     } else if (k === 'enter' && activeRow) {
       e.preventDefault();
       leave(activeRow);
-    } else if (k in DECISION_KEY && activeRow && canMark && !activeRow.vacancyArchived) {
+    } else if (k in DECISION_KEY && activeRanked && canMark && !activeRanked.vacancyArchived) {
       const to = DECISION_KEY[k]!;
       e.preventDefault();
-      void mark(activeRow, activeRow.decision === to ? 'new' : to);
+      void mark(activeRanked, activeRanked.decision === to ? 'new' : to);
     }
   };
   useEffect(() => {
@@ -402,21 +471,23 @@ export function CandidatePool({
     return () => window.removeEventListener('keydown', on);
   }, []);
   const allSelected =
-    shown.length > 0 && shown.slice(0, BULK_MAX).every((r) => selected.has(r.matchId));
+    shown.length > 0 && shown.slice(0, BULK_MAX).every((r) => selected.has(r.documentId));
   const filtered =
     s.bands.length > 0 ||
     s.marks.length > 0 ||
     s.outOfDate ||
     s.batch !== '' ||
+    s.show !== '' ||
     s.q.trim() !== '' ||
     (!vacancyId && s.vacancy !== '');
   const remaining = page ? page.total - rows.length : 0;
   const nextCount = Math.min(PAGE, remaining);
   const selectedRows = useMemo(
-    () => shown.filter((r) => selected.has(r.matchId)),
+    () => shown.filter((r) => selected.has(r.documentId)),
     [shown, selected],
   );
   const blocked = selectedRows.some((r) => r.vacancyArchived);
+  const unmarkable = selectedRows.length > 0 && !selectedRows.some(isRanked);
 
   return (
     <div className="space-y-4">
@@ -474,6 +545,22 @@ export function CandidatePool({
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <label className="flex items-center gap-2">
+            <span className="text-ink-3">{t('Show')}</span>
+            <select
+              className={`${input} w-auto!`}
+              aria-label={t('Show')}
+              value={s.show}
+              onChange={(e) => patch({ show: e.target.value as ShowKey })}
+            >
+              <option value="">{t('Ranked CVs')}</option>
+              {(Object.keys(SHOW_LABEL) as Exclude<ShowKey, ''>[]).map((k) => (
+                <option key={k} value={k}>
+                  {t(SHOW_LABEL[k])}
+                </option>
+              ))}
+            </select>
+          </label>
           <div role="group" aria-label={t('Match')} className="flex flex-wrap items-center gap-1.5">
             <span className="text-ink-3">{t('Match')}</span>
             {BANDS.map((b) => (
@@ -648,7 +735,7 @@ export function CandidatePool({
               className={input}
               aria-label={t('Mark selected as')}
               value=""
-              disabled={blocked}
+              disabled={blocked || unmarkable}
               onChange={(e) => e.target.value && void bulk(e.target.value as Mark)}
             >
               <option value="">{t('Choose…')}</option>
@@ -664,6 +751,11 @@ export function CandidatePool({
           )}
           {blocked && (
             <span className="text-warn-text">{t('A selected vacancy is archived.')}</span>
+          )}
+          {unmarkable && (
+            <span className="text-ink-3">
+              {t('A CV without a result is marked on its own page.')}
+            </span>
           )}
           <button
             type="button"
@@ -689,14 +781,14 @@ export function CandidatePool({
               </button>
             </>
           ) : (
-            t('No analyzed resumes yet. Add resumes to a vacancy and choose “Find the best fit”.')
+            t('No analyzed CVs yet. Add CVs to a vacancy and choose “Find the best fit”.')
           )}
         </div>
       )}
 
       {shown.length > 0 && canMark && (
         <p className="hidden text-xs text-ink-3 lg:block">
-          {t('Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the report.')}
+          {t('Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the CV.')}
         </p>
       )}
 
@@ -720,7 +812,7 @@ export function CandidatePool({
                     onChange={(e) =>
                       setSelected(
                         e.target.checked
-                          ? new Set(shown.slice(0, BULK_MAX).map((r) => r.matchId))
+                          ? new Set(shown.slice(0, BULK_MAX).map((r) => r.documentId))
                           : new Set(),
                       )
                     }
@@ -769,84 +861,100 @@ export function CandidatePool({
               </button>
             </div>
             <ul className="divide-y divide-line" aria-label={t('Candidates')}>
-              {shown.map((r) => (
-                <li
-                  key={r.matchId}
-                  id={`cand-${r.matchId}`}
-                  data-active={r.matchId === activeId ? 'true' : undefined}
-                  className={`${r.matchId === activeId ? 'bg-sel ' : ''}grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
-                  onClick={() => {
-                    setActiveId(r.matchId);
-                    if (wide) setPreviewOpen(true);
-                    else leave(r);
-                  }}
-                >
-                  <span onClick={(e) => e.stopPropagation()}>
-                    {canMark && (
-                      <input
-                        type="checkbox"
-                        aria-label={t('Select {name}', { name: r.label })}
-                        checked={selected.has(r.matchId)}
-                        onChange={(e) =>
-                          setSelected((cur) => {
-                            const n = new Set(cur);
-                            if (e.target.checked) n.add(r.matchId);
-                            else n.delete(r.matchId);
-                            return n;
-                          })
-                        }
-                      />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <a
-                      href={`#/candidates/${r.matchId}`}
-                      className="block truncate font-medium text-link hover:underline"
-                      onClick={(e) => {
-                        if (e.metaKey || e.ctrlKey) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        leave(r);
-                      }}
-                    >
-                      {r.label}
-                    </a>
-                  </span>
-                  <span className="col-span-3 min-w-0 truncate text-ink-2 lg:col-span-1">
-                    {r.vacancyTitle}
-                    {r.vacancyStatus === 'closed' && (
-                      <span className="text-ink-3"> · {t('Closed')}</span>
-                    )}
-                    {r.vacancyArchived && <span className="text-ink-3"> · {t('Archived')}</span>}
-                  </span>
-                  <span className="col-span-3 flex flex-wrap items-center gap-1.5 lg:col-span-1">
-                    <span className="font-medium tabular-nums">{Math.round(r.score)}%</span>
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
-                    >
-                      {t(BAND_NAME[r.band])}
+              {shown.map((r) => {
+                const ranked = isRanked(r);
+                const on = r.documentId === activeId;
+                return (
+                  <li
+                    key={r.documentId}
+                    id={`cand-${r.documentId}`}
+                    data-active={on ? 'true' : undefined}
+                    className={`${on ? 'bg-sel ' : ''}grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
+                    onClick={() => {
+                      setActiveId(r.documentId);
+                      if (wide && ranked) setPreviewOpen(true);
+                      else leave(r);
+                    }}
+                  >
+                    <span onClick={(e) => e.stopPropagation()}>
+                      {canMark && (
+                        <input
+                          type="checkbox"
+                          aria-label={t('Select {name}', { name: r.label })}
+                          checked={selected.has(r.documentId)}
+                          onChange={(e) =>
+                            setSelected((cur) => {
+                              const n = new Set(cur);
+                              if (e.target.checked) n.add(r.documentId);
+                              else n.delete(r.documentId);
+                              return n;
+                            })
+                          }
+                        />
+                      )}
                     </span>
-                    {r.outOfDate && (
-                      <span className="rounded border border-warn-line bg-warn px-1.5 py-0.5 text-xs text-warn-ink">
-                        {r.reanalyzing ? t('Re-analyzing') : t('Out of date')}
+                    <span className="min-w-0">
+                      <a
+                        href={reviewHref(r.documentId)}
+                        className="block truncate font-medium text-link hover:underline"
+                        onClick={(e) => {
+                          if (e.metaKey || e.ctrlKey) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          leave(r);
+                        }}
+                      >
+                        {r.label}
+                      </a>
+                    </span>
+                    <span className="col-span-3 min-w-0 truncate text-ink-2 lg:col-span-1">
+                      {r.vacancyTitle}
+                      {r.vacancyStatus === 'closed' && (
+                        <span className="text-ink-3"> · {t('Closed')}</span>
+                      )}
+                      {r.vacancyArchived && <span className="text-ink-3"> · {t('Archived')}</span>}
+                    </span>
+                    {ranked ? (
+                      <span className="col-span-3 flex flex-wrap items-center gap-1.5 lg:col-span-1">
+                        <span className="font-medium tabular-nums">{Math.round(r.score)}%</span>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[r.band]}`}
+                        >
+                          {t(BAND_NAME[r.band])}
+                        </span>
+                        {r.outOfDate && (
+                          <span className="rounded border border-warn-line bg-warn px-1.5 py-0.5 text-xs text-warn-ink">
+                            {r.reanalyzing ? t('Re-analyzing') : t('Out of date')}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="col-span-3 lg:col-span-1">
+                        <span className="rounded-full bg-neutral px-2.5 py-0.5 text-xs font-semibold text-ink">
+                          {t(CV_STATUS_LABEL[r.status])}
+                        </span>
                       </span>
                     )}
-                  </span>
-                  <span className="text-ink-2">
-                    <span className="text-ink-3 lg:hidden">{t('Must-haves')}: </span>
-                    {t('{a} of {b}', { a: r.mustFound, b: r.mustTotal })}
-                  </span>
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <MarkSelect
-                      value={r.decision}
-                      label={r.label}
-                      disabled={!canMark || r.vacancyArchived}
-                      onChange={(m) => void mark(r, m)}
-                    />
-                  </span>
-                  <span className="text-ink-3">{ago(r.updatedAt)}</span>
-                </li>
-              ))}
+                    <span className="text-ink-2">
+                      <span className="text-ink-3 lg:hidden">{t('Must-haves')}: </span>
+                      {ranked ? t('{a} of {b}', { a: r.mustFound, b: r.mustTotal }) : '—'}
+                    </span>
+                    <span onClick={(e) => e.stopPropagation()}>
+                      {ranked ? (
+                        <MarkSelect
+                          value={r.decision}
+                          label={r.label}
+                          disabled={!canMark || r.vacancyArchived}
+                          onChange={(m) => void mark(r, m)}
+                        />
+                      ) : (
+                        <span className="text-ink-3">—</span>
+                      )}
+                    </span>
+                    <span className="text-ink-3">{ago(r.updatedAt)}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
           {previewRow && (

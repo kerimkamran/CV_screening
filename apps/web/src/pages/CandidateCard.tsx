@@ -1,3 +1,4 @@
+import { reviewHref } from '../review';
 import { useState } from 'react';
 import { useT } from '../i18n';
 import { api, type CandidateRow } from '../api';
@@ -167,7 +168,7 @@ export function CandidateCard(props: {
           )}
           <p className="text-sm">
             {r.screeningId && (
-              <a className="text-link hover:underline" href={`#/screenings/${r.screeningId}`}>
+              <a className="text-link hover:underline" href={reviewHref(r.documentId)}>
                 {t('Open the full review and record a decision')}
               </a>
             )}

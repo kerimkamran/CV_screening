@@ -42,6 +42,8 @@ import {
 
 export interface PoolAnswerRow {
   matchId: string;
+  /** The CV, for the link to its review page (Stage 2). */
+  documentId: string;
   label: string;
   pseudonym: string;
   score: number;
@@ -973,6 +975,7 @@ export class PoolAssistantService {
         .map((i) => i.text);
       return {
         matchId: r.matchId,
+        documentId: r.documentId,
         label: r.label,
         pseudonym: r.pseudonym,
         score: Math.round(r.score),

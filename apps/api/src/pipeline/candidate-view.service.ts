@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { MARK_LABEL, markFromStored, type Mark } from '@cv/shared';
 import { DbService } from '../db/db.service';
 import { AdjustmentService } from './adjustments.service';
@@ -192,13 +192,27 @@ export class CandidateViewService {
 
   /** The resume as the reader shows it: the original text with its pages and paragraphs. */
   async resume(row: PoolRow) {
-    const src = await this.source(row);
-    const text = src.text ?? '';
+    return this.textOf(row.documentId);
+  }
+
+  /** The same, by document, for any state (Stage 2, S2-BE5). 409 when there is no text. */
+  async textOf(documentId: string) {
+    const { rows } = await this.db.query<{
+      text: string | null;
+      pageStarts: number[] | null;
+      truncated: boolean;
+    }>(
+      `SELECT d.text, d.page_starts AS "pageStarts", d.text_truncated AS truncated
+         FROM cv_document d WHERE d.id = $1 AND d.erased_at IS NULL`,
+      [documentId],
+    );
+    const src = rows[0];
+    if (!src?.text) throw new ConflictException('This CV has no readable text.');
     return {
-      text,
+      text: src.text,
       truncated: src.truncated,
       pageStarts: src.pageStarts,
-      blocks: this.blocks(text, src.pageStarts),
+      blocks: this.blocks(src.text, src.pageStarts),
     };
   }
 }

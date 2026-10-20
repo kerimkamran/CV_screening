@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
   BAND_CUTOFFS,
+  cvStatus,
   foldText,
   markFromStored,
   mustHaveTally,
   pseudonym,
+  type CvStatus,
   type Mark,
   type MatchBand,
   type VacancyStatus,
@@ -46,6 +48,43 @@ export interface PoolRow {
   uploadedAt: string;
   /** Matched skill labels, only when asked for (search). */
   skills?: string[];
+}
+
+/**
+ * A CV with no result to rank (Stage 2, S2-BE5): being analyzed, failed, unreadable, stopped or
+ * needing a human look. It has the original and a status instead of a score, and it is part of the
+ * walk Previous/Next goes through.
+ */
+export interface StatusRow {
+  documentId: string;
+  vacancyId: string;
+  vacancyTitle: string;
+  vacancyStatus: VacancyStatus;
+  vacancyArchived: boolean;
+  pseudonym: string;
+  label: string;
+  name: string | null;
+  ordinal: number;
+  filename: string;
+  status: CvStatus;
+  /** The latest screening of this CV on the current criteria (marks go to it), when there is one. */
+  screeningId: string | null;
+  matchId: null;
+  score: null;
+  band: null;
+  mustFound: 0;
+  mustTotal: 0;
+  decision: Mark;
+  decisionNote: string | null;
+  decisionVersion: number;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  outOfDate: false;
+  scoredAgainst: null;
+  reanalyzing: boolean;
+  analyzedAt: null;
+  updatedAt: string;
+  uploadedAt: string;
 }
 
 export const bandOf = (score: number): Exclude<MatchBand, 'human'> =>
@@ -96,7 +135,10 @@ export class PoolService {
     private readonly adj: AdjustmentService,
   ) {}
 
-  async rows(vacancyIds: string[], opts: { withSkills?: boolean } = {}): Promise<PoolRow[]> {
+  async rows(
+    vacancyIds: string[],
+    opts: { withSkills?: boolean; documentId?: string } = {},
+  ): Promise<PoolRow[]> {
     if (vacancyIds.length === 0) return [];
     const { rows } = await this.db.query<Raw>(
       `WITH docs AS (
@@ -139,8 +181,9 @@ export class PoolService {
                 FROM decision x JOIN screening s2 ON s2.id = x.screening_id
                 JOIN app_user u ON u.id = x.decided_by
                WHERE s2.document_id = d.id ORDER BY x.decided_at DESC, x.id DESC LIMIT 1) dec ON true
-        WHERE d.erased_at IS NULL AND m.score IS NOT NULL AND m.band <> 'needs_review'`,
-      [vacancyIds],
+        WHERE d.erased_at IS NULL AND m.score IS NOT NULL AND m.band <> 'needs_review'
+          AND ($2::text IS NULL OR d.id = $2)`,
+      [vacancyIds, opts.documentId ?? null],
     );
 
     // Requirement changes made on the results screen (6.2.5) re-weigh the stored assessments;
@@ -202,6 +245,122 @@ export class PoolService {
       for (const r of out) r.skills = by.get(r.matchId) ?? [];
     }
     return out;
+  }
+
+  /** One CV's pool row (a single-document query, so a report no longer rebuilds the whole pool). */
+  async rowForDocument(vacancyId: string, documentId: string): Promise<PoolRow | null> {
+    return (await this.rows([vacancyId], { documentId }))[0] ?? null;
+  }
+
+  /**
+   * Every live CV of these vacancies that is NOT in `scored`, with its status on the current
+   * criteria. Upload order, per vacancy. Erased CVs are not listed.
+   */
+  async statusRows(vacancyIds: string[], scored: Set<string>): Promise<StatusRow[]> {
+    if (vacancyIds.length === 0) return [];
+    const { rows } = await this.db.query<{
+      documentId: string;
+      vacancyId: string;
+      vacancyTitle: string;
+      vacancyStatus: VacancyStatus;
+      archived: boolean;
+      filename: string;
+      uploadedAt: Date;
+      ordinal: number;
+      total: number;
+      screeningId: string | null;
+      state: string | null;
+      cancelled: boolean | null;
+      band: string | null;
+      scored: boolean | null;
+      candidateName: string | null;
+      decisionStored: string | null;
+      decisionNote: string | null;
+      decidedAt: Date | null;
+      decidedBy: string | null;
+      decisionVersion: number;
+    }>(
+      `WITH docs AS (
+         SELECT d.id, d.vacancy_id, d.filename, d.uploaded_at, d.erased_at,
+                row_number() OVER (PARTITION BY d.vacancy_id ORDER BY d.uploaded_at, d.id)::int AS ordinal,
+                count(*) OVER (PARTITION BY d.vacancy_id)::int AS total
+           FROM cv_document d WHERE d.vacancy_id = ANY($1::char(26)[])),
+       cur AS (
+         SELECT DISTINCT ON (q.vacancy_id) q.vacancy_id, q.id
+           FROM requirement_set q WHERE q.vacancy_id = ANY($1::char(26)[]) AND q.frozen_at IS NOT NULL
+          ORDER BY q.vacancy_id, q.version DESC)
+       SELECT d.id AS "documentId", d.vacancy_id AS "vacancyId", v.title AS "vacancyTitle",
+              v.status AS "vacancyStatus", v.archived_at IS NOT NULL AS archived, d.filename,
+              d.uploaded_at AS "uploadedAt", d.ordinal, d.total,
+              sc.id AS "screeningId", sc.state, sc.cancelled_at IS NOT NULL AS cancelled, sc.band,
+              sc.score IS NOT NULL AS scored, sc.candidate_name AS "candidateName",
+              dec.outcome AS "decisionStored", dec.reason AS "decisionNote",
+              dec.decided_at AS "decidedAt", dec.by AS "decidedBy",
+              (SELECT count(*)::int FROM decision x JOIN screening s3 ON s3.id = x.screening_id
+                WHERE s3.document_id = d.id) AS "decisionVersion"
+         FROM docs d
+         JOIN vacancy v ON v.id = d.vacancy_id
+         LEFT JOIN cur ON cur.vacancy_id = d.vacancy_id
+         LEFT JOIN LATERAL (
+              SELECT s.id, s.state, s.cancelled_at, s.band, s.score, s.candidate_name
+                FROM screening s WHERE s.document_id = d.id AND s.requirement_set_id = cur.id
+               LIMIT 1) sc ON true
+         LEFT JOIN LATERAL (
+              SELECT x.outcome, x.reason, x.decided_at, u.display_name AS by
+                FROM decision x JOIN screening s2 ON s2.id = x.screening_id
+                JOIN app_user u ON u.id = x.decided_by
+               WHERE s2.document_id = d.id ORDER BY x.decided_at DESC, x.id DESC LIMIT 1) dec ON true
+        WHERE d.erased_at IS NULL
+        ORDER BY d.vacancy_id, d.uploaded_at, d.id`,
+      [vacancyIds],
+    );
+    return rows
+      .filter((r) => !scored.has(r.documentId))
+      .map((r): StatusRow => {
+        const decided = r.decidedAt ? new Date(r.decidedAt).toISOString() : null;
+        const up = new Date(r.uploadedAt).toISOString();
+        const status = cvStatus({
+          erased: false,
+          screening: r.state
+            ? {
+                state: r.state as 'queued' | 'processing' | 'completed' | 'failed' | 'manual',
+                cancelled: !!r.cancelled,
+                band: r.band,
+                scored: !!r.scored,
+              }
+            : null,
+        });
+        return {
+          documentId: r.documentId,
+          vacancyId: r.vacancyId,
+          vacancyTitle: r.vacancyTitle,
+          vacancyStatus: r.vacancyStatus,
+          vacancyArchived: r.archived,
+          pseudonym: pseudonym(r.ordinal, r.total),
+          label: r.candidateName?.trim() ? r.candidateName.trim() : pseudonym(r.ordinal, r.total),
+          name: r.candidateName?.trim() ? r.candidateName.trim() : null,
+          ordinal: r.ordinal,
+          filename: r.filename,
+          status,
+          screeningId: r.screeningId,
+          matchId: null,
+          score: null,
+          band: null,
+          mustFound: 0,
+          mustTotal: 0,
+          decision: markFromStored(r.decisionStored),
+          decisionNote: r.decisionNote,
+          decisionVersion: r.decisionVersion,
+          decidedAt: decided,
+          decidedBy: r.decidedBy,
+          outOfDate: false,
+          scoredAgainst: null,
+          reanalyzing: status === 'analyzing',
+          analyzedAt: null,
+          updatedAt: decided && decided > up ? decided : up,
+          uploadedAt: up,
+        };
+      });
   }
 
   /** Spec 6.2.7 and 6.8: match descending; ties by more must-haves found, then upload order. */

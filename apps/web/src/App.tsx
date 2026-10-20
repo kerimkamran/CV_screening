@@ -14,7 +14,7 @@ import { applyLang, tr, useT, type Lang } from './i18n';
 import { AiSettings, AssistantSettings, Users } from './pages/Admin';
 import { rememberUser } from './assistant';
 import { CandidatePool } from './pages/CandidatePool';
-import { CandidateReport } from './pages/CandidateReport';
+import { CvReview } from './pages/CvReview';
 import { Monitoring } from './pages/Monitoring';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
@@ -24,9 +24,9 @@ import { SharedList, SharedReport } from './pages/SharedReport';
 import { VacancyList } from './pages/VacancyList';
 import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
 import { Shell } from './Shell';
+import { parseReviewRoute, reviewRoute } from './review';
 import { useRoute } from './route';
 import { applyBackground, isBackground } from './theme';
-import { go } from './route';
 import { Notice } from './ui';
 
 const REFRESH_MS = 20 * 60 * 1000;
@@ -62,9 +62,28 @@ function AdminNav({ route }: { route: string }) {
   );
 }
 
-function Redirect({ to }: { to: string }) {
-  useEffect(() => go(to), [to]);
-  return null;
+/**
+ * Old links (#/candidates/<screening> and #/screenings/<screening>) still work: the screening says
+ * which CV it belongs to, and the person lands on that CV's review page (Stage 2, S2-FE2).
+ */
+function LegacyCv({ screeningId }: { screeningId: string }) {
+  const t = useT();
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    api.get<{ documentId: string }>(`/screenings/${screeningId}`).then(
+      (s) => !dead && window.location.replace(`#${reviewRoute(s.documentId)}`),
+      () => !dead && setGone(true),
+    );
+    return () => {
+      dead = true;
+    };
+  }, [screeningId]);
+  return gone ? (
+    <Notice kind="error">{t('This CV is not available to you, or it no longer exists.')}</Notice>
+  ) : (
+    <p className="text-sm text-ink-3">{t('Loading…')}</p>
+  );
 }
 
 export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealth> }) {
@@ -221,14 +240,15 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     const vm = new RegExp(`^/vacancies/([0-9A-Z]{26})(?:/(${tabs}))?$`).exec(route);
     const cm = /^\/candidates\/([0-9A-Z]{26})$/.exec(route);
     const sm = /^\/screenings\/([0-9A-Z]{26})$/.exec(route);
+    const rv = parseReviewRoute(route);
     body = vm ? (
       <VacancyPage id={vm[1]!} key={vm[1]} tab={(vm[2] as Tab | undefined) ?? 'candidates'} />
     ) : route === '/vacancies/new' ? (
       <VacancyPage id="new" tab="candidates" key="new" />
-    ) : cm ? (
-      <CandidateReport id={cm[1]!} key={cm[1]} canMark={isTa} />
-    ) : sm ? (
-      <Redirect to={`/candidates/${sm[1]!}`} />
+    ) : rv ? (
+      <CvReview documentId={rv.documentId} listId={rv.listId} key={rv.documentId} canMark={isTa} />
+    ) : cm || sm ? (
+      <LegacyCv screeningId={(cm ?? sm)![1]!} key={(cm ?? sm)![1]} />
     ) : route === '/candidates' ? (
       <CandidatePool canMark={isTa} />
     ) : (

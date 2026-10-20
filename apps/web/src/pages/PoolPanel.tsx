@@ -12,6 +12,7 @@ import {
 import { Mark as Logo } from '../brand';
 import { getLang, tr, useT } from '../i18n';
 import { ago, BAND_NAME, BAND_STYLE, MARK_STYLE, type Band } from '../pool';
+import { reviewHref } from '../review';
 import { btnPrimary, btnSecondary, errMsg } from '../ui';
 
 /** What the server writes for a pool question (apps/api pool-assistant.service.ts). */
@@ -24,6 +25,7 @@ export interface PoolAnswer {
   counts: { total: number; analyzed: number; shortlist: number; outOfDate: number } | null;
   rows: {
     matchId: string;
+    documentId: string;
     label: string;
     score: number;
     band: Band;
@@ -590,7 +592,7 @@ function PoolAnswerView({
                 <span className="w-5 text-ink-3">{i + 1}.</span>
                 <a
                   className="font-medium text-link hover:underline"
-                  href={`#/candidates/${r.matchId}`}
+                  href={reviewHref(r.documentId)}
                 >
                   {r.label}
                 </a>

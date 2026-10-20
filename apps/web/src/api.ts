@@ -54,7 +54,13 @@ export const subscribeUnauthorized = (fn: Listener) => {
   return () => void onUnauthorized.splice(onUnauthorized.indexOf(fn), 1);
 };
 
-async function raw(method: string, path: string, body?: unknown, form?: FormData) {
+async function raw(
+  method: string,
+  path: string,
+  body?: unknown,
+  form?: FormData,
+  signal?: AbortSignal,
+) {
   const token = session.get();
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -63,6 +69,7 @@ async function raw(method: string, path: string, body?: unknown, form?: FormData
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
     },
     body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
+    signal,
   });
   if (!res.ok) {
     let message = res.statusText;
@@ -81,7 +88,8 @@ async function raw(method: string, path: string, body?: unknown, form?: FormData
 }
 
 export const api = {
-  get: async <T>(path: string): Promise<T> => (await raw('GET', path)).json() as Promise<T>,
+  get: async <T>(path: string, signal?: AbortSignal): Promise<T> =>
+    (await raw('GET', path, undefined, undefined, signal)).json() as Promise<T>,
   post: async <T>(path: string, body?: unknown): Promise<T> =>
     (await raw('POST', path, body ?? {})).json() as Promise<T>,
   put: async <T>(path: string, body: unknown): Promise<T> =>
@@ -94,6 +102,10 @@ export const api = {
     for (const f of files) form.append('files', f, f.name);
     return (await raw('POST', path, undefined, form)).json() as Promise<T>;
   },
+  /** The bytes of a file, fetched with the token in a header (never in a URL). */
+  bytes: async (path: string, signal?: AbortSignal): Promise<ArrayBuffer> =>
+    (await raw('GET', path, undefined, undefined, signal)).arrayBuffer(),
+  blob: async (path: string): Promise<Blob> => (await raw('GET', path)).blob(),
   /** Authenticated download: the token travels in a header, never in a URL. */
   download: async (path: string, filename: string) => {
     const blob = await (await raw('GET', path)).blob();

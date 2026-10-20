@@ -1,3 +1,4 @@
+import { reviewHref } from '../review';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
@@ -701,14 +702,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                         : t('no readable text')}
                   </span>
                   <span className="flex gap-3">
-                    {r.screeningId && (
-                      <a
-                        className="text-link hover:underline"
-                        href={`#/screenings/${r.screeningId}`}
-                      >
-                        {t('Open')}
-                      </a>
-                    )}
+                    <a className="text-link hover:underline" href={reviewHref(r.documentId)}>
+                      {t('Open')}
+                    </a>
                     {r.state === 'failed' && (
                       <button className="text-link hover:underline" onClick={onTable}>
                         {t('Retry on the Table tab')}

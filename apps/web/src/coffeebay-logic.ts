@@ -163,9 +163,8 @@ export function ringIcon(p: number, finished: boolean): string {
 
 // ---------------------------------------------------------------------------- where a row goes
 
-/** The page for one CV. Until the review screen exists (S2-FE2) this is the Candidates tab. */
-export const cvHref = (vacancyId: string, _documentId: string) =>
-  `#/vacancies/${vacancyId}/candidates`;
+/** The review page for one CV (Stage 2, S2-FE2). */
+export const cvHref = (_vacancyId: string, documentId: string) => `#/cv/${documentId}`;
 
 // ---------------------------------------------------------------------------- the chime preference
 

@@ -412,6 +412,7 @@ export class DocumentsController {
   async file(
     @Param('id') id: string,
     @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
     const did = parse(ulidSchema, id);
@@ -423,6 +424,18 @@ export class DocumentsController {
     }>(`SELECT filename, mime, content FROM cv_document WHERE id = $1`, [did]);
     const d = rows[0];
     if (!d?.content) throw new NotFoundException();
+    // Every download is on the audit trail before the bytes leave (Stage 2, decision 5).
+    await this.db.withTx((tx) =>
+      this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'document.downloaded',
+        entityType: 'document',
+        entityId: did,
+        after: { via: 'file' },
+      }),
+    );
     void reply
       .header('content-type', d.mime)
       .header(
