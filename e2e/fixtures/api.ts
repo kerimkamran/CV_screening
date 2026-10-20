@@ -167,6 +167,16 @@ export async function mockApi(
         seen.posts.push({ url: p, body: route.request().postDataJSON() as unknown });
       if (opts.extra && (await opts.extra(route, url))) return;
       if (p === '/me') return signedIn ? json(ME) : json({ message: 'Sign in' }, 401);
+      const put = /^\/candidates\/(\w{26})\/decision$/.exec(p);
+      if (put && route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { mark: string; expectedVersion: number };
+        return json({
+          mark: body.mark,
+          note: null,
+          version: body.expectedVersion + 1,
+          previous: { mark: 'new', note: null, version: body.expectedVersion },
+        });
+      }
       if (p === '/readyz') return json({ status: 'ok' });
       if (p === '/assistant/config') return json({ enabled: false });
       if (p === '/vacancies') return json([]);

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -525,6 +525,188 @@ describe('Candidate list with CVs that have no result', () => {
     unmount();
     render(<App check={up} />);
     expect(await screen.findByText('3 selected')).toBeInTheDocument();
+  });
+
+  it('shows an evidence map beside the CV, and a dot shows its requirement in the CV', async () => {
+    const req = (id: string, text: string, start: number, end: number) => ({
+      requirementId: id,
+      text,
+      kind: 'must',
+      state: 'matched',
+      unclear: false,
+      notFound: false,
+      confidence: 'high',
+      rationale: 'Stated.',
+      anchors: [{ start, end, quote: text, page: null, block: 0 }],
+    });
+    const analysis = {
+      matchId: MID,
+      documentId: DID,
+      label: 'Rauf Aliyev',
+      name: 'Rauf Aliyev',
+      pseudonym: 'Candidate 01',
+      email: null,
+      filename: 'rauf.txt',
+      vacancy: { id: VID, title: 'Network Engineer', status: 'open', archived: false },
+      score: 70,
+      band: 'possible',
+      mustFound: 2,
+      mustTotal: 3,
+      summary: null,
+      analyzedAt: new Date().toISOString(),
+      outOfDate: null,
+      reanalyzing: false,
+      decision: { mark: 'new', note: null, version: 0, decidedAt: null, decidedBy: null },
+      history: [],
+      requirements: [
+        req('R1', 'BGP routing', 0, 11),
+        req('R2', 'OSPF areas', 40, 50),
+        { ...req('R3', 'CCIE', 0, 0), state: 'missing', notFound: true, anchors: [] },
+      ],
+    };
+    open(`/cv/${DID}`, (url) =>
+      url.endsWith(`/documents/${DID}`)
+        ? {
+            body: doc({
+              kind: 'txt',
+              filename: 'rauf.txt',
+              status: 'analyzed',
+              analysis,
+              original: { available: true, view: 'none' },
+              text: { available: true },
+            }),
+          }
+        : url.endsWith(`/documents/${DID}/text`)
+          ? {
+              body: {
+                text: 'BGP routing across a carrier backbone, OSPF areas and more lines here.',
+                truncated: false,
+                pageStarts: [0],
+                blocks: [],
+              },
+            }
+          : undefined,
+    );
+    render(<App check={up} />);
+    const map = await screen.findByRole('navigation', {
+      name: 'Where the requirements are in the CV',
+    });
+    const dots = await within(map).findAllByRole('button');
+    expect(dots.map((b) => b.getAttribute('aria-label'))).toEqual(['BGP routing', 'OSPF areas']);
+    expect(within(map).getByText('1 must-have was not found in the CV.')).toBeInTheDocument();
+    await userEvent.click(dots[1]!);
+    expect(within(map).getByRole('button', { name: 'OSPF areas' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Hide in CV' })).toBeInTheDocument();
+  });
+
+  it('review sprint: S, M and N decide, the next CV opens with Undo, and the end says what was decided', async () => {
+    const MID2 = '0'.repeat(25) + 'N';
+    const marks: Record<string, string> = { [MID]: 'new', [MID2]: 'new' };
+    const versions: Record<string, number> = { [MID]: 0, [MID2]: 0 };
+    sessionStorage.setItem(
+      'cv-review-lists',
+      JSON.stringify([
+        { id: 'sprint1', ids: [DID, DID2], back: '/candidates', label: 'Candidates', savedAt: 1 },
+      ]),
+    );
+    const dec = (m: string) => ({
+      mark: marks[m],
+      note: null,
+      version: versions[m],
+      decidedAt: null,
+      decidedBy: null,
+    });
+    const calls = open(`/cv/${DID}?l=sprint1`, (url, init) => {
+      const put = /\/candidates\/(\w+)\/decision$/.exec(url);
+      if (put && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body)) as { mark: string };
+        const prev = { mark: marks[put[1]!], note: null, version: versions[put[1]!] };
+        marks[put[1]!] = body.mark;
+        versions[put[1]!]! += 1;
+        return {
+          body: { mark: body.mark, note: null, version: versions[put[1]!], previous: prev },
+        };
+      }
+      if (url.endsWith(`/documents/${DID}`))
+        return { body: doc({ status: 'needs_look', decision: dec(MID) }) };
+      if (url.endsWith(`/documents/${DID2}`))
+        return {
+          body: doc({
+            documentId: DID2,
+            name: 'Rauf Aliyev',
+            status: 'needs_look',
+            screeningId: MID2,
+            matchId: MID2,
+            decision: dec(MID2),
+          }),
+        };
+      return undefined;
+    });
+    render(<App check={up} />);
+    expect(await screen.findByRole('heading', { name: 'Aysel Mammadova' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Next CV after a key decision' })).toBeChecked();
+    await userEvent.keyboard('s');
+    // The next CV opens, and the decision on the first one can still be undone.
+    expect(await screen.findByRole('heading', { name: 'Rauf Aliyev' })).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#/cv/${DID2}?l=sprint1`);
+    expect(await screen.findByText('Aysel Mammadova: Shortlist.')).toBeInTheDocument();
+    expect(
+      calls.some(
+        (c) => c.url.endsWith(`/candidates/${MID}/decision`) && c.body?.mark === 'shortlist',
+      ),
+    ).toBe(true);
+    await userEvent.keyboard('n');
+    expect(
+      await screen.findByRole('heading', { name: 'That was the last CV in this list.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 Shortlist')).toBeInTheDocument();
+    expect(screen.getByText('1 Not now')).toBeInTheDocument();
+    expect(marks[MID2]).toBe('not_now');
+    // Typing a note never decides anything.
+    await userEvent.type(screen.getByPlaceholderText('Add a note (optional)'), 'm');
+    expect(marks[MID2]).toBe('not_now');
+  });
+
+  it('review sprint: with the switch off, a key decision stays on the same CV', async () => {
+    sessionStorage.setItem(
+      'cv-review-lists',
+      JSON.stringify([
+        { id: 'sprint2', ids: [DID, DID2], back: '/candidates', label: 'Candidates', savedAt: 1 },
+      ]),
+    );
+    let mark = 'new';
+    open(`/cv/${DID}?l=sprint2`, (url, init) => {
+      if (url.endsWith(`/candidates/${MID}/decision`) && init?.method === 'PUT') {
+        mark = (JSON.parse(String(init.body)) as { mark: string }).mark;
+        return {
+          body: { mark, note: null, version: 1, previous: { mark: 'new', note: null, version: 0 } },
+        };
+      }
+      if (url.endsWith(`/documents/${DID}`))
+        return {
+          body: doc({
+            status: 'needs_look',
+            decision: {
+              mark,
+              note: null,
+              version: mark === 'new' ? 0 : 1,
+              decidedAt: null,
+              decidedBy: null,
+            },
+          }),
+        };
+      return undefined;
+    });
+    render(<App check={up} />);
+    await screen.findByRole('heading', { name: 'Aysel Mammadova' });
+    await userEvent.click(screen.getByRole('switch', { name: 'Next CV after a key decision' }));
+    expect(localStorage.getItem('cv-review-auto-next')).toBe('off');
+    await userEvent.keyboard('m');
+    expect(await screen.findByText('Marked Maybe.')).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#/cv/${DID}?l=sprint2`);
   });
 
   describe('a Word file (its pages are made on the server)', () => {

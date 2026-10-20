@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { useCountUp } from './motion';
 
 /**
@@ -17,6 +18,7 @@ export function ScoreDial({
 }) {
   const v = Math.max(0, Math.min(100, Math.round(score)));
   const shown = Math.round(useCountUp(v));
+  const grad = `dial-${useId().replace(/:/g, '')}`;
   return (
     <span
       role="img"
@@ -26,13 +28,20 @@ export function ScoreDial({
       data-testid="score-dial"
     >
       <svg viewBox="0 0 36 36" aria-hidden="true" className="absolute inset-0 -rotate-90">
+        {/* The arc runs from the brand navy into the link blue: depth without a new colour. */}
+        <defs>
+          <linearGradient id={grad} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" style={{ stopColor: 'var(--c-accent)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--c-link)' }} />
+          </linearGradient>
+        </defs>
         <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--c-neutral)" strokeWidth="3" />
         <circle
           cx="18"
           cy="18"
           r="15.5"
           fill="none"
-          stroke="var(--c-accent)"
+          stroke={`url(#${grad})`}
           strokeWidth="3"
           strokeLinecap="round"
           pathLength={100}

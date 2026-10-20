@@ -199,4 +199,13 @@ export const AZ_STAGE2: Record<string, string> = {
   'a CV': 'bir CV',
   'and {n} more': 'və daha {n}',
   '{n} left out:': '{n} daxil edilmədi:',
+  'Where the requirements are in the CV': 'Tələblərin CV-də yeri',
+  '{requirement}, page {n}': '{requirement}, səhifə {n}',
+  '{n} must-haves were not found in the CV.': '{n} vacib tələb CV-də tapılmadı.',
+  '1 must-have was not found in the CV.': '1 vacib tələb CV-də tapılmadı.',
+  'Next CV after a key decision': 'Düymə ilə qərardan sonra növbəti CV',
+  'That was the last CV in this list.': 'Bu siyahıdakı son CV idi.',
+  'No decisions were made with the keys in this review.': 'Bu baxışda düymələrlə qərar verilməyib.',
+  'Decided in this review:': 'Bu baxışda verilən qərarlar:',
+  'Start again from the first CV': 'Birinci CV-dən yenidən başlayın',
 };

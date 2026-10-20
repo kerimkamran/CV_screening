@@ -4,12 +4,23 @@ import { api, ApiError } from '../api';
 import { registerAssistantTarget, useAssistantConfig } from '../assistant';
 import { go } from '../route';
 import { navDirection } from '../motion';
+import {
+  autoNext,
+  carry,
+  clearTally,
+  recordDecision,
+  setAutoNext,
+  takeCarried,
+  tallyOf,
+} from '../sprint';
 import { ScoreDial } from '../ScoreDial';
+import { Segmented } from '../Segmented';
 import { tr, useT } from '../i18n';
 import {
   ago,
   BAND_NAME,
   BAND_STYLE,
+  MARK_STYLE,
   markName,
   mirrorNote,
   type CvReviewData,
@@ -31,6 +42,7 @@ import {
 import { CandidateLinks } from './CandidateLinks';
 import { CvPane } from './CvPane';
 import { MarkSelect } from './MarkSelect';
+import { DECISION_KEY } from './CandidatePreview';
 
 /**
  * The review screen (Stage 2, S2-FE3): one CV, in any state, with the original beside the analysis.
@@ -111,6 +123,22 @@ export function CvReview({
   });
   const [others, setOthers] = useState<{ screeningId: string; label: string }[]>([]);
   const { toast, show, dismiss } = useUndoToast();
+  // Review sprint: S, M and N decide; "Next CV after deciding" moves on (sprint.ts).
+  const [auto, setAuto] = useState(autoNext);
+  const [finished, setFinished] = useState(false);
+  // A decision that changes washes the header in its colour for a moment (motion.css, m-wash).
+  const [wash, setWash] = useState(0);
+  const seenVersion = useRef<number | null>(null);
+  useEffect(() => {
+    const v = d?.decision.version ?? null;
+    if (seenVersion.current !== null && v !== null && v > seenVersion.current)
+      setWash((w) => w + 1);
+    seenVersion.current = v;
+  }, [d?.decision.version]);
+  useEffect(() => {
+    const c = takeCarried();
+    if (c) show(c.text, c.undo);
+  }, [show]);
   const box = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const alive = useRef(new AbortController());
@@ -221,17 +249,19 @@ export function CvReview({
   };
 
   // ---------------------------------------------------------------- marks
-  async function setMark(to: Mark, withNote?: string) {
+  async function setMark(to: Mark, withNote?: string, advance = false) {
     if (!d || !canMark || !d.matchId) return;
     const before = d.decision;
     const mid = d.matchId;
+    const who = d.analysis?.label ?? d.name ?? d.pseudonym;
+    const docId = d.documentId;
     try {
       const res = await api.put<MarkResult>(`/candidates/${mid}/decision`, {
         mark: to,
         note: withNote ?? (to === before.mark ? note || null : null),
         expectedVersion: before.version,
       });
-      await load();
+      if (listId) recordDecision(listId, docId, to);
       const said = mirrorNote(t, res.mirror);
       const undo = async () => {
         try {
@@ -240,11 +270,30 @@ export function CvReview({
             note: res.previous.note,
             expectedVersion: res.version,
           });
+          if (listId) recordDecision(listId, docId, res.previous.mark);
+          cache.delete(docId);
         } catch (e) {
           setError(errMsg(e));
         }
         await load();
       };
+      // The sprint: the decision is made, its Undo comes along, and the next CV opens.
+      if (advance && to !== 'new' && to !== before.mark) {
+        cache.delete(docId);
+        const line = [t('{name}: {mark}.', { name: who, mark: markName(to) }), said]
+          .filter(Boolean)
+          .join(' ');
+        if (nav.next) {
+          carry({ text: line, undo });
+          toCv(nav.next, 'next');
+          return;
+        }
+        await load();
+        show(line, undo);
+        setFinished(true);
+        return;
+      }
+      await load();
       if (to !== before.mark)
         show([t('Marked {mark}.', { mark: markName(to) }), said].filter(Boolean).join(' '), undo);
       else if (said) show(said, undo);
@@ -276,17 +325,34 @@ export function CvReview({
     },
     [listId],
   );
+  // Keys: J and K move; S, M and N decide (the same key again clears the mark). Nothing happens while
+  // a field has the focus, so typing a note never marks anyone.
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   useEffect(() => {
-    const on = (e: KeyboardEvent) => {
+    keysRef.current = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return;
+      // Fields that take typing; a checkbox or a button keeps the keys working.
+      if (el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable) return;
+      if (el instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(el.type))
+        return;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === 'j') toCv(nav.next, 'next');
-      if (e.key === 'k') toCv(nav.prev, 'prev');
+      const k = e.key.toLowerCase();
+      if (k === 'j') {
+        if (nav.next) toCv(nav.next, 'next');
+        else if (list && nav.at >= 0) setFinished(true);
+      } else if (k === 'k') toCv(nav.prev, 'prev');
+      else if (k in DECISION_KEY && d?.matchId && canMark && !d.vacancy.archived) {
+        e.preventDefault();
+        const to = DECISION_KEY[k]!;
+        void setMark(d.decision.mark === to ? 'new' : to, undefined, auto && !!list);
+      }
     };
+  });
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keysRef.current(e);
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, [toCv, nav.next, nav.prev]);
+  }, []);
 
   const back = list?.back ?? (d ? `/vacancies/${d.vacancy.id}/candidates` : '/candidates');
   const backLabel = list?.label ?? d?.vacancy.title ?? t('Candidates');
@@ -324,7 +390,7 @@ export function CvReview({
         </button>
       </div>
     );
-  if (!d) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
+  if (!d) return <ReviewSkeleton label={t('Loading…')} />;
 
   const title = a?.label ?? d.name ?? d.pseudonym;
   const markable = canMark && !!d.matchId && !d.vacancy.archived;
@@ -568,8 +634,27 @@ export function CvReview({
       </p>
 
       {error && <Notice kind="error">{error}</Notice>}
+      {finished && list && listId && (
+        <SprintDone
+          listId={listId}
+          backHref={`#${back}`}
+          backLabel={backLabel}
+          onAgain={() => {
+            clearTally(listId);
+            setFinished(false);
+            toCv(list.ids[0], 'prev');
+          }}
+        />
+      )}
 
-      <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-line bg-card p-4">
+      <header className="relative isolate flex flex-wrap items-start justify-between gap-4 overflow-hidden rounded-2xl border border-line bg-card p-4">
+        {wash > 0 && (
+          <span
+            key={wash}
+            aria-hidden="true"
+            className={`m-wash pointer-events-none absolute inset-0 -z-10 ${MARK_STYLE[d.decision.mark]}`}
+          />
+        )}
         <div className="flex min-w-0 items-start gap-4">
           {a && (
             <ScoreDial
@@ -630,6 +715,34 @@ export function CvReview({
               />
             </div>
             {markable && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
+                <span className="hidden sm:inline" aria-hidden="true">
+                  <kbd className={KBD}>S</kbd> {markName('shortlist')} ·{' '}
+                  <kbd className={KBD}>M</kbd> {markName('maybe')} · <kbd className={KBD}>N</kbd>{' '}
+                  {markName('not_now')}
+                </span>
+                {list && nav.at >= 0 && (
+                  <label className="flex min-h-8 cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      className="peer sr-only"
+                      checked={auto}
+                      onChange={(e) => {
+                        setAuto(e.target.checked);
+                        setAutoNext(e.target.checked);
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="relative inline-block h-4 w-7 rounded-full bg-neutral transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-focus after:absolute after:top-0.5 after:left-0.5 after:h-3 after:w-3 after:rounded-full after:bg-card after:shadow after:transition-transform peer-checked:after:translate-x-3 motion-reduce:after:transition-none"
+                    />
+                    {t('Next CV after a key decision')}
+                  </label>
+                )}
+              </div>
+            )}
+            {markable && (
               <>
                 <label className="block text-sm">
                   <span className="sr-only">{t('Note')}</span>
@@ -667,24 +780,17 @@ export function CvReview({
         <CandidateLinks matchId={matchId} canEdit={canMark} />
       )}
 
-      <div
-        role="tablist"
-        aria-label={t('View')}
-        className="flex gap-1 rounded-md border border-line bg-card p-1 @min-[60rem]:hidden"
-      >
-        {(['cv', 'analysis'] as const).map((k) => (
-          <button
-            key={k}
-            role="tab"
-            type="button"
-            aria-selected={view === k}
-            onClick={() => setView(k)}
-            className={`flex-1 rounded px-3 py-1.5 text-sm font-medium ${view === k ? 'bg-accent text-on-accent' : 'text-ink-2'}`}
-          >
-            {k === 'cv' ? t('CV') : t('Analysis')}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label={t('View')}
+        className="@min-[60rem]:hidden"
+        stretch
+        value={view}
+        onChange={setView}
+        items={[
+          { key: 'cv', label: t('CV') },
+          { key: 'analysis', label: t('Analysis') },
+        ]}
+      />
 
       <div ref={box} className="flex flex-col gap-4 @min-[60rem]:flex-row @min-[60rem]:gap-0">
         <div
@@ -693,7 +799,17 @@ export function CvReview({
           data-testid="cv-pane"
         >
           <div className="@min-[60rem]:sticky @min-[60rem]:top-28 @min-[60rem]:pr-3">
-            <CvPane key={d.documentId} data={d} anchors={activeReq?.anchors ?? []} focus={nudge} />
+            <CvPane
+              key={d.documentId}
+              data={d}
+              anchors={activeReq?.anchors ?? []}
+              focus={nudge}
+              activeId={active}
+              onPick={(id) => {
+                setActive(id);
+                setNudge((n) => n + 1);
+              }}
+            />
           </div>
         </div>
         <div
@@ -722,6 +838,114 @@ export function CvReview({
         </div>
       </div>
       <UndoBar toast={toast} onDone={dismiss} label={t('Undo')} />
+    </div>
+  );
+}
+
+const MARK_DOT = { shortlist: 'bg-ok-text', maybe: 'bg-warn-text', not_now: 'bg-err-ink' } as const;
+
+const KBD =
+  'rounded border border-line bg-card px-1 font-mono text-[0.7rem] leading-4 text-ink-2 shadow-[0_1px_0_var(--c-line)]';
+
+/** The end of a review sprint: what was decided in this list, and where to go next. */
+function SprintDone({
+  listId,
+  backHref,
+  backLabel,
+  onAgain,
+}: {
+  listId: string;
+  backHref: string;
+  backLabel: string;
+  onAgain: () => void;
+}) {
+  const t = useT();
+  const tally = tallyOf(listId);
+  const parts = (['shortlist', 'maybe', 'not_now'] as const).filter((m) => tally[m] > 0);
+  return (
+    <section
+      aria-labelledby="sprint-done"
+      className="m-rise flex items-start gap-3 rounded-2xl border border-ok-line bg-ok p-4 text-ok-ink"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0">
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          pathLength={1}
+          className="m-draw"
+        />
+        <path
+          d="M7.5 12.5 10.5 15.5 16.5 9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pathLength={1}
+          className="m-draw"
+          style={{ '--i': 4 } as CSSProperties}
+        />
+      </svg>
+      <div className="min-w-0 space-y-2">
+        <h2 id="sprint-done" className="font-semibold" tabIndex={-1}>
+          {t('That was the last CV in this list.')}
+        </h2>
+        <p role="status" className="flex flex-wrap items-center gap-2 text-sm">
+          {tally.total === 0
+            ? t('No decisions were made with the keys in this review.')
+            : t('Decided in this review:')}
+          {parts.map((m, i) => (
+            <span
+              key={m}
+              className="m-pop inline-flex items-center gap-1.5 rounded-full border border-ok-line bg-card px-2.5 py-0.5 text-xs font-semibold text-ink tabular-nums"
+              style={{ animationDelay: `${200 + i * 120}ms` }}
+            >
+              <span aria-hidden="true" className={`h-2 w-2 rounded-full ${MARK_DOT[m]}`} />
+              {tally[m]} {markName(m)}
+            </span>
+          ))}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <a className={btnPrimary} href={backHref}>
+            {t('← Back to {list}', { list: backLabel })}
+          </a>
+          <button type="button" className={btnSecondary} onClick={onAgain}>
+            {t('Start again from the first CV')}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** While a CV loads: the shape of the screen, softly lit, instead of a bare "Loading…". */
+function ReviewSkeleton({ label }: { label: string }) {
+  const bar = 'rounded-full bg-neutral';
+  return (
+    <div role="status" aria-busy="true" className="@container space-y-4">
+      <span className="sr-only">{label}</span>
+      <div className="m-loading flex items-center gap-4 rounded-2xl border border-line bg-card p-4">
+        <span className="h-16 w-16 shrink-0 rounded-full border-[6px] border-neutral" />
+        <span className="flex-1 space-y-2">
+          <span className={`${bar} block h-5 w-56`} />
+          <span className={`${bar} block h-3 w-40`} />
+          <span className={`${bar} block h-3 w-72`} />
+        </span>
+      </div>
+      <div className="grid gap-4 @min-[60rem]:grid-cols-2">
+        <div className="m-loading h-96 rounded-2xl bg-neutral/40 p-3">
+          <span className="block h-full rounded-sm bg-card shadow-sm" />
+        </div>
+        <div className="m-loading space-y-2">
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className="block h-20 rounded-md border border-line bg-card" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

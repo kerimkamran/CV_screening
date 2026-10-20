@@ -47,3 +47,33 @@ describe('marks on a PDF page', () => {
     expect(squash('Məmmədova, Bakı — Русский')).toBe('məmmədovabakıрусский');
   });
 });
+
+describe('evidence map spots', () => {
+  it('places each found quote as a share of the whole CV', async () => {
+    const { spotsOnPage } = await import('./pdf-marks');
+    const vp = { transform: [1, 0, 0, -1, 0, 800], width: 600, height: 800 };
+    const items = [
+      {
+        str: 'Redesigned the IP core with BGP route',
+        transform: [10, 0, 0, 10, 100, 400],
+        width: 200,
+      },
+    ];
+    const spots = spotsOnPage(
+      items,
+      vp,
+      [
+        { id: 'R1', quotes: ['BGP route'] },
+        { id: 'R2', quotes: ['CCIE'] },
+      ],
+      2,
+      4,
+    );
+    expect(spots).toHaveLength(1);
+    expect(spots[0]!.id).toBe('R1');
+    expect(spots[0]!.page).toBe(2);
+    // Page 2 of 4, about half-way down the page.
+    expect(spots[0]!.at).toBeGreaterThan(0.36);
+    expect(spots[0]!.at).toBeLessThan(0.39);
+  });
+});

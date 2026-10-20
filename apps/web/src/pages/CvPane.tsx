@@ -3,7 +3,9 @@ import { api, ApiError } from '../api';
 import { tr, useT } from '../i18n';
 import type { CvReviewData, ReportAnchor, ResumeData } from '../pool';
 import { btnSecondary, errMsg, Notice } from '../ui';
+import { Segmented } from '../Segmented';
 import { CvText } from './CvText';
+import { EvidenceMap, textSpots, type EvidenceSpot } from './EvidenceMap';
 import type { PdfApi, PdfProblem } from './PdfPages';
 
 // pdf.js is large: it loads the first time a PDF is opened, not with the app.
@@ -36,11 +38,16 @@ export function CvPane({
   data,
   anchors,
   focus,
+  activeId = null,
+  onPick,
 }: {
   data: CvReviewData;
   anchors: ReportAnchor[];
   /** Goes up by one each time "Show in CV" is pressed. */
   focus: number;
+  /** The requirement being shown, and how to show another one (the evidence map). */
+  activeId?: string | null;
+  onPick?: (requirementId: string) => void;
 }) {
   const t = useT();
   const erased = data.status === 'erased';
@@ -60,6 +67,15 @@ export function CvPane({
   const [fileError, setFileError] = useState('');
   const pdf = useRef<PdfApi>(null);
   const openBtn = useRef<HTMLButtonElement | null>(null);
+  // The evidence map: spots found on the pages (PDF and Word), or worked out from the text.
+  const requirements = data.analysis?.requirements ?? [];
+  const mapReqs = requirements.flatMap((r) => {
+    const quotes = r.anchors.flatMap((a) => (a.quote ? [a.quote] : []));
+    return quotes.length ? [{ id: r.requirementId, quotes }] : [];
+  });
+  const [pageSpots, setPageSpots] = useState<EvidenceSpot[]>([]);
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+  const [textEl, setTextEl] = useState<HTMLElement | null>(null);
 
   // The text is fetched when it is first wanted; a change of CV remounts this pane (keyed by id).
   useEffect(() => {
@@ -89,6 +105,11 @@ export function CvPane({
         });
     } else if (canText) setTab('text');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The text scrolls in its own box (CvText): the map's "on screen" box follows that one.
+  useEffect(() => {
+    setTextEl(bodyEl?.querySelector<HTMLElement>('[aria-label="CV text"]') ?? null);
+  }, [bodyEl, text, tab, full]);
 
   // Full screen: Esc closes it, the page behind does not scroll, and focus goes back to the button.
   useEffect(() => {
@@ -183,6 +204,8 @@ export function CvPane({
               onPages={setPages}
               onProblem={setProblem}
               quotes={anchors.flatMap((x) => (x.quote ? [x.quote] : []))}
+              map={onPick ? mapReqs : undefined}
+              onMap={setPageSpots}
             />
           </Suspense>
         </>
@@ -290,37 +313,46 @@ export function CvPane({
         )}
       </div>
       {tabs.length > 1 && (
-        <div
-          role="tablist"
-          aria-label={t('CV view')}
-          className="flex w-fit gap-1 rounded-md border border-line bg-card p-1"
-        >
-          {tabs.map((x) => (
-            <button
-              key={x.id}
-              role="tab"
-              type="button"
-              aria-selected={showing === x.id}
-              onClick={() => setTab(x.id)}
-              className={`rounded px-3 py-1 text-sm font-medium ${showing === x.id ? 'bg-accent text-on-accent' : 'text-ink-2'}`}
-            >
-              {x.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t('CV view')}
+          className="w-fit"
+          value={showing}
+          onChange={setTab}
+          items={tabs.map((x) => ({ key: x.id, label: x.label }))}
+        />
       )}
       {fileError && <Notice kind="error">{fileError}</Notice>}
-      <div
-        className={
-          full
-            ? 'min-h-0 flex-1 overflow-auto'
-            : showing === 'original'
-              ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] overflow-auto rounded-md bg-neutral/40 p-2'
-              : ''
-        }
-        data-testid="cv-body"
-      >
-        {body}
+      <div className={full ? 'flex min-h-0 flex-1 gap-2' : 'flex gap-2'}>
+        <div
+          ref={setBodyEl}
+          className={
+            full
+              ? 'min-h-0 min-w-0 flex-1 overflow-auto'
+              : showing === 'original'
+                ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto rounded-md bg-neutral/40 p-2'
+                : 'min-w-0 flex-1'
+          }
+          data-testid="cv-body"
+        >
+          {body}
+        </div>
+        {onPick && !erased && (
+          <EvidenceMap
+            spots={
+              showing === 'original'
+                ? problem
+                  ? []
+                  : pageSpots
+                : text
+                  ? textSpots(requirements, text.text.length)
+                  : []
+            }
+            requirements={requirements}
+            activeId={activeId}
+            onPick={onPick}
+            scroller={showing === 'original' ? bodyEl : textEl}
+          />
+        )}
       </div>
     </section>
   );

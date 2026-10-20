@@ -5,7 +5,14 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { api } from '../api';
 import { scrollInside } from '../motion';
 import { useT } from '../i18n';
-import { quoteBoxes, squash, type Box, type TextBit } from './pdf-marks';
+import {
+  quoteBoxes,
+  spotsOnPage,
+  squash,
+  type Box,
+  type ReqQuotes,
+  type TextBit,
+} from './pdf-marks';
 
 export { squash };
 
@@ -83,6 +90,8 @@ function Page({
   const firstMark = useRef<HTMLSpanElement | null>(null);
   const [near, setNear] = useState(false);
   const [ratio, setRatio] = useState(1.414);
+  // The page fades in once it is drawn; until then a faint light passes over the blank sheet.
+  const [drawn, setDrawn] = useState(false);
   const [marks, setMarks] = useState<Box[]>([]);
   const quoteKey = quotes.join('\u0000');
 
@@ -153,6 +162,7 @@ function Page({
         if (!ctx) return;
         task = page.render({ canvasContext: ctx, viewport: vp });
         await task.promise;
+        if (!dead) setDrawn(true);
       } catch {
         /* a cancelled render (the width changed or the page left) is not an error */
       }
@@ -170,10 +180,15 @@ function Page({
         register(n, el);
       }}
       data-page={n}
-      className={`relative mx-auto overflow-hidden rounded-sm bg-white shadow-md transition-[box-shadow,scale] duration-500 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none ${flashed ? 'scale-[1.01] ring-4 ring-focus' : ''}`}
+      className={`relative mx-auto overflow-hidden rounded-sm bg-white shadow-md transition-[box-shadow,scale] duration-500 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none ${flashed ? 'scale-[1.01] ring-4 ring-focus' : ''} ${drawn ? '' : 'm-loading'}`}
       style={{ width, height: Math.round(width * ratio), marginBottom: PAGE_GAP }}
     >
-      <canvas ref={canvas} aria-label={t('Page {n}', { n })} role="img" />
+      <canvas
+        ref={canvas}
+        aria-label={t('Page {n}', { n })}
+        role="img"
+        className={`transition-opacity duration-500 motion-reduce:transition-none ${drawn ? 'opacity-100' : 'opacity-0'}`}
+      />
       {/* A highlighter stroke over the found lines; it sweeps in from the left (motion.css). */}
       {marks.map((m, i) => (
         <span
@@ -204,11 +219,16 @@ export default function PdfPages({
   onPages,
   onProblem,
   quotes = [],
+  map,
+  onMap,
 }: {
   documentId: string;
   zoom: number;
   /** Lines to mark on the pages: the chosen requirement's quotes. */
   quotes?: string[];
+  /** Every requirement's quotes, for the evidence map. */
+  map?: ReqQuotes[];
+  onMap?: (spots: { id: string; page: number; at: number }[]) => void;
   ref?: React.Ref<PdfApi>;
   onPages?: (count: number) => void;
   onProblem: (p: PdfProblem) => void;
@@ -256,6 +276,34 @@ export default function PdfPages({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
+
+  // The evidence map: where every requirement's quotes are, over all the pages (read once per CV).
+  const mapKey = JSON.stringify(map ?? []);
+  const onMapRef = useRef(onMap);
+  useEffect(() => {
+    onMapRef.current = onMap;
+  });
+  useEffect(() => {
+    const reqs = JSON.parse(mapKey) as ReqQuotes[];
+    if (!doc || reqs.length === 0) return;
+    let dead = false;
+    void (async () => {
+      const out: { id: string; page: number; at: number }[] = [];
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const content = await page.getTextContent();
+        if (dead) return;
+        const items: TextBit[] = content.items.flatMap((i) =>
+          'str' in i ? [{ str: i.str, transform: i.transform as number[], width: i.width }] : [],
+        );
+        out.push(...spotsOnPage(items, page.getViewport({ scale: 1 }), reqs, n, doc.numPages));
+      }
+      if (!dead) onMapRef.current?.(out);
+    })().catch(() => undefined);
+    return () => {
+      dead = true;
+    };
+  }, [doc, mapKey]);
 
   // The width the pages should have: the pane, times the zoom.
   useEffect(() => {

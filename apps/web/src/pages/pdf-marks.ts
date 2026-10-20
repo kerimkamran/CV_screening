@@ -83,3 +83,30 @@ export function quoteBoxes(
   }
   return out;
 }
+
+/** One requirement and the quotes the analysis gave for it. */
+export interface ReqQuotes {
+  id: string;
+  quotes: string[];
+}
+
+/**
+ * For the evidence map: where each requirement's quotes start on one page, as a share of the whole
+ * CV (page 2 of 4, halfway down, is 0.375). One spot per quote that is found.
+ */
+export function spotsOnPage(
+  items: TextBit[],
+  vp: { transform: number[]; width: number; height: number },
+  reqs: ReqQuotes[],
+  page: number,
+  pages: number,
+): { id: string; page: number; at: number }[] {
+  const out: { id: string; page: number; at: number }[] = [];
+  for (const r of reqs) {
+    for (const q of r.quotes) {
+      const b = quoteBoxes(items, vp, [q])[0];
+      if (b) out.push({ id: r.id, page, at: (page - 1 + Math.max(0, Math.min(1, b.y))) / pages });
+    }
+  }
+  return out;
+}
