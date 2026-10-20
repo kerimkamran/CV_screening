@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { VacancyStatus } from '@cv/shared';
 import { api } from '../api';
 import { go } from '../route';
@@ -293,10 +293,11 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
             <span />
           </div>
           <ul className="divide-y divide-line" aria-label={t('Vacancies')}>
-            {rows.map((v) => (
+            {rows.map((v, i) => (
               <li
                 key={v.id}
-                className="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
+                style={{ '--i': Math.min(i, 12) } as CSSProperties}
+                className="m-rise grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
               >
                 <div className="col-span-2 min-w-0 lg:col-span-1">
                   <a

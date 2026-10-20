@@ -9,6 +9,7 @@ import { CriteriaController } from './criteria.controller';
 import { CriteriaSets } from './criteria-sets';
 import { DocumentReviewController } from './document-review.controller';
 import { DocumentsController } from './documents.controller';
+import { DownloadsController } from './downloads.controller';
 import { ExportService } from './export.service';
 import { IntakeService } from './intake.service';
 import { ProcessorService } from './processor.service';
@@ -33,6 +34,7 @@ import { VacancyService } from './vacancy.service';
     CriteriaController,
     DocumentsController,
     DocumentReviewController,
+    DownloadsController,
     UploadBatchesController,
     ScreeningsController,
     AdjustmentsController,

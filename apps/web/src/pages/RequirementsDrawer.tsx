@@ -61,7 +61,7 @@ export function RequirementsDrawer(props: {
       </div>
       <p className="mt-2 text-sm text-ink-3">
         {t(
-          'Change what counts and the list re-ranks. No resume is read again. A missing must-have lowers the match; it never hides anyone.',
+          'Change what counts and the list re-ranks. No CV is read again. A missing must-have lowers the match; it never hides anyone.',
         )}
       </p>
 

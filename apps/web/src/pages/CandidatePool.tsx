@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CV_STATUS_LABEL, type CvStatus, type Mark } from '@cv/shared';
 import { api, ApiError } from '../api';
 import { go } from '../route';
@@ -20,6 +20,16 @@ import {
   mirrorNote,
 } from '../pool';
 import { openCv, reviewHref } from '../review';
+import {
+  DOWNLOAD_MAX,
+  downloadCvs,
+  downloadNotice,
+  filterKey,
+  loadSelection,
+  MARK_MAX,
+  saveSelection,
+  type Selection,
+} from '../selection';
 import { btnPrimary, btnSecondary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
 import { CandidatePreview, DECISION_KEY, useWide } from './CandidatePreview';
 import { MarkSelect } from './MarkSelect';
@@ -152,7 +162,13 @@ export function CandidatePool({
   const [expired, setExpired] = useState(false);
   const [more, setMore] = useState(false);
   const [vacancies, setVacancies] = useState<VacancyListItem[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Selected CVs by document id, with their result id when they have one (S2-FE6).
+  const [selected, setSelected] = useState<Selection>(() =>
+    loadSelection(stateKey(vacancyId), filterKey(params(s, vacancyId).toString())),
+  );
+  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState('');
+  const [selectingAll, setSelectingAll] = useState(false);
   const [summary, setSummary] = useState<{ subject: string; body: string; count: number } | null>(
     null,
   );
@@ -162,7 +178,9 @@ export function CandidatePool({
   const wide = useWide();
   const [activeId, setActiveId] = useState<string | null>(() => s.active || null);
   // The whole ordered list as ids, for Previous and Next on the review screen (S2-FE5).
-  const allIds = useRef<{ key: string; ids: string[] } | null>(null);
+  const allIds = useRef<{ key: string; ids: string[]; items: [string, string | null][] } | null>(
+    null,
+  );
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // The state is kept for this tab, so coming back from a report lands where the person left.
@@ -213,7 +231,6 @@ export function CandidatePool({
       const r = await api.get<PoolPage>(`/candidates?${query}&limit=${PAGE}`);
       setPage(r);
       setRows(r.rows);
-      setSelected(new Set());
     } catch (e) {
       setError(errMsg(e));
     }
@@ -225,7 +242,7 @@ export function CandidatePool({
     api.get<{ items: [string, string | null][] }>(`/candidates/ids?${query}`).then(
       (r) => {
         if (!dead && Array.isArray(r?.items))
-          allIds.current = { key: query, ids: r.items.map((i) => i[0]) };
+          allIds.current = { key: query, ids: r.items.map((i) => i[0]), items: r.items };
       },
       () => undefined,
     );
@@ -233,6 +250,18 @@ export function CandidatePool({
       dead = true;
     };
   }, [query]);
+  // A new filter or search starts a new selection; a new sort keeps it. It is kept for the tab, so
+  // a trip to a CV and back finds it again.
+  const fk = filterKey(query);
+  const lastFk = useRef(fk);
+  useEffect(() => {
+    if (lastFk.current === fk) return;
+    lastFk.current = fk;
+    setSelected(new Map());
+    setDownloaded('');
+  }, [fk]);
+  useEffect(() => saveSelection(stateKey(vacancyId), fk, selected), [selected, fk, vacancyId]);
+
   // Typing in the search box waits a moment.
   useEffect(() => {
     const h = setTimeout(() => void load(), s.q ? 250 : 0);
@@ -323,10 +352,7 @@ export function CandidatePool({
 
   async function bulk(to: Mark) {
     // Only CVs with a result can be marked from the list; the others open on their own page.
-    const matchOf = new Map(rows.filter(isRanked).map((r) => [r.documentId, r.matchId]));
-    const ids = [...selected]
-      .flatMap((d) => (matchOf.has(d) ? [matchOf.get(d)!] : []))
-      .slice(0, BULK_MAX);
+    const ids = [...selected.values()].flatMap((m) => (m ? [m] : [])).slice(0, BULK_MAX);
     if (!ids.length) return;
     try {
       const r = await api.post<{
@@ -349,7 +375,7 @@ export function CandidatePool({
             : row;
         }),
       );
-      setSelected(new Set());
+      setSelected(new Map());
       const failed = r.results.length - done.length;
       if (failed)
         setError(
@@ -375,6 +401,54 @@ export function CandidatePool({
         });
     } catch (e) {
       setError(errMsg(e));
+    }
+  }
+
+  // ---------------------------------------------------------------- selection and download
+  const pick = (r: PoolItem): [string, string | null] => [
+    r.documentId,
+    isRanked(r) ? r.matchId : null,
+  ];
+  const toggleOne = (r: PoolItem, on?: boolean) =>
+    setSelected((cur) => {
+      const n = new Map(cur);
+      if (on ?? !n.has(r.documentId)) n.set(...pick(r));
+      else n.delete(r.documentId);
+      return n;
+    });
+  /** "Select all N in this list": exactly the server's list, as ids (not only the loaded rows). */
+  async function selectAll() {
+    setSelectingAll(true);
+    try {
+      const items =
+        allIds.current?.key === query
+          ? allIds.current.items
+          : (await api.get<{ items: [string, string | null][] }>(`/candidates/ids?${query}`)).items;
+      setSelected(new Map(items));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSelectingAll(false);
+    }
+  }
+  async function download() {
+    if (!selected.size || selected.size > DOWNLOAD_MAX) return;
+    setDownloading(true);
+    setDownloaded('');
+    try {
+      // In the order of the list, so the ZIP reads like the screen.
+      const order =
+        allIds.current?.key === query ? allIds.current.ids : rows.map((r) => r.documentId);
+      const at = (d: string) => {
+        const i = order.indexOf(d);
+        return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+      };
+      const ids = [...selected.keys()].sort((a, b) => at(a) - at(b));
+      setDownloaded(downloadNotice(await downloadCvs(ids)));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -451,6 +525,10 @@ export function CandidatePool({
       else setPreviewOpen(false);
       document.getElementById(`cand-${next.documentId}`)?.scrollIntoView?.({ block: 'nearest' });
       e.preventDefault();
+    } else if (k === 'x' && activeRow && canMark) {
+      // X ticks or unticks the active row (S2-FE6).
+      e.preventDefault();
+      toggleOne(activeRow);
     } else if (k === 'escape') {
       setPreviewOpen(false);
     } else if (k === 'enter' && activeRow) {
@@ -470,8 +548,8 @@ export function CandidatePool({
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
   }, []);
-  const allSelected =
-    shown.length > 0 && shown.slice(0, BULK_MAX).every((r) => selected.has(r.documentId));
+  const allSelected = shown.length > 0 && shown.every((r) => selected.has(r.documentId));
+  const total = page?.total ?? 0;
   const filtered =
     s.bands.length > 0 ||
     s.marks.length > 0 ||
@@ -487,7 +565,8 @@ export function CandidatePool({
     [shown, selected],
   );
   const blocked = selectedRows.some((r) => r.vacancyArchived);
-  const unmarkable = selectedRows.length > 0 && !selectedRows.some(isRanked);
+  const unmarkable = selected.size > 0 && [...selected.values()].every((m) => m === null);
+  const tooMany = selected.size > DOWNLOAD_MAX;
 
   return (
     <div className="space-y-4">
@@ -726,9 +805,25 @@ export function CandidatePool({
         <div
           role="region"
           aria-label={t('Selected candidates')}
-          className="sticky top-14 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-accent bg-sel p-2 text-sm shadow"
+          className="m-rise sticky top-14 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-accent bg-sel p-2 text-sm shadow"
         >
-          <span className="font-medium">{t('{n} selected', { n: selected.size })}</span>
+          <span key={selected.size} className="m-pop inline-block font-medium tabular-nums">
+            {t('{n} selected', { n: selected.size })}
+          </span>
+          <button
+            type="button"
+            className={btnPrimary}
+            disabled={downloading || tooMany}
+            title={tooMany ? t('Up to 500 CVs per download. Narrow the list.') : undefined}
+            onClick={() => void download()}
+          >
+            {downloading ? t('Preparing…') : t('Download CVs')}
+          </button>
+          {tooMany && (
+            <span className="text-warn-text">
+              {t('Up to 500 CVs per download. Narrow the list.')}
+            </span>
+          )}
           <label className="flex items-center gap-2">
             <span>{t('Mark as')}</span>
             <select
@@ -746,7 +841,7 @@ export function CandidatePool({
               ))}
             </select>
           </label>
-          {selected.size >= BULK_MAX && (
+          {selected.size > MARK_MAX && (
             <span className="text-ink-3">{t('Up to 100 at a time.')}</span>
           )}
           {blocked && (
@@ -760,11 +855,41 @@ export function CandidatePool({
           <button
             type="button"
             className="text-link underline"
-            onClick={() => setSelected(new Set())}
+            onClick={() => setSelected(new Map())}
           >
             {t('Clear selection')}
           </button>
         </div>
+      )}
+      {downloaded && (
+        <Notice kind="info">
+          <span role="status">{downloaded}</span>
+        </Notice>
+      )}
+      {canMark && allSelected && total > shown.length && selected.size < total && (
+        <p className="m-fade rounded-xl bg-info px-3 py-2 text-sm text-info-ink">
+          {t('All {n} shown are selected.', { n: shown.length })}{' '}
+          <button
+            type="button"
+            className="font-semibold underline"
+            disabled={selectingAll}
+            onClick={() => void selectAll()}
+          >
+            {t('Select all {n} in this list', { n: total })}
+          </button>
+        </p>
+      )}
+      {canMark && total > 0 && selected.size === total && total > shown.length && (
+        <p className="m-fade rounded-xl bg-info px-3 py-2 text-sm text-info-ink">
+          {t('All {n} in this list are selected.', { n: total })}{' '}
+          <button
+            type="button"
+            className="font-semibold underline"
+            onClick={() => setSelected(new Map())}
+          >
+            {t('Clear selection')}
+          </button>
+        </p>
       )}
 
       {page && page.total === 0 && (
@@ -788,7 +913,7 @@ export function CandidatePool({
 
       {shown.length > 0 && canMark && (
         <p className="hidden text-xs text-ink-3 lg:block">
-          {t('Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the CV.')}
+          {t('Keys: J and K move, X selects, S shortlist, M maybe, N not now, Enter opens the CV.')}
         </p>
       )}
 
@@ -810,11 +935,7 @@ export function CandidatePool({
                     aria-label={t('Select all shown')}
                     checked={allSelected}
                     onChange={(e) =>
-                      setSelected(
-                        e.target.checked
-                          ? new Set(shown.slice(0, BULK_MAX).map((r) => r.documentId))
-                          : new Set(),
-                      )
+                      setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
                     }
                   />
                 )}
@@ -860,8 +981,20 @@ export function CandidatePool({
                 {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
               </button>
             </div>
+            {canMark && (
+              <label className="flex min-h-11 items-center gap-3 border-b border-line px-4 text-sm lg:hidden">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(e) =>
+                    setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
+                  }
+                />
+                {t('Select all')}
+              </label>
+            )}
             <ul className="divide-y divide-line" aria-label={t('Candidates')}>
-              {shown.map((r) => {
+              {shown.map((r, i) => {
                 const ranked = isRanked(r);
                 const on = r.documentId === activeId;
                 return (
@@ -869,27 +1002,25 @@ export function CandidatePool({
                     key={r.documentId}
                     id={`cand-${r.documentId}`}
                     data-active={on ? 'true' : undefined}
-                    className={`${on ? 'bg-sel ' : ''}grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
+                    style={{ '--i': Math.min(i % 50, 12) } as CSSProperties}
+                    className={`${on ? 'bg-sel ' : ''}m-rise grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
                     onClick={() => {
                       setActiveId(r.documentId);
                       if (wide && ranked) setPreviewOpen(true);
                       else leave(r);
                     }}
                   >
-                    <span onClick={(e) => e.stopPropagation()}>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      className="-m-3 flex h-11 w-11 items-center justify-center"
+                    >
                       {canMark && (
                         <input
                           type="checkbox"
+                          className="h-4 w-4"
                           aria-label={t('Select {name}', { name: r.label })}
                           checked={selected.has(r.documentId)}
-                          onChange={(e) =>
-                            setSelected((cur) => {
-                              const n = new Set(cur);
-                              if (e.target.checked) n.add(r.documentId);
-                              else n.delete(r.documentId);
-                              return n;
-                            })
-                          }
+                          onChange={(e) => toggleOne(r, e.target.checked)}
                         />
                       )}
                     </span>

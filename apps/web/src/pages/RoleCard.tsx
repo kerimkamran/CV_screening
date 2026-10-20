@@ -670,7 +670,7 @@ export function RoleCard({
                   </a>{' '}
                   <span>
                     · {statusName(s.status)} · {s.ownerName} ·{' '}
-                    {plural(s.documents, '{n} resume', '{n} resumes')}
+                    {plural(s.documents, '{n} CV', '{n} CVs')}
                   </span>
                 </li>
               ))}

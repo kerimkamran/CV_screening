@@ -182,6 +182,7 @@ export function CvPane({
               ref={pdf}
               onPages={setPages}
               onProblem={setProblem}
+              quotes={anchors.flatMap((x) => (x.quote ? [x.quote] : []))}
             />
           </Suspense>
         </>

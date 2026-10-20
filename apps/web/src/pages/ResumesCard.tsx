@@ -193,7 +193,7 @@ export function ResumesCard({
                 setDragging(false);
                 void filesFromDrop(e.dataTransfer).then((r) => addFiles(r.files, r.truncated));
               }}
-              className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center ${dragging ? 'border-accent bg-sel' : 'border-edge'}`}
+              className={`flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors ${dragging ? 'm-orbit border-accent bg-sel' : 'border-edge'}`}
             >
               <p className="font-medium">{t('Drop CVs here')}</p>
               <p className="text-sm text-ink-3">

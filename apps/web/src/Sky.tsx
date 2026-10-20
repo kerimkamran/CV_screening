@@ -6,6 +6,10 @@ import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
  * constellations revealed only near the cursor. It is decoration: nothing here carries meaning.
  * With "reduce motion" on, or on a touch screen, the twinkle and the cursor effects are off and
  * the sky stays still.
+ *
+ * Parallax (motion, October 2026): the layers sit at different depths and drift against each other
+ * as the pointer moves, and a shooting star crosses now and then. Same rules: off with reduced
+ * motion and on touch screens.
  */
 
 // Original shapes, in a 800 x 220 box.
@@ -165,10 +169,15 @@ export function Sky({
       const r = el.getBoundingClientRect();
       el.style.setProperty('--mx', `${e.clientX - r.left}px`);
       el.style.setProperty('--my', `${e.clientY - r.top}px`);
+      // -1 to 1 from the centre: the depth layers drift by this times their depth (motion.css).
+      el.style.setProperty('--px', (((e.clientX - r.left) / r.width) * 2 - 1).toFixed(3));
+      el.style.setProperty('--py', (((e.clientY - r.top) / r.height) * 2 - 1).toFixed(3));
     };
     const leave = () => {
       el.style.setProperty('--mx', '-1000px');
       el.style.setProperty('--my', '-1000px');
+      el.style.setProperty('--px', '0');
+      el.style.setProperty('--py', '0');
     };
     el.addEventListener('mousemove', move);
     el.addEventListener('mouseleave', leave);
@@ -192,35 +201,59 @@ export function Sky({
         } as CSSProperties
       }
     >
-      {/* 1. Horizon glow */}
+      {/* 1. Horizon glow (furthest away: drifts the other way) */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-[-20%] bottom-[-70%] h-[140%] rounded-[50%]"
-        style={{
-          background: 'radial-gradient(ellipse at center, #1B3E8F 0%, #0F2459 38%, #0A1530 70%)',
-        }}
+        className="sky-depth pointer-events-none absolute inset-x-[-20%] bottom-[-70%] h-[140%] rounded-[50%]"
+        style={
+          {
+            background: 'radial-gradient(ellipse at center, #1B3E8F 0%, #0F2459 38%, #0A1530 70%)',
+            '--d': still ? 0 : -6,
+          } as CSSProperties
+        }
       />
-      {/* 2. Twinkling stars */}
-      {TWINKLE.map((s, i) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className={`pointer-events-none absolute rounded-full bg-white ${calm ? 'opacity-70' : 'sky-twinkle'}`}
-          style={{
-            left: `${s.x}%`,
-            top: `${s.y}%`,
-            width: s.size,
-            height: s.size,
-            animationDelay: `${s.delay}s`,
-          }}
-        />
-      ))}
-      {/* 3. Dim constellations, or the progress picture */}
-      {lit !== undefined ? (
-        <LitConstellations lit={lit} />
-      ) : (
-        <Constellations line="#5C93FF" dot="#B9C8F2" dimmed />
-      )}
+      {/* 2. Twinkling stars, and a shooting star now and then */}
+      <div
+        aria-hidden="true"
+        className="sky-depth pointer-events-none absolute inset-0"
+        style={{ '--d': still ? 0 : 5 } as CSSProperties}
+      >
+        {!still && (
+          <>
+            <span className="sky-meteor" style={{ left: '12%', top: '8%' }} />
+            <span
+              className="sky-meteor"
+              style={{ left: '58%', top: '4%', animationDelay: '5.5s', animationDuration: '13s' }}
+            />
+          </>
+        )}
+        {TWINKLE.map((s, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className={`pointer-events-none absolute rounded-full bg-white ${calm ? 'opacity-70' : 'sky-twinkle'}`}
+            style={{
+              left: `${s.x}%`,
+              top: `${s.y}%`,
+              width: s.size,
+              height: s.size,
+              animationDelay: `${s.delay}s`,
+            }}
+          />
+        ))}
+      </div>
+      {/* 3. Dim constellations, or the progress picture (nearest: drifts the most) */}
+      <div
+        aria-hidden="true"
+        className="sky-depth pointer-events-none absolute inset-0"
+        style={{ '--d': still ? 0 : 12 } as CSSProperties}
+      >
+        {lit !== undefined ? (
+          <LitConstellations lit={lit} />
+        ) : (
+          <Constellations line="#5C93FF" dot="#B9C8F2" dimmed />
+        )}
+      </div>
       {!still && (
         <>
           {/* 4. Cursor glow */}
@@ -237,8 +270,9 @@ export function Sky({
           <div
             aria-hidden="true"
             data-testid="sky-bright"
-            className="pointer-events-none absolute inset-0"
+            className="sky-depth pointer-events-none absolute inset-0"
             style={{
+              ['--d' as string]: 12,
               WebkitMaskImage:
                 'radial-gradient(260px circle at var(--mx) var(--my), #000, transparent)',
               maskImage: 'radial-gradient(260px circle at var(--mx) var(--my), #000, transparent)',

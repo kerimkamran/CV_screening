@@ -228,7 +228,7 @@ describe('Share panel (spec 6.5)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Share as a link' }));
     expect(screen.getByRole('button', { name: 'Create link' })).toBeDisabled();
     expect(
-      screen.getByText(/Quotes are text from resumes and count as personal data/),
+      screen.getByText(/Quotes are text from CVs and count as personal data/),
     ).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('checkbox', { name: /Manager/ }));
     expect(screen.queryByRole('checkbox', { name: /Include real names/ })).toBeNull();

@@ -117,20 +117,20 @@ export const AZ_POOL: Record<string, string> = {
     'Bu səhifəni oxumaq mümkün olmadı. Mətni özünüz yapışdırın.',
   'The page has changed. Its new text is in the box. Save to keep it, then read the requirements again.':
     'Səhifə dəyişib. Yeni mətn qutudadır. Saxlayın, sonra tələbləri yenidən oxudun.',
-  'After creating and freezing a new version, choose “Re-analyze” on the Resumes card.':
+  'After creating and freezing a new version, choose “Re-analyze” on the CVs card.':
     'Yeni versiyanı yaradıb dondurduqdan sonra CV-lər kartında “Yenidən təhlil edin” seçin.',
   'No skills yet. Read the requirements or add your own.':
     'Hələ bacarıq yoxdur. Tələbləri oxudun və ya özünüz əlavə edin.',
 
   // Resumes card
-  'No resumes in this vacancy yet.': 'Bu vakansiyada hələ CV yoxdur.',
+  'No CVs in this vacancy yet.': 'Bu vakansiyada hələ CV yoxdur.',
   'Everything is analyzed against the current requirements.':
     'Hamısı hazırkı tələblərə görə təhlil olunub.',
   'Re-analyze': 'Yenidən təhlil edin',
-  'Started. The resumes are being read.': 'Başladı. CV-lər oxunur.',
+  'Started. The CVs are being read.': 'Başladı. CV-lər oxunur.',
   'Nothing new to analyze.': 'Təhlil ediləcək yeni CV yoxdur.',
-  '{n} resume queued.': '{n} CV növbəyə qoyuldu.',
-  '{n} resumes queued.': '{n} CV növbəyə qoyuldu.',
+  '{n} CV queued.': '{n} CV növbəyə qoyuldu.',
+  '{n} CVs queued.': '{n} CV növbəyə qoyuldu.',
   'Save the role first.': 'Əvvəlcə vəzifəni yadda saxlayın.',
   'Add at least one skill on the role card.': 'Vəzifə kartında ən azı bir bacarıq əlavə edin.',
 
@@ -164,9 +164,7 @@ export const AZ_POOL: Record<string, string> = {
   'A selected vacancy is archived.': 'Seçilmiş vakansiyalardan biri arxivdədir.',
   'Clear selection': 'Seçimi təmizləyin',
   'No candidates match.': 'Uyğun namizəd tapılmadı.',
-  'No analyzed resumes yet. Add resumes to a vacancy and choose “Find the best fit”.':
-    'Hələ təhlil olunmuş CV yoxdur. Vakansiyaya CV əlavə edin və “Ən uyğununu tapın” seçin.',
-  'No resumes yet. Add resumes on the Resumes card above, then choose “Find the best fit”.':
+  'No CVs yet. Add CVs on the CVs card above, then choose “Find the best fit”.':
     'Hələ CV yoxdur. Yuxarıdakı CV-lər kartında CV əlavə edin, sonra “Ən uyğununu tapın” seçin.',
   'Select all shown': 'Göstərilənlərin hamısını seçin',
   'Select {name}': '{name} seçin',
@@ -200,7 +198,7 @@ export const AZ_POOL: Record<string, string> = {
   'Next (J)': 'Sonrakı (J)',
   View: 'Görünüş',
   'Resize the panes': 'Hissələrin ölçüsünü dəyişin',
-  Resume: 'CV',
+  CV: 'CV',
   Summary: 'Xülasə',
   'Nice-to-haves': 'Arzuolunan tələblər',
   Other: 'Digər',
@@ -209,7 +207,7 @@ export const AZ_POOL: Record<string, string> = {
   Missing: 'Yoxdur',
   Unclear: 'Aydın deyil',
   'Not found': 'Tapılmadı',
-  'In the resume': 'CV-də',
+  'In the CV': 'CV-də',
   must: 'vacib',
   'That reason is not one of the requirements. Keep it or edit it?':
     'Bu səbəb tələblərdən biri deyil. Saxlayaq, yoxsa dəyişək?',
@@ -222,11 +220,8 @@ export const AZ_POOL: Record<string, string> = {
   'A model read the question': 'Sualı model oxudu',
   'Read by rules': 'Qaydalarla oxundu',
   'Used for this answer': 'Bu cavabda istifadə olunanlar',
-  'Show in resume': 'CV-də göstərin',
-  'Hide in resume': 'CV-də gizlədin',
-  'Nothing to show in the resume.': 'CV-də göstəriləcək yer yoxdur.',
   'Page {n}': 'Səhifə {n}',
-  'Only the first part of this resume is shown.': 'Bu CV-nin yalnız ilk hissəsi göstərilir.',
+  'Only the first part of this CV is shown.': 'Bu CV-nin yalnız ilk hissəsi göstərilir.',
   'Out of date: this match was scored against earlier requirements.':
     'Köhnəlib: bu uyğunluq əvvəlki tələblərə görə hesablanıb.',
   'Re-analyzing against the new requirements…': 'Yeni tələblərə görə yenidən təhlil olunur…',
@@ -280,7 +275,7 @@ export const AZ_POOL: Record<string, string> = {
   'Application form': 'Müraciət forması',
   'HR system': 'HR sistemi',
   'E-mail from the candidate': 'Namizədin e-poçtu',
-  'Links in the resume': 'Rezümedəki keçidlər',
+  'Links in the CV': 'CV-dəki keçidlər',
   'Social networks are never read': 'Sosial şəbəkələr heç vaxt oxunmur',
   'Read {host}': '{host} səhifəsini oxuyun',
   'Reading…': 'Oxunur…',
@@ -302,8 +297,8 @@ export const AZ_POOL: Record<string, string> = {
     'Heç nə saxlanmayıb. "həmişə ilk 5-i göstər" yazın və ya burada təyin edin.',
   'How many to show': 'Neçəsini göstərmək',
   Clear: 'Təmizlə',
-  '{n} resumes mention it': '{n} CV bunu qeyd edir',
-  'Mentioned in the resume, not assessed': 'CV-də qeyd olunub, qiymətləndirilməyib',
+  '{n} CVs mention it': '{n} CV bunu qeyd edir',
+  'Mentioned in the CV, not assessed': 'CV-də qeyd olunub, qiymətləndirilməyib',
   'Requirements from a similar vacancy': 'Oxşar vakansiyanın tələbləri',
   'Add {n} requirements from “{title}” that this vacancy does not have yet?':
     '“{title}” vakansiyasından bu vakansiyada hələ olmayan {n} tələbi əlavə edək?',
@@ -326,12 +321,11 @@ export const AZ_POOL: Record<string, string> = {
     'Düymələr: J və K keçid, S qısa siyahı, M bəlkə, N indi yox, Enter hesabatı açır.',
 
   // Vacancy page summary strip (Oct 2026)
-  Resumes: 'CV-lər',
   'Need a look': 'Baxış tələb edir',
   'Could not be read': 'Oxunmadı',
   'Reading now': 'İndi oxunur',
-  'Hide role and resumes': 'Vakansiya və rezyumeləri gizlədin',
-  'Role and resumes': 'Vakansiya və rezyumelər',
+  'Hide role and CVs': 'Vakansiya və CV-ləri gizlədin',
+  'Role and CVs': 'Vakansiya və CV-lər',
   '{n} results were scored against earlier requirements.':
     '{n} nəticə əvvəlki tələblərə görə qiymətləndirilib.',
   'Review and re-analyze': 'Baxın və yenidən təhlil edin',

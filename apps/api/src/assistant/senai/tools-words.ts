@@ -39,12 +39,12 @@ const W = {
     ru: '«{title}»: из {n} проанализированных Сильное у {strong}. В этой вакансии нет обязательных требований, из-за которых мало подходящих.',
   },
   doctorNone: {
-    en: '{title} has no analyzed resumes yet, so there is nothing to diagnose.',
+    en: '{title} has no analyzed CVs yet, so there is nothing to diagnose.',
     az: '{title} üçün hələ təhlil olunmuş CV yoxdur, ona görə baxılacaq bir şey yoxdur.',
     ru: 'Для «{title}» ещё нет проанализированных резюме, диагностировать нечего.',
   },
   doctorNote: {
-    en: 'Counted from the analysis of each resume. A requirement that almost nobody meets is the usual reason for few Strong matches. You can test relaxing one with "what if ... were nice-to-have".',
+    en: 'Counted from the analysis of each CV. A requirement that almost nobody meets is the usual reason for few Strong matches. You can test relaxing one with "what if ... were nice-to-have".',
     az: 'Hər CV-nin təhlilindən sayılıb. Demək olar ki, heç kimin ödəmədiyi tələb Güclü namizədlərin az olmasının adi səbəbidir. "... arzuolunan olsaydı nə olardı" ilə yoxlaya bilərsiniz.',
     ru: 'Посчитано по анализу каждого резюме. Требование, которое почти никто не выполняет, — обычная причина малого числа Сильных. Проверить можно вопросом «а если бы … было желательным».',
   },
@@ -85,7 +85,7 @@ const W = {
     ru: 'Какое требование? Выберите:',
   },
   whatIfNote: {
-    en: 'Nothing was changed or saved. It is the stored analysis scored again with the other weight; no resume was read again. To make it real, change the requirement on the results screen.',
+    en: 'Nothing was changed or saved. It is the stored analysis scored again with the other weight; no CV was read again. To make it real, change the requirement on the results screen.',
     az: 'Heç nə dəyişdirilməyib və ya saxlanmayıb. Bu, saxlanmış təhlilin başqa çəki ilə yenidən hesablanmasıdır; heç bir CV yenidən oxunmayıb. Real etmək üçün nəticə ekranında tələbi dəyişin.',
     ru: 'Ничего не изменено и не сохранено. Это сохранённый анализ, посчитанный заново с другим весом; резюме заново не читались. Чтобы применить, измените требование на экране результатов.',
   },
@@ -118,7 +118,7 @@ const W = {
     ru: 'Что открыть? Назовите номер из списка («открой второго») или имя.',
   },
   interviewHead: {
-    en: 'Interview questions are made on the candidate page, from the analysis of that resume.',
+    en: 'Interview questions are made on the candidate page, from the analysis of that CV.',
     az: 'Müsahibə sualları namizədin səhifəsində, həmin CV-nin təhlilindən hazırlanır.',
     ru: 'Вопросы для интервью готовятся на странице кандидата по анализу его резюме.',
   },
@@ -155,12 +155,12 @@ const W = {
     ru: 'Что я вижу и как отвечаю:',
   },
   aboutSees: {
-    en: 'I see the vacancies you can open, their requirements, the analysis of each resume (scores, bands, what was found), your marks and the text of resumes when you search a skill.',
+    en: 'I see the vacancies you can open, their requirements, the analysis of each CV (scores, bands, what was found), your marks and the text of CVs when you search a skill.',
     az: 'Açmaq icazəniz olan vakansiyaları, tələbləri, hər CV-nin təhlilini (ballar, səviyyələr, tapılanlar), sizin qeydlərinizi və bacarıq axtardıqda CV mətnini görürəm.',
     ru: 'Я вижу вакансии, которые вам доступны, их требования, анализ каждого резюме (баллы, уровни, найденное), ваши отметки и текст резюме при поиске навыка.',
   },
   aboutDoes: {
-    en: 'The server finds and counts; numbers and resume lines come from the data, not from a model. A model may only help to understand an unclear question; it never sees a resume. I cannot change marks, requirements or anything else, and I do not recommend hiring or rejecting.',
+    en: 'The server finds and counts; numbers and CV lines come from the data, not from a model. A model may only help to understand an unclear question; it never sees a CV. I cannot change marks, requirements or anything else, and I do not recommend hiring or rejecting.',
     az: 'Server tapır və sayır; rəqəmlər və CV sətirləri məlumatdan gəlir, modeldən yox. Model yalnız aydın olmayan sualı anlamağa kömək edə bilər; CV-ni heç görmür. Qeydləri, tələbləri və ya başqa nəyisə dəyişə bilmirəm, işə götürməyi və ya rədd etməyi tövsiyə etmirəm.',
     ru: 'Сервер ищет и считает; цифры и строки резюме берутся из данных, а не от модели. Модель может лишь помочь понять неясный вопрос и резюме не видит. Я не могу менять отметки, требования и что-либо ещё и не советую нанимать или отклонять.',
   },
@@ -175,13 +175,13 @@ const W = {
     ru: 'Понято по правилам, модель не использовалась.',
   },
   aboutLastModel: {
-    en: 'The rules could not tell, so a model read the question (it saw only the question, not a resume).',
+    en: 'The rules could not tell, so a model read the question (it saw only the question, not a CV).',
     az: 'Qaydalar anlaya bilmədi, ona görə sualı model oxudu (yalnız sualı gördü, CV-ni yox).',
     ru: 'Правила не поняли вопрос, его прочитала модель (она видела только вопрос, не резюме).',
   },
   // help topics
   help_out_of_date: {
-    en: '"Out of date" means the resume was scored against earlier requirements of the vacancy. Re-analyze it to score it against the current ones.',
+    en: '"Out of date" means the CV was scored against earlier requirements of the vacancy. Re-analyze it to score it against the current ones.',
     az: '"Köhnəlib" CV-nin vakansiyanın əvvəlki tələblərinə görə qiymətləndirildiyini bildirir. Cari tələblərə görə qiymətləndirmək üçün yenidən təhlil edin.',
     ru: '«Устарело» — резюме оценено по прежним требованиям вакансии. Проанализируйте заново, чтобы оценить по текущим.',
   },
@@ -216,7 +216,7 @@ const W = {
     ru: 'Звёздная карта показывает, как кандидат покрывает требования вакансии: один луч на требование.',
   },
   help_reanalyze: {
-    en: 'Re-analyze reads the resume again against the current requirements and replaces the match; earlier results stay in the history.',
+    en: 'Re-analyze reads the CV again against the current requirements and replaces the match; earlier results stay in the history.',
     az: 'Yenidən təhlil CV-ni cari tələblərə görə təkrar oxuyur və nəticəni əvəz edir; əvvəlkilər tarixçədə qalır.',
     ru: 'Повторный анализ заново читает резюме по текущим требованиям и заменяет результат; прежние остаются в истории.',
   },

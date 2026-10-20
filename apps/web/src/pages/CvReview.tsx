@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CV_STATUS_LABEL, type CvStatus, type Mark } from '@cv/shared';
 import { api, ApiError } from '../api';
 import { registerAssistantTarget, useAssistantConfig } from '../assistant';
 import { go } from '../route';
+import { navDirection } from '../motion';
+import { ScoreDial } from '../ScoreDial';
 import { tr, useT } from '../i18n';
 import {
   ago,
@@ -267,8 +269,10 @@ export function CvReview({
 
   // ---------------------------------------------------------------- previous / next
   const toCv = useCallback(
-    (id: string | undefined) => {
-      if (id) go(reviewRoute(id, listId));
+    (id: string | undefined, dir: 'next' | 'prev') => {
+      if (!id) return;
+      navDirection(dir);
+      go(reviewRoute(id, listId));
     },
     [listId],
   );
@@ -277,8 +281,8 @@ export function CvReview({
       const el = e.target as HTMLElement | null;
       if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === 'j') toCv(nav.next);
-      if (e.key === 'k') toCv(nav.prev);
+      if (e.key === 'j') toCv(nav.next, 'next');
+      if (e.key === 'k') toCv(nav.prev, 'prev');
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
@@ -428,18 +432,34 @@ export function CvReview({
           <section key={key} aria-label={heading}>
             <h2 className="mb-2 text-sm font-semibold text-ink-2">{heading}</h2>
             <ul className="space-y-2">
-              {items.map((r) => {
+              {items.map((r, i) => {
                 const on = active === r.requirementId;
                 return (
                   <li
                     key={r.requirementId}
-                    className={`rounded-md border p-3 text-sm ${on ? 'border-accent bg-sel' : 'border-line bg-card'}`}
+                    style={{ '--i': Math.min(i, 10) } as CSSProperties}
+                    className={`m-rise rounded-md border p-3 text-sm transition-colors ${on ? 'border-accent bg-sel' : 'border-line bg-card'}`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <span className="font-medium">{r.text}</span>
                       <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATE_STYLE[r.state]}`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATE_STYLE[r.state]}`}
                       >
+                        {r.state === 'matched' && !r.unclear && (
+                          <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3 w-3">
+                            <path
+                              d="M2.5 6.5 5 9l4.5-6"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              pathLength={1}
+                              className="m-draw"
+                              style={{ '--i': Math.min(i, 10) } as CSSProperties}
+                            />
+                          </svg>
+                        )}
                         {stateName(r)}
                       </span>
                     </div>
@@ -498,6 +518,7 @@ export function CvReview({
         <a
           className={btnSecondary}
           href={reviewHref(nav.prev, listId)}
+          onClick={() => navDirection('prev')}
           title={t('Previous CV (K)')}
         >
           {t('‹ Previous CV')}
@@ -511,7 +532,12 @@ export function CvReview({
         {t('CV {a} of {b}', { a: nav.at + 1, b: nav.total })}
       </span>
       {nav.next ? (
-        <a className={btnSecondary} href={reviewHref(nav.next, listId)} title={t('Next CV (J)')}>
+        <a
+          className={btnSecondary}
+          href={reviewHref(nav.next, listId)}
+          onClick={() => navDirection('next')}
+          title={t('Next CV (J)')}
+        >
           {t('Next CV ›')}
         </a>
       ) : (
@@ -544,43 +570,52 @@ export function CvReview({
       {error && <Notice kind="error">{error}</Notice>}
 
       <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-line bg-card p-4">
-        <div className="min-w-0">
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="text-2xl font-bold tracking-tight focus:outline-none"
-          >
-            {title}
-          </h1>
-          <p className="mt-0.5 text-sm text-ink-2">
-            <a className="text-link hover:underline" href={`#/vacancies/${d.vacancy.id}`}>
-              {d.vacancy.title}
-            </a>
-            {a?.email && <> · {a.email}</>}
-          </p>
-          <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONE[d.status] ?? 'bg-neutral text-ink'}`}
+        <div className="flex min-w-0 items-start gap-4">
+          {a && (
+            <ScoreDial
+              key={d.documentId}
+              score={a.score}
+              size={64}
+              label={t('Match {n}%', { n: Math.round(a.score) })}
+            />
+          )}
+          <div className="min-w-0">
+            <h1
+              ref={heading}
+              tabIndex={-1}
+              className="text-2xl font-bold tracking-tight focus:outline-none"
             >
-              {t(CV_STATUS_LABEL[d.status])}
-            </span>
-            {a && (
-              <>
-                <span className="text-lg font-semibold tabular-nums">{Math.round(a.score)}%</span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[a.band]}`}
-                >
-                  {t(BAND_NAME[a.band])}
-                </span>
-                <span className="text-ink-2">
-                  {t('Must-haves {a} of {b}', { a: a.mustFound, b: a.mustTotal })}
-                </span>
-                <span className="text-ink-3">
-                  {t('Analyzed {when}', { when: ago(a.analyzedAt) })}
-                </span>
-              </>
-            )}
-          </p>
+              {title}
+            </h1>
+            <p className="mt-0.5 text-sm text-ink-2">
+              <a className="text-link hover:underline" href={`#/vacancies/${d.vacancy.id}`}>
+                {d.vacancy.title}
+              </a>
+              {a?.email && <> · {a.email}</>}
+            </p>
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONE[d.status] ?? 'bg-neutral text-ink'}`}
+              >
+                {t(CV_STATUS_LABEL[d.status])}
+              </span>
+              {a && (
+                <>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${BAND_STYLE[a.band]}`}
+                  >
+                    {t(BAND_NAME[a.band])}
+                  </span>
+                  <span className="text-ink-2">
+                    {t('Must-haves {a} of {b}', { a: a.mustFound, b: a.mustTotal })}
+                  </span>
+                  <span className="text-ink-3">
+                    {t('Analyzed {when}', { when: ago(a.analyzedAt) })}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
         </div>
         {d.matchId && (
           <div className="w-full space-y-2 sm:w-72">

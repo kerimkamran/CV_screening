@@ -1451,8 +1451,8 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
     const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
     await userEvent.type(bar, 'Huawei core network?{Enter}');
     const panel = await screen.findByRole('complementary', { name: 'SenAI' });
-    expect(await within(panel).findByText('2 resumes mention it')).toBeInTheDocument();
-    expect(within(panel).getByText('Mentioned in the resume, not assessed')).toBeInTheDocument();
+    expect(await within(panel).findByText('2 CVs mention it')).toBeInTheDocument();
+    expect(within(panel).getByText('Mentioned in the CV, not assessed')).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: /Show all \(1 more\)/ })).toBeInTheDocument();
   });
 });
@@ -1642,9 +1642,9 @@ describe('Vacancy page with results (Oct 2026)', () => {
     expect(await screen.findByRole('link', { name: 'Aysel Mammadova' })).toBeInTheDocument();
     const setup = document.getElementById('vacancy-setup')!;
     expect(setup).toHaveAttribute('hidden');
-    await userEvent.click(within(summary).getByRole('button', { name: 'Role and resumes' }));
+    await userEvent.click(within(summary).getByRole('button', { name: 'Role and CVs' }));
     expect(setup).not.toHaveAttribute('hidden');
-    expect(within(summary).getByRole('button', { name: 'Hide role and resumes' })).toHaveAttribute(
+    expect(within(summary).getByRole('button', { name: 'Hide role and CVs' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );

@@ -3,7 +3,7 @@ import type { ReqStatus } from './api';
 import { locale, tr } from './i18n';
 
 export const btn =
-  'inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
+  'm-press inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed';
 export const btnPrimary = `${btn} bg-accent text-on-accent hover:bg-accent-hover`;
 export const btnSecondary = `${btn} border border-edge bg-card text-ink hover:bg-hover`;
 export const btnDanger = `${btn} bg-danger text-on-accent hover:bg-danger-hover`;
@@ -163,9 +163,10 @@ export function UndoBar({
   if (!toast) return null;
   return (
     <div
+      key={toast.id}
       role="status"
       aria-live="polite"
-      className="fixed bottom-20 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-card px-4 py-2.5 text-sm shadow-lg sm:bottom-6"
+      className="m-toast fixed bottom-20 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-card px-4 py-2.5 text-sm shadow-lg sm:bottom-6"
     >
       <span>{toast.text}</span>
       <button

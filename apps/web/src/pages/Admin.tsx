@@ -1043,7 +1043,7 @@ export function AssistantSettings() {
                 ],
                 [
                   'linkReview',
-                  'Read pages that candidates linked in their resume (keep off until Legal confirms; every resume also needs a recorded consent)',
+                  'Read pages that candidates linked in their CV (keep off until Legal confirms; every CV also needs a recorded consent)',
                 ],
               ] as const
             ).map(([k, label]) => (

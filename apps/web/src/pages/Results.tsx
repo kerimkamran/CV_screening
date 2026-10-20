@@ -278,9 +278,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   if (data.counts.total === 0) {
     return (
       <Notice kind="info">
-        {t(
-          'No resumes yet. Add resumes on the Resumes card above, then choose “Find the best fit”.',
-        )}
+        {t('No CVs yet. Add CVs on the CVs card above, then choose “Find the best fit”.')}
       </Notice>
     );
   }
@@ -291,7 +289,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {!data.aiActive && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
           )}
         </Notice>
       )}
@@ -314,8 +312,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         )}
         <p className="text-sm text-ink-3" aria-live="polite">
           {data.counts.total === 1
-            ? t('{n} resume in this scan', { n: data.counts.total })
-            : t('{n} resumes in this scan', { n: data.counts.total })}
+            ? t('{n} CV in this scan', { n: data.counts.total })
+            : t('{n} CVs in this scan', { n: data.counts.total })}
           {data.counts.failed > 0 && ` · ${t('{n} failed (see Table)', { n: data.counts.failed })}`}
         </p>
       </div>
@@ -365,7 +363,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             className="h-2 w-full"
             max={data.counts.total}
             value={read}
-            aria-label={t('Resumes read')}
+            aria-label={t('CVs read')}
           />
         </div>
       )}

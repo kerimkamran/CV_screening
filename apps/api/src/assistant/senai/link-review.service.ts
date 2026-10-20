@@ -179,7 +179,7 @@ export class LinkReviewService {
       });
     } catch (e) {
       if ((e as { code?: string }).code === '23505')
-        throw new ConflictException('A consent is already recorded for this resume');
+        throw new ConflictException('A consent is already recorded for this CV');
       throw e;
     }
     return this.state(p, matchId);
@@ -220,12 +220,10 @@ export class LinkReviewService {
       [d.documentId],
     );
     if (!consent.rows[0])
-      throw new ForbiddenException(
-        'No consent is recorded for this resume, so its links are not read',
-      );
+      throw new ForbiddenException('No consent is recorded for this CV, so its links are not read');
     // Only a link the resume itself contains: never an address someone typed in.
     const link = linksIn(d.text ?? '').find((l) => l.url === url);
-    if (!link) throw new BadRequestException('That link is not in this resume');
+    if (!link) throw new BadRequestException('That link is not in this CV');
     if (link.blocked)
       throw new BadRequestException('Social network pages are never read, with or without consent');
     let read;

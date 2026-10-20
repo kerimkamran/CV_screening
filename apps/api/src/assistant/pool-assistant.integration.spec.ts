@@ -315,7 +315,7 @@ describeDb('SenAI over the pool (Development Plan WP 4.3 to 4.7)', () => {
     const e = (
       await a.api.post('/assistant/ask', { message: 'candidates for Lonely Empty Role' })
     ).json().answer;
-    expect(e.headline).toMatch(/no resumes yet/);
+    expect(e.headline).toMatch(/no CVs yet/);
     expect(empty.statusCode).toBe(201);
     const vid = await h.scenario(a.api, cvs, 'Moving Target Role');
     const v = (await a.api.get(`/vacancies/${vid}`)).json();

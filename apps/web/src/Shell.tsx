@@ -310,7 +310,10 @@ export function Shell({
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="sticky top-0 z-20 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]">
+      <header
+        className="sticky top-0 z-20 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
+        style={{ viewTransitionName: 'app-header' }}
+      >
         <div className="flex items-center gap-3 px-4 py-2.5">
           <a
             href={isTa ? '#/vacancies' : '#/'}
@@ -340,6 +343,7 @@ export function Shell({
         {rail && (
           <nav
             aria-label={t('Main')}
+            style={{ viewTransitionName: 'app-rail' }}
             className="sticky top-[57px] hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
           >
             {NAV.map(([href, label]) => (

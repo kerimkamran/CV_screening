@@ -150,7 +150,7 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     const about = (await a.api.post('/assistant/ask', { message: 'what can you see?' })).json()
       .answer;
     expect(about.kind).toBe('help');
-    expect(about.notes.join(' ')).toMatch(/never sees a resume/);
+    expect(about.notes.join(' ')).toMatch(/never sees a CV/);
   });
 
   it('keeps the list a follow-up refers to after a tool answer', async () => {
@@ -177,7 +177,7 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     expect(r.headline).toContain(first.answer.rows[1].label);
     // Bob has BGP only: the Kubernetes probe says it is not found.
     const probes = r.table.rows.map((x: any) => x.cells[2]).join(' ');
-    expect(probes).toMatch(/Not found in the resume/);
+    expect(probes).toMatch(/Not found in the CV/);
   });
 
   it('shows pairs with the same evidence and different marks, only from your own marks', async () => {
@@ -232,7 +232,7 @@ describeDb('SenAI tools: compare, doctor, changes, what-if, open, help (plan sec
     ).json().answer;
     expect(r.flags).toContain('data_quality');
     expect(r.table.rows.map((x: any) => x.cells[1]).join(' ')).toMatch(/copy of/);
-    expect(r.table.rows.map((x: any) => x.cells[1]).join(' ')).toMatch(/Thin resume/);
+    expect(r.table.rows.map((x: any) => x.cells[1]).join(' ')).toMatch(/Thin CV/);
   });
 
   it('checks a job description and only suggests', async () => {

@@ -3,7 +3,11 @@ import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { api } from '../api';
+import { scrollInside } from '../motion';
 import { useT } from '../i18n';
+import { quoteBoxes, squash, type Box, type TextBit } from './pdf-marks';
+
+export { squash };
 
 /**
  * The original CV as pages (Stage 2, S2-FE4). This file is the only place that imports pdf.js, and
@@ -22,9 +26,6 @@ export interface PdfApi {
   /** The page whose text holds this quote, or null (the server does not know pages for Word). */
   find: (quote: string) => Promise<number | null>;
 }
-
-/** Lower case, letters and digits only: a quote still matches across line breaks and hyphens. */
-export const squash = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** The first page whose text contains the start of the quote (S2-FE4, findQuotePage). */
 export async function findQuotePage(doc: PDFDocumentProxy, quote: string): Promise<number | null> {
@@ -63,18 +64,58 @@ function Page({
   width,
   flashed,
   register,
+  quotes,
+  aim,
 }: {
   doc: PDFDocumentProxy;
   n: number;
   width: number;
   flashed: boolean;
   register: (n: number, el: HTMLDivElement | null) => void;
+  /** The lines to mark on this page (the chosen requirement's quotes). */
+  quotes: string[];
+  /** Goes up when this page was asked for: the first mark is brought into view. */
+  aim: number;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
+  const firstMark = useRef<HTMLSpanElement | null>(null);
   const [near, setNear] = useState(false);
   const [ratio, setRatio] = useState(1.414);
+  const [marks, setMarks] = useState<Box[]>([]);
+  const quoteKey = quotes.join('\u0000');
+
+  // The marks: found in the page's text once the page is near and there is something to mark.
+  useEffect(() => {
+    if (!near || !quoteKey) {
+      setMarks([]);
+      return;
+    }
+    let dead = false;
+    void (async () => {
+      try {
+        const page = await doc.getPage(n);
+        const content = await page.getTextContent();
+        if (dead) return;
+        const vp = page.getViewport({ scale: 1 });
+        const items: TextBit[] = content.items.flatMap((i) =>
+          'str' in i ? [{ str: i.str, transform: i.transform as number[], width: i.width }] : [],
+        );
+        setMarks(quoteBoxes(items, vp, quoteKey.split('\u0000')));
+      } catch {
+        if (!dead) setMarks([]);
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [doc, n, near, quoteKey]);
+
+  // Asked for and marked: bring the first mark to the middle of the view.
+  useEffect(() => {
+    if (aim > 0 && marks.length > 0) scrollInside(firstMark.current, 'center');
+  }, [aim, marks]);
 
   useEffect(() => {
     const el = box.current;
@@ -129,10 +170,29 @@ function Page({
         register(n, el);
       }}
       data-page={n}
-      className={`relative mx-auto overflow-hidden rounded-sm bg-white shadow-md ${flashed ? 'ring-4 ring-focus' : ''}`}
+      className={`relative mx-auto overflow-hidden rounded-sm bg-white shadow-md transition-[box-shadow,scale] duration-500 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none ${flashed ? 'scale-[1.01] ring-4 ring-focus' : ''}`}
       style={{ width, height: Math.round(width * ratio), marginBottom: PAGE_GAP }}
     >
       <canvas ref={canvas} aria-label={t('Page {n}', { n })} role="img" />
+      {/* A highlighter stroke over the found lines; it sweeps in from the left (motion.css). */}
+      {marks.map((m, i) => (
+        <span
+          key={`${quoteKey.length}-${aim}-${i}`}
+          ref={i === 0 ? firstMark : undefined}
+          aria-hidden="true"
+          data-testid="pdf-mark"
+          className="m-highlight pointer-events-none absolute rounded-[2px]"
+          style={
+            {
+              left: `${m.x * 100}%`,
+              top: `${m.y * 100}%`,
+              width: `${m.w * 100}%`,
+              height: `${m.h * 100}%`,
+              '--i': Math.min(i, 8),
+            } as React.CSSProperties
+          }
+        />
+      ))}
     </div>
   );
 }
@@ -143,9 +203,12 @@ export default function PdfPages({
   ref,
   onPages,
   onProblem,
+  quotes = [],
 }: {
   documentId: string;
   zoom: number;
+  /** Lines to mark on the pages: the chosen requirement's quotes. */
+  quotes?: string[];
   ref?: React.Ref<PdfApi>;
   onPages?: (count: number) => void;
   onProblem: (p: PdfProblem) => void;
@@ -158,6 +221,7 @@ export default function PdfPages({
   const [count, setCount] = useState(0);
   const [width, setWidth] = useState(0);
   const [flash, setFlash] = useState<number | null>(null);
+  const [aim, setAim] = useState<{ page: number; seq: number }>({ page: 0, seq: 0 });
 
   // The document: one request, aborted when the CV changes or the pane closes.
   useEffect(() => {
@@ -215,8 +279,9 @@ export default function PdfPages({
   const jump = (page: number) => {
     const el = els.current.get(page);
     if (!el) return false;
-    el.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    scrollInside(el, 'start');
     setFlash(page);
+    setAim((a) => ({ page, seq: a.seq + 1 }));
     setTimeout(() => setFlash((f) => (f === page ? null : f)), 1600);
     return true;
   };
@@ -245,6 +310,8 @@ export default function PdfPages({
             n={i + 1}
             width={width}
             flashed={flash === i + 1}
+            quotes={quotes}
+            aim={aim.page === i + 1 ? aim.seq : 0}
             register={(n, el) => {
               if (el) els.current.set(n, el);
               else els.current.delete(n);

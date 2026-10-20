@@ -37,18 +37,18 @@ export const AZ_RESULTS: Record<string, string> = {
   'What if “{text}” were nice-to-have: {line} Nothing changes until you choose it below.':
     '“{text}” üstünlük olsaydı: {line} Aşağıda seçməyincə heç nə dəyişmir.',
   'Loading…': 'Yüklənir…',
-  'No resumes yet. Start a screening from': 'Hələ CV yoxdur. Skanı buradan başladın:',
+  'No CVs yet. Start a screening from': 'Hələ CV yoxdur. Skanı buradan başladın:',
   'New screening': 'Yeni skan',
   ', or upload on the Table tab.': ', yaxud Cədvəl bölməsindən yükləyin.',
-  'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.':
+  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.':
     'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu Admin → Süni intellekt modelləri bölməsində quraşdıra bilər.',
   'Your constellation': 'Sizin bürcünüz',
   'Select a star. Brighter means a better fit.':
     'Ulduz seçin. Daha parlaq ulduz daha yaxşı uyğunluq deməkdir.',
   Requirements: 'Tələblər',
   '({n} changed)': '({n} dəyişdirilib)',
-  '{n} resume in this scan': 'Bu skanda {n} CV',
-  '{n} resumes in this scan': 'Bu skanda {n} CV',
+  '{n} CV in this scan': 'Bu skanda {n} CV',
+  '{n} CVs in this scan': 'Bu skanda {n} CV',
   '{n} failed (see Table)': '{n} uğursuz oldu (Cədvələ baxın)',
   'The ranking uses your requirement changes ({n}).':
     'Sıralamada tələblərdə etdiyiniz dəyişikliklər nəzərə alınır ({n}).',
@@ -59,7 +59,7 @@ export const AZ_RESULTS: Record<string, string> = {
   '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.':
     'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Keçmiş skanlarda saxlanılır.',
   'Stop the scan': 'Skanı dayandırın',
-  'Resumes read': 'Oxunmuş CV-lər',
+  'CVs read': 'Oxunmuş CV-lər',
   '{ready} ready, {pending} being read, {human} need a look':
     '{ready} hazırdır, {pending} oxunur, {human} üçün baxış lazımdır',
   '{n} skipped,': '{n} fayl buraxıldı,',
@@ -204,7 +204,7 @@ export const AZ_RESULTS: Record<string, string> = {
   '{n} change since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
   '{n} changes since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
   Close: 'Bağla',
-  'Change what counts and the list re-ranks. No resume is read again. A missing must-have lowers the match; it never hides anyone.':
+  'Change what counts and the list re-ranks. No CV is read again. A missing must-have lowers the match; it never hides anyone.':
     'Nəyin vacib olduğunu dəyişin, siyahı yenidən sıralanacaq. Heç bir CV təkrar oxunmur. Çatışmayan vacib tələb uyğunluğu azaldır, amma heç kimi gizlətmir.',
   'changed (was {kind})': 'dəyişdirilib (əvvəl: {kind})',
   'Knockout rules ({n}) are not changed here. They only send a CV to a human look.':

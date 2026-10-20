@@ -19,7 +19,7 @@ const W = {
   },
   // interview kit
   kitHead: {
-    en: 'Interview kit for {name}: the same core question for every candidate, and probes from what this resume shows.',
+    en: 'Interview kit for {name}: the same core question for every candidate, and probes from what this CV shows.',
     az: '{name} üçün müsahibə dəsti: hər namizədə eyni əsas sual və bu CV-nin göstərdiklərinə görə dəqiqləşdirici suallar.',
     ru: 'Набор для интервью: {name}. Один и тот же основной вопрос для всех и уточняющие вопросы по этому резюме.',
   },
@@ -34,7 +34,7 @@ const W = {
     ru: 'Реальный пример; его личная роль (не команды); проверяемый результат; что сделал бы иначе.',
   },
   kitProbeMet: {
-    en: 'Found in the resume. Ask for the hardest problem they solved with it.',
+    en: 'Found in the CV. Ask for the hardest problem they solved with it.',
     az: 'CV-də tapılıb. Bununla həll etdiyi ən çətin məsələni soruşun.',
     ru: 'Найдено в резюме. Спросите о самой сложной задаче, которую решили этим.',
   },
@@ -44,7 +44,7 @@ const W = {
     ru: 'Найдено лишь частично. Спросите об объёме, инструментах, сроке и личной роли.',
   },
   kitProbeNone: {
-    en: 'Not found in the resume (it may still exist). Ask what related work they have done and how they would get up to speed.',
+    en: 'Not found in the CV (it may still exist). Ask what related work they have done and how they would get up to speed.',
     az: 'CV-də tapılmayıb (yenə də ola bilər). Əlaqəli hansı işlər görüb və necə öyrənərdi, soruşun.',
     ru: 'В резюме не найдено (это не значит, что нет). Спросите о смежном опыте и как бы быстро вошёл в тему.',
   },
@@ -60,7 +60,7 @@ const W = {
     ru: 'В хорошем ответе есть',
   },
   hProbe: {
-    en: 'Probe for this resume',
+    en: 'Probe for this CV',
     az: 'Bu CV üçün dəqiqləşdirmə',
     ru: 'Уточнение по этому резюме',
   },
@@ -94,12 +94,12 @@ const W = {
   hMarks: { en: 'Marks', az: 'Qeydlər', ru: 'Отметки' },
   // data quality
   qualHead: {
-    en: 'Data quality for {scope}: {dups} near-copy pair(s), {thin} thin resume(s), {ru} in Russian.',
+    en: 'Data quality for {scope}: {dups} near-copy pair(s), {thin} thin CV(s), {ru} in Russian.',
     az: '{scope} üzrə məlumat keyfiyyəti: {dups} demək olar ki, eyni cüt, {thin} qısa CV, {ru} rus dilində.',
     ru: 'Качество данных для «{scope}»: почти одинаковых пар — {dups}, коротких резюме — {thin}, на русском — {ru}.',
   },
   qualNone: {
-    en: 'Nothing odd found in the resumes of {scope}.',
+    en: 'Nothing odd found in the CVs of {scope}.',
     az: '{scope} CV-lərində qeyri-adi bir şey tapılmadı.',
     ru: 'В резюме «{scope}» ничего необычного не найдено.',
   },
@@ -109,7 +109,7 @@ const W = {
     ru: '{a} на {pct}% совпадает с {b}',
   },
   qualThin: {
-    en: 'Thin resume: very little text, so the analysis may be unreliable',
+    en: 'Thin CV: very little text, so the analysis may be unreliable',
     az: 'Qısa CV: mətn çox azdır, təhlil etibarsız ola bilər',
     ru: 'Короткое резюме: мало текста, анализ может быть ненадёжным',
   },
@@ -119,7 +119,7 @@ const W = {
     ru: 'Написано в основном по-русски: прочитано по мере возможности',
   },
   qualNote: {
-    en: 'Counted from the resume text. A copy is not a verdict; it is only a reason to look.',
+    en: 'Counted from the CV text. A copy is not a verdict; it is only a reason to look.',
     az: 'CV mətnindən sayılıb. Eyniliyin özü hökm deyil, yalnız baxmaq üçün səbəbdir.',
     ru: 'Посчитано по тексту резюме. Совпадение — не вердикт, лишь повод посмотреть.',
   },
@@ -185,12 +185,12 @@ const W = {
     ru: 'Подсказки из других вакансий отключены администратором.',
   },
   redHead: {
-    en: '{n} resume(s) from other vacancies mention most of the skills {title} asks for. They are not scored for it.',
+    en: '{n} CV(s) from other vacancies mention most of the skills {title} asks for. They are not scored for it.',
     az: 'Başqa vakansiyaların {n} CV-si {title} üçün tələb olunan bacarıqların çoxunu qeyd edir. Bu vakansiya üçün qiymətləndirilməyib.',
     ru: 'В {n} резюме из других вакансий упомянута большая часть навыков, нужных для «{title}». Для неё они не оценивались.',
   },
   redNone: {
-    en: 'No resume of other vacancies mentions most of the skills {title} asks for.',
+    en: 'No CV of other vacancies mentions most of the skills {title} asks for.',
     az: 'Başqa vakansiyaların heç bir CV-si {title} üçün tələb olunan bacarıqların çoxunu qeyd etmir.',
     ru: 'Ни в одном резюме других вакансий нет большинства навыков, нужных для «{title}».',
   },
@@ -200,7 +200,7 @@ const W = {
     ru: 'В требованиях «{title}» я не нашёл знакомых навыков, поэтому никого предложить не могу.',
   },
   redNote: {
-    en: 'Mentioned in the resume, not assessed here. A suggestion only; it never ranks anyone and nobody is analyzed for this vacancy automatically.',
+    en: 'Mentioned in the CV, not assessed here. A suggestion only; it never ranks anyone and nobody is analyzed for this vacancy automatically.',
     az: 'CV-də qeyd olunub, burada qiymətləndirilməyib. Yalnız təklifdir; heç kimi sıralamır və bu vakansiya üçün heç kim avtomatik təhlil edilmir.',
     ru: 'Упомянуто в резюме, здесь не оценено. Только подсказка: никого не ранжирует и никого автоматически не анализирует для этой вакансии.',
   },
@@ -212,12 +212,12 @@ const W = {
     ru: 'О каком кандидате? Назовите номер из списка или имя.',
   },
   chlFound: {
-    en: 'You are right that {skill} is written in the resume of {name}. The stored assessment is unchanged; I flagged a possible missed piece of evidence. Re-analyze the resume to update it.',
+    en: 'You are right that {skill} is written in the CV of {name}. The stored assessment is unchanged; I flagged a possible missed piece of evidence. Re-analyze the CV to update it.',
     az: '{name} CV-sində {skill} həqiqətən yazılıb. Saxlanmış qiymətləndirmə dəyişməyib; mümkün qaçırılmış sübutu qeyd etdim. Yeniləmək üçün CV-ni yenidən təhlil edin.',
     ru: 'Вы правы: в резюме {name} написано {skill}. Сохранённая оценка не изменена; я отметил возможный пропуск доказательства. Проанализируйте резюме заново, чтобы обновить.',
   },
   chlNotFound: {
-    en: 'I cannot find {skill} written anywhere in the resume of {name}, so the stored assessment stands. If it is in an image or an attachment, it was not read.',
+    en: 'I cannot find {skill} written anywhere in the CV of {name}, so the stored assessment stands. If it is in an image or an attachment, it was not read.',
     az: '{name} CV-sində {skill} heç harada yazılmayıb, ona görə saxlanmış qiymətləndirmə qüvvədə qalır. Şəkildə və ya əlavədə varsa, oxunmayıb.',
     ru: 'Я не нахожу {skill} нигде в резюме {name}, поэтому сохранённая оценка остаётся. Если это в картинке или вложении, оно не читалось.',
   },
@@ -233,12 +233,12 @@ const W = {
   },
   // declines
   declineLookup: {
-    en: 'I do not look people up on the web, LinkedIn, Facebook, Instagram or Telegram. It would collect what the candidate never gave. I can work with the resume that was uploaded.',
+    en: 'I do not look people up on the web, LinkedIn, Facebook, Instagram or Telegram. It would collect what the candidate never gave. I can work with the CV that was uploaded.',
     az: 'İnsanları internetdə, LinkedIn, Facebook, Instagram və ya Telegram-da axtarmıram. Bu, namizədin vermədiyi məlumatı toplamaq olardı. Yüklənmiş CV ilə işləyə bilərəm.',
     ru: 'Я не ищу людей в интернете, LinkedIn, Facebook, Instagram или Telegram: это сбор данных, которые кандидат не давал. Могу работать с загруженным резюме.',
   },
   declinePersonality: {
-    en: 'I do not judge personality, culture fit, honesty or the chance someone will leave. Text cannot show that reliably. I can show what the resume says against the requirements.',
+    en: 'I do not judge personality, culture fit, honesty or the chance someone will leave. Text cannot show that reliably. I can show what the CV says against the requirements.',
     az: 'Şəxsiyyəti, mədəniyyətə uyğunluğu, düzlüyü və ya işdən çıxma ehtimalını qiymətləndirmirəm. Mətn bunu etibarlı göstərə bilməz. CV-nin tələblərə görə nə dediyini göstərə bilərəm.',
     ru: 'Я не оцениваю личность, соответствие культуре, честность или вероятность ухода: по тексту этого не определить. Могу показать, что в резюме сказано относительно требований.',
   },

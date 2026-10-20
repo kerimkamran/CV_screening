@@ -14,6 +14,30 @@ export function requestId(req: IncomingMessage): string {
   return candidate && isUlid(candidate) ? candidate : newId();
 }
 
+/**
+ * A download link carries its single-use token in the path (S2-BE8): request logs show the path
+ * without it. Everything else about the request line is kept.
+ */
+export const redactUrl = (url: string | undefined) =>
+  (url ?? '').replace(/\/downloads\/[^/?#]+/g, '/downloads/[token]');
+
+/** The request as it is logged: method, path (redacted), host and remote address only. */
+export function requestLog(req: {
+  method?: string;
+  url?: string;
+  hostname?: string;
+  ip?: string;
+  socket?: { remotePort?: number };
+}) {
+  return {
+    method: req.method,
+    url: redactUrl(req.url),
+    hostname: req.hostname,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
+}
+
 /** Candidate PII is never logged; IDs only (§13.8). Redact common carriers defensively. */
 export const LOG_REDACT_PATHS = [
   'req.headers.authorization',

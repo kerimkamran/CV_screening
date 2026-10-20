@@ -333,9 +333,7 @@ export function CriteriaTab({ id }: { id: string }) {
         )}
         {frozen && c?.versions && c.versions.length > 1 && (
           <p className="mt-3 text-xs text-ink-3">
-            {t(
-              'After creating and freezing a new version, choose “Re-analyze” on the Resumes card.',
-            )}
+            {t('After creating and freezing a new version, choose “Re-analyze” on the CVs card.')}
           </p>
         )}
       </Card>

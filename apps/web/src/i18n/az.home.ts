@@ -2,22 +2,18 @@
 export const AZ_HOME: Record<string, string> = {
   'Our recruitment team uses an AI-assisted tool to help read and compare applications against the requirements of the role. The tool produces a suggested ranking with the evidence behind it. It does not make decisions: every shortlisting or rejection decision is made by a member of our recruitment team, who reviews your application. You may ask us for a human review of your application, for access to your data, or for its deletion, by contacting HR.':
     'Əməkdaşlarımız müraciətləri vakansiyanın tələbləri ilə müqayisə edib oxumaq üçün süni intellektlə işləyən alətdən istifadə edir. Alət təklif olunan sıralamanı və onun əsaslandığı dəlilləri təqdim edir. Qərarı alət vermir: qısa siyahıya salma və ya imtina barədə hər qərarı müraciətinizə baxan işçimiz verir. Müraciətinizə insan tərəfindən yenidən baxılmasını, məlumatlarınıza çıxış əldə etməyi və ya onların silinməsini HR ilə əlaqə saxlayaraq istəyə bilərsiniz.',
-  'Add at least one resume.': 'Ən azı bir CV əlavə edin.',
+  'Add at least one CV.': 'Ən azı bir CV əlavə edin.',
   'Add the position title.': 'Vəzifənin adını yazın.',
   'Describe the role, then choose "Read requirements".':
     'Vəzifəni təsvir edin, sonra “Tələbləri oxu” düyməsini seçin.',
   'Add at least one skill.': 'Ən azı bir bacarıq əlavə edin.',
   'Confirm the candidate notice.': 'Namizəd bildirişini təsdiqləyin.',
   'Who fits this role?': 'Bu vəzifəyə kim uyğundur?',
-  'Add resumes, then describe the role.': 'CV-ləri əlavə edin, sonra vəzifəni təsvir edin.',
-  Resumes: 'CV-lər',
-  'Drop resumes here': 'CV-ləri bura sürüşdürün',
-  'PDF, DOCX or TXT files, a whole folder, or a ZIP of resumes':
-    'PDF, DOCX və ya TXT faylları, bütöv qovluq və ya CV-lərdən ibarət ZIP',
+  'Add CVs, then describe the role.': 'CV-ləri əlavə edin, sonra vəzifəni təsvir edin.',
+  'Drop CVs here': 'CV-ləri bura sürüşdürün',
   'Choose files': 'Fayl seçin',
   'Choose a folder': 'Qovluq seçin',
-  'Choose a folder of resumes': 'CV qovluğu seçin',
-  'Choose resume files': 'CV faylları seçin',
+  'Choose a folder of CVs': 'CV qovluğu seçin',
   '{n} skipped,': '{n} fayl buraxıldı,',
   'hide which': 'hansıları gizlədin',
   'see which': 'hansıları göstərin',
@@ -59,7 +55,7 @@ export const AZ_HOME: Record<string, string> = {
   Add: 'Əlavə edin',
   'Press a skill to switch between must-have (●) and nice-to-have (○). A missing must-have lowers the match. It never hides anyone.':
     'Bacarığa basaraq vacib tələb (●) ilə üstünlük (○) arasında keçid edin. Çatışmayan vacib tələb uyğunluğu azaldır. Heç kimi gizlətmir.',
-  '(a knockout rule: a match sends the resume to human review, nobody is rejected automatically)':
+  '(a knockout rule: a match sends the CV to human review, nobody is rejected automatically)':
     '(kənarlaşdırma qaydası: uyğunluq olduqda CV insan baxışına göndərilir, heç kim avtomatik rədd edilmir)',
   'Before you start: candidate notice': 'Başlamazdan əvvəl: namizəd bildirişi',
   'Candidates must be told that AI assists the screening of their application. Share this text, for example in the job advert, then confirm below.':
@@ -68,10 +64,8 @@ export const AZ_HOME: Record<string, string> = {
     'Təsdiq edirəm ki, bu vakansiya üzrə namizədlərə müraciətlərinin yoxlanılmasında süni intellektdən istifadə olunduğu və insan baxışını necə istəmək olduğu bildirilib.',
   'Starting…': 'Başlayır…',
   'Find the best fit →': 'Ən uyğununu tapın →',
-  'Resumes are read by the AI provider your administrator has chosen.':
-    'CV-ləri administratorunuzun seçdiyi süni intellekt provayderi oxuyur.',
   'Past scans': 'Keçmiş yoxlamalar',
-  'Every scan is kept. Open one to see its results again, or change the requirements and read the same resumes against them.':
+  'Every scan is kept. Open one to see its results again, or change the requirements and read the same CVs against them.':
     'Hər yoxlama saxlanılır. Nəticələrə yenidən baxmaq üçün birini açın və ya tələbləri dəyişib eyni CV-ləri onlara qarşı yenidən oxuyun.',
   Cancel: 'Ləğv et',
   'New vacancy': 'Yeni vakansiya',
@@ -79,9 +73,9 @@ export const AZ_HOME: Record<string, string> = {
   'Create one to get started.': 'Başlamaq üçün birini yaradın.',
   'Ask a recruiting lead to give you access to one.':
     'İşə qəbul rəhbərindən sizə vakansiyaya giriş verməsini xahiş edin.',
-  'No resumes yet': 'Hələ CV yoxdur',
-  '{n} resume · {scored} scored': '{n} CV · {scored} qiymətləndirilib',
-  '{n} resumes · {scored} scored': '{n} CV · {scored} qiymətləndirilib',
+  'No CVs yet': 'Hələ CV yoxdur',
+  '{n} CV · {scored} scored': '{n} CV · {scored} qiymətləndirilib',
+  '{n} CVs · {scored} scored': '{n} CV · {scored} qiymətləndirilib',
   '{n} still being read': '{n} hələ oxunur',
   'stopped with {n} not read': 'dayandırıldı, {n} oxunmayıb',
   'Requirements version {n}': 'Tələblər, versiya {n}',
@@ -203,10 +197,10 @@ export const AZ_HOME: Record<string, string> = {
   'added twice.': 'iki dəfə əlavə edilib.',
   '{n} word': '{n} söz',
   '{n} words': '{n} söz',
-  '{n} resume added': '{n} CV əlavə edildi',
-  '{n} resumes added': '{n} CV əlavə edildi',
-  '{n} resume': '{n} CV',
-  '{n} resumes': '{n} CV',
+  '{n} CV added': '{n} CV əlavə edildi',
+  '{n} CVs added': '{n} CV əlavə edildi',
+  '{n} CV': '{n} CV',
+  '{n} CVs': '{n} CV',
   '{n} key skill': '{n} əsas bacarıq',
   '{n} key skills': '{n} əsas bacarıq',
   '{n} other requirement kept as text': '{n} digər tələb mətn kimi saxlanılıb',
@@ -222,7 +216,7 @@ export const AZ_HOME: Record<string, string> = {
   'Not now': 'İndi yox',
   'Only PDF, DOCX and TXT files are accepted': 'Yalnız PDF, DOCX və TXT faylları qəbul edilir',
   'Already uploaded for this vacancy': 'Bu vakansiya üçün artıq yüklənib',
-  'No resumes found in this ZIP': 'Bu ZIP-də CV tapılmadı',
+  'No CVs found in this ZIP': 'Bu ZIP-də CV tapılmadı',
   'No readable text (scanned or protected file). Review the original manually.':
     'Oxunaqlı mətn yoxdur (skan edilmiş və ya qorunan fayl). Orijinala əl ilə baxın.',
 };

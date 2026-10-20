@@ -322,7 +322,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         >
           {(
             [
-              [c.documents, t('Resumes')],
+              [c.documents, t('CVs')],
               [c.analyzed, t('Analyzed')],
               [c.strong, t('Strong')],
               ...(c.needsLook > 0 ? [[c.needsLook, t('Need a look')]] : []),
@@ -342,7 +342,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
             aria-controls="vacancy-setup"
             onClick={() => setSetupChoice(!setupOpen)}
           >
-            {setupOpen ? t('Hide role and resumes') : t('Role and resumes')}
+            {setupOpen ? t('Hide role and CVs') : t('Role and CVs')}
           </button>
         </section>
       )}

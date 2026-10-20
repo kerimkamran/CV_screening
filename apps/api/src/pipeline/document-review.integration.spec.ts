@@ -209,7 +209,9 @@ describeDb('The review screen server side (Stage 2, S2-BE5, S2-BE6)', () => {
       await r.api.get(`/candidates?vacancy=${vid}&status=needs_look,unreadable`)
     ).json();
     expect(look.rows.map((x: any) => x.documentId)).toEqual([scan.doc]);
-    const withRanked = (await r.api.get(`/candidates?vacancy=${vid}&status=analyzed,failed`)).json();
+    const withRanked = (
+      await r.api.get(`/candidates?vacancy=${vid}&status=analyzed,failed`)
+    ).json();
     expect(withRanked.rows.filter((x: any) => x.matchId).length).toBe(ranked.length);
     expect(withRanked.rows.some((x: any) => x.documentId === gamma.doc)).toBe(true);
     expect(rest.map((x: any) => x.documentId)).toEqual(

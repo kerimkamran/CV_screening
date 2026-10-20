@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/manrope';
+@import './motion.css';
 
 /*
  * Design tokens (spec section 4), redesigned October 2026 around the Azerconnect Group navy

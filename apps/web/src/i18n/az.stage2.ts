@@ -182,4 +182,21 @@ export const AZ_STAGE2: Record<string, string> = {
     'Bu Word faylının səhifələri hazırlanır. Onlar burada özü görünəcək; aşağıdakı mətn fayldan oxunub.',
   'These pages were made from the Word file, so the layout can differ a little.':
     'Bu səhifələr Word faylından hazırlanıb, ona görə düzülüş bir qədər fərqli ola bilər.',
+  'Match {n}%': 'Uyğunluq {n}%',
+  'Keys: J and K move, X selects, S shortlist, M maybe, N not now, Enter opens the CV.':
+    'Düymələr: J və K hərəkət edir, X seçir, S seçmə siyahısı, M bəlkə, N indi yox, Enter CV-ni açır.',
+  'Preparing…': 'Hazırlanır…',
+  'Download CVs': 'CV-ləri endirin',
+  'Up to 500 CVs per download. Narrow the list.': 'Bir endirmədə ən çox 500 CV. Siyahını daraldın.',
+  'All {n} shown are selected.': 'Göstərilən {n} CV-nin hamısı seçilib.',
+  'Select all {n} in this list': 'Bu siyahıdakı {n} CV-nin hamısını seçin',
+  'All {n} in this list are selected.': 'Bu siyahıdakı {n} CV-nin hamısı seçilib.',
+  'Select all': 'Hamısını seçin',
+  'Downloading 1 CV ({size}) as one ZIP.': '1 CV ({size}) bir ZIP faylı kimi endirilir.',
+  'Downloading {n} CVs ({size}) as one ZIP.': '{n} CV ({size}) bir ZIP faylı kimi endirilir.',
+  'the CV was erased': 'CV silinib',
+  'not found or not yours to see': 'tapılmadı və ya sizə açıq deyil',
+  'a CV': 'bir CV',
+  'and {n} more': 'və daha {n}',
+  '{n} left out:': '{n} daxil edilmədi:',
 };

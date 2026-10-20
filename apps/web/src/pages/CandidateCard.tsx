@@ -47,7 +47,7 @@ export function CandidateCard(props: {
   return (
     <article
       id={`card-${r.documentId}`}
-      className={`rounded-2xl border bg-card p-3 ${selected ? 'border-accent bg-sel' : 'border-line'}`}
+      className={`m-lift rounded-2xl border bg-card p-3 ${selected ? 'border-accent bg-sel' : 'border-line'}`}
     >
       <div className="flex flex-wrap items-center gap-3">
         <button

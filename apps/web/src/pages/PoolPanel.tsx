@@ -582,7 +582,7 @@ function PoolAnswerView({
                 <p className="mb-1 flex flex-wrap items-baseline gap-x-2 border-b border-line pb-1 text-sm font-semibold text-ink">
                   <span>{r.vacancyTitle}</span>
                   <span className="text-xs font-normal text-ink-2">
-                    {t('{n} resumes mention it', {
+                    {t('{n} CVs mention it', {
                       n: a.groups.find((g) => g.title === r.vacancyTitle)?.total ?? 0,
                     })}
                   </span>
@@ -616,13 +616,12 @@ function PoolAnswerView({
               </div>
               {r.skillHits && r.skillHits.length > 0 && (
                 <p className="ml-7 text-xs font-medium text-ink">
-                  {t('In the resume')}:{' '}
-                  {r.skillHits.map((h) => `${h.skill} ×${h.count}`).join(', ')}
+                  {t('In the CV')}: {r.skillHits.map((h) => `${h.skill} ×${h.count}`).join(', ')}
                 </p>
               )}
               {r.passages?.some((p) => p.text) && (
                 <p className="ml-7 mt-1 text-xs italic text-ink-3">
-                  {t('Mentioned in the resume, not assessed')}
+                  {t('Mentioned in the CV, not assessed')}
                 </p>
               )}
               {r.passages

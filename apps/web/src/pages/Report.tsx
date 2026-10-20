@@ -144,7 +144,7 @@ export function Report({
   }
   if (!data || !criteria) return <p className="text-sm text-ink-3">{t('Preparing the report…')}</p>;
   if (counts.total === 0) {
-    return <Notice kind="info">{t('No resumes yet, so there is nothing to report.')}</Notice>;
+    return <Notice kind="info">{t('No CVs yet, so there is nothing to report.')}</Notice>;
   }
 
   const reqs = criteria.current?.requirements ?? [];
@@ -246,7 +246,7 @@ export function Report({
       {!data.aiActive && counts.read < counts.total && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
           )}
         </Notice>
       )}

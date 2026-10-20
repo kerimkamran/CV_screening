@@ -53,3 +53,48 @@ Recruiters on dark-mode computers saw the dark theme because nothing chosen mean
 A recruiter saved a vacancy but the page kept saying "Unsaved changes" and "Save the role first.", and Save answered "Nothing to save", so the scan could not start. Cause: the page decided "unsaved" by comparing every field exactly, while Save compares trimmed text; a trailing space or blank line in the requirements (or title, department, notes) is trimmed by the server, so the two tests disagreed for ever. Now "unsaved" means "Save would send something" (the same test), the saved text replaces what was typed after a save, and the page opens with the vacancy as saved.
 
 Second dead end found in the same screen: when no skills were read (a very short text such as "English, Russian"), the "Add another skill" field was hidden although the page said "or add your own". The field is now always there, and a reading that finds nothing says so.
+
+## Stage 2: the review screen (20 October 2026)
+
+- **CV on the left, Analysis on the right**, as in the brief. The split is a container query (`@min-[60rem]`), not a viewport width, so the panel next to it never squeezes the CV. Below that width the two are tabs, "CV | Analysis".
+- **The CV looks like the document.** PDF pages are drawn by pdf.js on white sheets (`bg-white`, a soft shadow) on every background, Dark included, because a CV is paper. Word CVs show the PDF the server made from them, with one quiet line saying so. A text-only CV, and the Text tab, are set on the same white sheet (`CvText.tsx`), with page breaks as a band in the desk colour (`border-neutral`).
+- **Marks on the original.** "Show in CV" finds the quote on its page and draws a highlighter stroke over it: `rgb(245 196 97 / 0.5)` with `mix-blend-mode: multiply`, so the text under it stays black, and a thin darker edge so it is visible to people who see yellow poorly. In forced-colours mode it becomes a `Highlight` outline. In the Text tab the mark is the usual `bg-warn` `<mark>`.
+- **Scrolling stays in the CV pane.** Jumping to a page or a mark scrolls only the pane that holds the CV, never the page around it, so the decision panel and the requirement list stay where the person left them (`scrollInside` in `motion.ts`).
+- **The score** is a ring (`ScoreDial.tsx`): the number is always written in the middle and the label ("Match 88%") is what a screen reader hears; the ring is decoration.
+
+## Motion (Stage 2 design, 20 October 2026)
+
+One vocabulary, in `apps/web/src/motion.css` (styles) and `motion.ts` (scripts).
+
+| Token             | Value                              | Used for                                  |
+| ----------------- | ---------------------------------- | ----------------------------------------- |
+| `--m-instant`     | 90 ms                              | A button giving under the finger          |
+| `--m-fast`        | 160 ms                             | Colour changes, small state changes       |
+| `--m-med`         | 280 ms                             | Toasts, a new screen arriving             |
+| `--m-slow`        | 520 ms                             | Rows and ticks arriving, the highlighter  |
+| `--m-stagger`     | 40 ms                              | Delay between list rows (at most 12 rows) |
+| `--ease-standard` | `cubic-bezier(0.2, 0, 0, 1)`       | Most changes                              |
+| `--ease-emph`     | `cubic-bezier(0.05, 0.7, 0.1, 1)`  | Things arriving                           |
+| `--ease-exit`     | `cubic-bezier(0.3, 0, 0.8, 0.15)`  | Things leaving                            |
+| `--ease-spring`   | `linear(...)`, one small overshoot | A badge or a count that changed           |
+
+| Class or helper              | What moves                                                                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `m-press`                    | Buttons scale to 96 % while pressed (every `btn`)                                                                                       |
+| `m-rise`                     | Content rises 10 px and fades in; `--i` staggers a list                                                                                 |
+| `m-fade`, `m-pop`, `m-toast` | Fade in; pop in with the spring; slide up from the bottom edge                                                                          |
+| `m-lift`                     | Cards lift 2 px towards the pointer (hover devices only)                                                                                |
+| `m-ring`                     | The score ring fills to its value while the number counts up (`useCountUp`)                                                             |
+| `m-draw`                     | A tick draws itself (SVG path with `pathLength="1"`)                                                                                    |
+| `m-spot`                     | "Show in CV" in the Text tab: the line flashes in the accent colour, then settles to the highlight                                      |
+| `m-highlight`                | "Show in CV" on a PDF page: the highlighter stroke sweeps in from the left                                                              |
+| `m-orbit`                    | The drop area: a light runs round its edge while files are dragged over it                                                              |
+| `transition()`               | Screen changes use View Transitions where the browser has them; the header and rail stay still; Previous and Next slide the CV sideways |
+| Sign-in sky                  | Layers drift at different depths with the pointer (the parallax in the name), a shooting star now and then                              |
+
+Rules:
+
+1. **Motion never carries meaning.** Every state is also text, colour or shape, so nothing is lost when motion is off, in forced-colours mode, or to a screen reader.
+2. **Reduce motion turns all of it off.** Every animation in `motion.css` sits inside `prefers-reduced-motion: no-preference` (a unit test parses the file and fails otherwise), the scripts ask `mayMove()`, and an e2e test counts the running animations with reduced motion: there must be none.
+3. **Cheap to run.** Only `transform`, `opacity`, `scale`, `translate` and colours are animated; no filters or shadows in keyframes; only the decorative sky loops.
+4. **Short.** 90 to 520 ms for anything a person waits on.

@@ -134,7 +134,7 @@ export function CandidateLinks({ matchId, canEdit }: { matchId: string; canEdit:
           </div>
         </form>
       ) : null}
-      <ul className="divide-y divide-line text-sm" aria-label={t('Links in the resume')}>
+      <ul className="divide-y divide-line text-sm" aria-label={t('Links in the CV')}>
         {st.links.map((l) => (
           <li key={l.url} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <span className="min-w-0 break-all">{l.url}</span>

@@ -68,6 +68,8 @@ const EnvSchema = z.object({
   RENDITION_ENABLED: z.enum(['true', 'false']).default('true'),
   /** The converter, by name or path. Missing on a host without LibreOffice: Word shows its text only. */
   RENDITION_SOFFICE: z.string().default('soffice'),
+  /** "Download CVs" (S2-BE8): ZIP downloads streamed at once; a further one waits its turn. */
+  DOWNLOAD_MAX_CONCURRENT: z.coerce.number().int().min(1).max(8).default(2),
   /** CVs being read (text extraction) at once across all uploads; a ZIP takes every permit. */
   INTAKE_MAX_CONCURRENT: z.coerce.number().int().min(1).max(8).default(3),
   /**

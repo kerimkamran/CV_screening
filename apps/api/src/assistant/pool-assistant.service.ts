@@ -261,12 +261,12 @@ export class PoolAssistantService {
     const d = src.rows[0];
     if (!d || !d.content || !d.text) throw new NotFoundException();
     await this.scope.assert(p, d.vacancyId);
-    if (d.vacancyId === vacancyId) throw new ConflictException('This resume is already here');
+    if (d.vacancyId === vacancyId) throw new ConflictException('This CV is already here');
     const dup = await this.db.query<{ id: string }>(
       `SELECT id FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2`,
       [vacancyId, d.sha],
     );
-    if (dup.rows[0]) throw new ConflictException('This resume is already in this vacancy');
+    if (dup.rows[0]) throw new ConflictException('This CV is already in this vacancy');
     const set = await this.db.query<{ id: string }>(
       `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
       [vacancyId],
@@ -588,7 +588,7 @@ export class PoolAssistantService {
         asOf: a.asOf,
         sources: [
           'pool analysis',
-          ...(q.skills.length ? ['resume text'] : []),
+          ...(q.skills.length ? ['CV text'] : []),
           ...(a.table ? ['stored assessments'] : []),
         ],
       };

@@ -466,6 +466,67 @@ describe('Candidate list with CVs that have no result', () => {
       back: '/candidates',
     });
   });
+  it('selects across the whole list, downloads the chosen CVs as one ZIP, and keeps the selection for the tab', async () => {
+    const DID3 = '0'.repeat(25) + 'F';
+    const calls = open('/candidates', (url, init) => {
+      if (url.includes('/candidates/ids'))
+        return {
+          body: {
+            items: [
+              [DID, MID],
+              [DID2, null],
+              [DID3, null],
+            ],
+          },
+        };
+      if (url.includes('/candidates?'))
+        return { body: { ...pageOf([ranked, plain]), total: 3, nextCursor: 'c1' } };
+      if (url.includes('/vacancies?')) return { body: [] };
+      if (url.endsWith('/downloads') && init?.method === 'POST')
+        return {
+          status: 201,
+          body: {
+            url: '/downloads/' + 'a'.repeat(43),
+            files: 2,
+            bytes: 2 * 1024 * 1024,
+            archiveName: 'CVs - 2026-10-20.zip',
+            excluded: [{ documentId: DID3, label: 'Candidate 03', reason: 'erased' }],
+          },
+        };
+      return undefined;
+    });
+    const { unmount } = render(<App check={up} />);
+    await screen.findByRole('link', { name: 'Aysel Mammadova' });
+    await userEvent.selectOptions(screen.getByLabelText('Show'), 'all');
+    await screen.findByRole('link', { name: 'Candidate 02' });
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all shown' }));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Select all 3 in this list' }));
+    expect(await screen.findByText('3 selected')).toBeInTheDocument();
+    expect(screen.getByText(/All 3 in this list are selected/)).toBeInTheDocument();
+
+    // X unticks the active row (J makes the first row active).
+    await userEvent.keyboard('j');
+    await userEvent.keyboard('x');
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+    await userEvent.keyboard('x');
+    expect(screen.getByText('3 selected')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Download CVs' }));
+    const post = calls.find((c) => c.url.endsWith('/downloads'));
+    expect(post?.body).toEqual({ documentIds: [DID, DID2, DID3] });
+    expect(
+      await screen.findByText(
+        'Downloading 2 CVs (2.0 MB) as one ZIP. 1 left out: Candidate 03 (the CV was erased).',
+      ),
+    ).toBeInTheDocument();
+
+    // Back from a CV (a new mount in the same tab): the selection is still there.
+    unmount();
+    render(<App check={up} />);
+    expect(await screen.findByText('3 selected')).toBeInTheDocument();
+  });
+
   describe('a Word file (its pages are made on the server)', () => {
     const word = (view: string, over: Record<string, unknown> = {}) =>
       doc({

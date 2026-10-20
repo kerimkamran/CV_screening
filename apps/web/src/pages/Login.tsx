@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, session, type Session } from '../api';
 import { useT } from '../i18n';
 import { btnPrimary, Card, errMsg, Field, input, Notice } from '../ui';
+import { Brand } from '../brand';
+import { Sky } from '../Sky';
 
 export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   const t = useT();
@@ -35,66 +37,75 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     }
   }
 
+  // The night sky behind the sign-in card is decoration (parallax motion): its layers drift with
+  // the pointer and stay still with reduced motion or on touch screens.
   return (
-    <div className="mx-auto mt-10 max-w-sm">
-      <Card title={t('Sign in')}>
-        <form onSubmit={submit} className="space-y-3">
-          <Field label={t('Email')}>
-            <input
-              className={input}
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <div className="relative">
-            <Field label={t('Password')}>
-              <input
-                className={`${input} pr-16`}
-                type={showPw ? 'text' : 'password'}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <button
-              type="button"
-              aria-pressed={showPw}
-              aria-label={showPw ? t('Hide password') : t('Show password')}
-              onClick={() => setShowPw((x) => !x)}
-              className="absolute right-1 bottom-1 h-8 rounded-full px-3 text-xs font-semibold text-link hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            >
-              {showPw ? t('Hide') : t('Show')}
-            </button>
-          </div>
-          {needCode && (
-            <Field
-              label={t('Code from your authenticator app')}
-              hint={t('Six digits. Lost your phone? Use one of your recovery codes instead.')}
-            >
+    <div className="mx-auto mt-6 max-w-md">
+      <Sky className="m-fade rounded-3xl px-6 pt-10 pb-20">
+        <div className="flex justify-center">
+          <Brand onBrand size={36} />
+        </div>
+      </Sky>
+      <div className="m-rise relative mx-3 -mt-12 sm:mx-6">
+        <Card title={t('Sign in')}>
+          <form onSubmit={submit} className="space-y-3">
+            <Field label={t('Email')}>
               <input
                 className={input}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
+                type="email"
+                autoComplete="username"
                 required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </Field>
-          )}
-          {error && <Notice kind="error">{error}</Notice>}
-          <button className={`${btnPrimary} w-full`} disabled={busy}>
-            {busy ? t('Signing in…') : t('Sign in')}
-          </button>
-          <p className="text-xs text-ink-3">
-            {t('Accounts are created by your administrator, who sends you an invitation link.')}
-          </p>
-        </form>
-      </Card>
+            <div className="relative">
+              <Field label={t('Password')}>
+                <input
+                  className={`${input} pr-16`}
+                  type={showPw ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+              <button
+                type="button"
+                aria-pressed={showPw}
+                aria-label={showPw ? t('Hide password') : t('Show password')}
+                onClick={() => setShowPw((x) => !x)}
+                className="absolute right-1 bottom-1 h-8 rounded-full px-3 text-xs font-semibold text-link hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                {showPw ? t('Hide') : t('Show')}
+              </button>
+            </div>
+            {needCode && (
+              <Field
+                label={t('Code from your authenticator app')}
+                hint={t('Six digits. Lost your phone? Use one of your recovery codes instead.')}
+              >
+                <input
+                  className={input}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </Field>
+            )}
+            {error && <Notice kind="error">{error}</Notice>}
+            <button className={`${btnPrimary} w-full`} disabled={busy}>
+              {busy ? t('Signing in…') : t('Sign in')}
+            </button>
+            <p className="text-xs text-ink-3">
+              {t('Accounts are created by your administrator, who sends you an invitation link.')}
+            </p>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }

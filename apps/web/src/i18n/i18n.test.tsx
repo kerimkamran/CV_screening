@@ -58,6 +58,18 @@ describe('Azerbaijani interface', () => {
     expect(missing).toEqual([]);
   });
 
+  it('says "CV", never "resume", in every sentence on screen (Stage 2, S2-FE1)', () => {
+    const left: string[] = [];
+    for (const f of files(SRC)) {
+      for (const m of readFileSync(f, 'utf8').matchAll(CALL)) {
+        if (/\bresumes?\b/i.test(m[2]!)) left.push(`${f.replace(SRC, '')}: ${m[2]}`);
+      }
+    }
+    for (const [en, az] of Object.entries(AZ))
+      if (/\bresumes?\b/i.test(en) || /rez[yü]u?me/i.test(az)) left.push(`az: ${en} = ${az}`);
+    expect(left).toEqual([]);
+  });
+
   it('never gives one sentence two different Azerbaijani texts in two files', () => {
     const seen = new Map<string, { az: string; file: string }>();
     const conflicts: string[] = [];
