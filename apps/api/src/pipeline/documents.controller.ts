@@ -27,32 +27,20 @@ import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { Inject } from '@nestjs/common';
-import {
-  extractTextWithPages,
-  MAX_TEXT_CHARS,
-  MIN_READABLE_CHARS,
-  MIME,
-  readVacancyDocx,
-  sha256,
-  sniff,
-  VacancyFileProblem,
-} from './documents';
+import { readVacancyDocx, VacancyFileProblem } from './documents';
 import { AdjustmentService } from './adjustments.service';
 import { CandidatesService } from './candidates.service';
 import { ReportService } from './report.service';
 import { ExportService } from './export.service';
 import { LinkProblem, LinkReader } from './link-reader';
-import { unpackZip, ZipProblem } from './zip-intake';
+import { IntakeService, type IntakeResult } from './intake.service';
+import { ProcessorService } from './processor.service';
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
 const MAX_FILES = 50;
 
-export interface UploadOutcome {
-  filename: string;
-  status: 'queued' | 'duplicate' | 'unreadable' | 'rejected' | 'skipped';
-  documentId?: string;
-  message?: string;
-}
+/** Kept for existing imports: a per-file upload result. */
+export type UploadOutcome = IntakeResult;
 
 @Roles(...HUMAN)
 @Controller()
@@ -69,6 +57,8 @@ export class DocumentsController {
     private readonly adj: AdjustmentService,
     private readonly candidatesSvc: CandidatesService,
     private readonly reports: ReportService,
+    private readonly intake: IntakeService,
+    private readonly processor: ProcessorService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -132,120 +122,74 @@ export class DocumentsController {
     }
   }
 
-  /** DOC-01..04: bulk upload. Per-file outcomes; one bad file never fails the batch. */
+  /**
+   * DOC-01..04: upload. Two shapes share one route:
+   * - `?item=<id>`: one file for one upload item (Stage 2). The result is the item's status, a retry
+   *   of a finished item returns its stored result, and nothing is processed twice.
+   * - no item: the earlier route with up to 50 files, kept for existing clients and scripts.
+   * Both go through IntakeService.
+   */
   @Post('vacancies/:id/documents')
   @HttpCode(200)
   async upload(
     @Param('id') id: string,
+    @Query('item') itemQ: string | undefined,
     @CurrentPrincipal() p: Principal,
     @Req() req: FastifyRequest,
-  ): Promise<{ results: UploadOutcome[] }> {
+  ): Promise<{ results: IntakeResult[] }> {
     const vid = parse(ulidSchema, id);
-    const vac = await this.scope.assert(p, vid);
-    if (!vac.candidateNoticeConfirmedAt) {
-      throw new ConflictException(
-        'Confirm that candidates have been informed that AI assists screening before uploading CVs.',
-      );
-    }
-    const frozen = (
-      await this.db.query<{ id: string }>(
-        `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
-        [vid],
-      )
-    ).rows[0];
-    if (!frozen) throw new ConflictException('Freeze the criteria before uploading CVs.');
+    const setId = await this.intake.gate(p, vid);
     if (!req.isMultipart()) throw new BadRequestException('Expected multipart/form-data');
+    const ctx = { principal: p, vacancyId: vid, setId, ip: req.ip };
+    const maxZip = this.intake.maxZipBytes;
+    const maxFile = this.intake.maxFileBytes;
 
-    const results: UploadOutcome[] = [];
-    const maxZip = this.env.MAX_ZIP_MB * 1024 * 1024;
-    const maxFile = this.env.MAX_UPLOAD_MB * 1024 * 1024;
-    const have = Number(
-      (
-        await this.db.query<{ n: string }>(
-          `SELECT count(*) AS n FROM cv_document WHERE vacancy_id = $1`,
-          [vid],
-        )
-      ).rows[0]!.n,
-    );
-    let room = Math.max(this.env.MAX_RESUMES_PER_RUN - have, 0);
-    let n = 0;
-    /** Take one resume in, unless the run is full. */
-    const take = async (filename: string, buf: Buffer) => {
-      if (room <= 0) {
-        results.push({
-          filename,
-          status: 'skipped',
-          message: `A run holds at most ${this.env.MAX_RESUMES_PER_RUN} resumes`,
-        });
-        return;
-      }
-      const r = await this.ingest(p, vid, frozen.id, filename, buf, req.ip);
-      if (r.status === 'queued' || r.status === 'unreadable') room--;
-      results.push(r);
+    // The part limit is the larger ZIP limit; the reader below holds each file to its own cap.
+    const read = async (part: {
+      file: AsyncIterable<Buffer> & { truncated?: boolean };
+      filename?: string;
+    }) => {
+      const filename = (part.filename || 'cv').slice(0, 200);
+      const zip = this.intake.isZipName(filename);
+      const r = await this.intake.readCapped(part.file, zip ? maxZip : maxFile);
+      return { filename, buf: r.buf, tooLarge: r.tooLarge || !!part.file.truncated, zip };
     };
-    // The part limit is the larger ZIP limit; ordinary files are held to their own limit below.
+    const take = async (
+      c: typeof ctx & { itemId?: string; batchId?: string },
+      f: Awaited<ReturnType<typeof read>>,
+    ) => {
+      if (f.tooLarge) return [await this.intake.rejectTooLarge(c, f.filename)];
+      if (f.zip && f.buf[0] === 0x50 && f.buf[1] === 0x4b)
+        return this.intake.admitZip(c, f.filename, f.buf);
+      return [await this.intake.admit(c, f.filename, f.buf)];
+    };
+
+    if (itemQ) {
+      const itemId = parse(ulidSchema, itemQ);
+      const item = await this.intake.itemOf(vid, itemId);
+      if (!item) throw new NotFoundException();
+      const c = { ...ctx, itemId, batchId: item.batchId };
+      for await (const part of req.parts({ limits: { fileSize: maxZip, files: 1 } })) {
+        if (part.type !== 'file') continue;
+        const done = await this.intake.storedResults(itemId);
+        if (done) {
+          part.file.resume(); // nothing to process; let the upload finish
+          return { results: done };
+        }
+        const f = await read(part);
+        return { results: await take(c, { ...f, filename: f.filename || item.filename }) };
+      }
+      throw new BadRequestException('No file received');
+    }
+
+    const results: IntakeResult[] = [];
+    let n = 0;
     for await (const part of req.parts({ limits: { fileSize: maxZip, files: MAX_FILES } })) {
       if (part.type !== 'file') continue;
       n++;
-      const filename = (part.filename || 'cv').slice(0, 200);
-      const buf = await part.toBuffer();
-      const isZip = /\.zip$/i.test(filename) && buf[0] === 0x50 && buf[1] === 0x4b;
-      if (part.file.truncated) {
-        results.push({
-          filename,
-          status: 'rejected',
-          message: `Larger than ${isZip ? this.env.MAX_ZIP_MB : this.env.MAX_UPLOAD_MB} MB`,
-        });
-        continue;
-      }
-      if (isZip) {
-        try {
-          const u = await unpackZip(buf, {
-            maxEntries: this.env.MAX_RESUMES_PER_RUN * 2,
-            maxEntryBytes: maxFile,
-            maxTotalBytes: maxZip * 2,
-            maxRatio: 200,
-          });
-          for (const s of u.skipped) {
-            results.push({
-              filename: `${filename} › ${s.name}`,
-              status: 'skipped',
-              message: s.reason,
-            });
-          }
-          for (const f of u.files) await take(`${f.name}`, f.data);
-          if (u.files.length === 0 && u.skipped.length === 0) {
-            results.push({
-              filename,
-              status: 'skipped',
-              message: 'No resumes found in this ZIP',
-            });
-          }
-        } catch (e) {
-          if (!(e instanceof ZipProblem)) throw e;
-          results.push({ filename, status: 'rejected', message: e.message });
-        }
-        continue;
-      }
-      if (buf.length > maxFile) {
-        results.push({
-          filename,
-          status: 'rejected',
-          message: `Larger than ${this.env.MAX_UPLOAD_MB} MB`,
-        });
-        continue;
-      }
-      await take(filename, buf);
+      results.push(...(await take(ctx, await read(part))));
     }
     if (n === 0) throw new BadRequestException('No files received');
-    // Skipped files are never dropped silently: keep the list with the vacancy (spec 6.1.4).
-    const skipped = results.filter((r) => r.status !== 'queued' && r.status !== 'unreadable');
-    for (const r of skipped) {
-      await this.db.query(
-        `INSERT INTO intake_skip (id, vacancy_id, filename, reason, skipped_by) VALUES ($1,$2,$3,$4,$5)`,
-        [newId(), vid, r.filename.slice(0, 300), (r.message ?? 'Skipped').slice(0, 300), p.userId],
-      );
-    }
     return { results };
   }
 
@@ -258,15 +202,18 @@ export class DocumentsController {
     // reason), and not a file that was uploaded again later and taken in.
     const { rows } = await this.db.query<{ filename: string; reason: string; at: Date }>(
       `SELECT * FROM (
-         SELECT DISTINCT ON (s.filename) s.filename, s.reason, s.skipped_at AS at, s.id
+         SELECT DISTINCT ON (COALESCE(s.upload_item_id, s.filename)) s.filename, s.reason, s.skipped_at AS at, s.id
            FROM intake_skip s
           WHERE s.vacancy_id = $1
-            AND NOT EXISTS (
+            AND (s.upload_item_id IS NOT NULL OR NOT EXISTS (
               SELECT 1 FROM cv_document d
                WHERE d.vacancy_id = s.vacancy_id
                  AND d.filename = regexp_replace(s.filename, '^.* › ', '')
-                 AND d.uploaded_at > s.skipped_at)
-          ORDER BY s.filename, s.skipped_at DESC, s.id DESC) x
+                 AND d.uploaded_at > s.skipped_at))
+            AND (s.upload_item_id IS NULL OR NOT EXISTS (
+              SELECT 1 FROM upload_item i
+               WHERE i.id = s.upload_item_id AND i.outcome IN ('queued', 'unreadable')))
+          ORDER BY COALESCE(s.upload_item_id, s.filename), s.skipped_at DESC, s.id DESC) x
         ORDER BY at, id LIMIT 1000`,
       [vid],
     );
@@ -277,102 +224,6 @@ export class DocumentsController {
         at: new Date(r.at).toISOString(),
       })),
     };
-  }
-
-  private async ingest(
-    p: Principal,
-    vid: string,
-    setId: string,
-    filename: string,
-    buf: Buffer,
-    ip: string,
-  ): Promise<UploadOutcome> {
-    const kind = sniff(buf, filename);
-    if (!kind) {
-      return { filename, status: 'rejected', message: 'Only PDF, DOCX and TXT files are accepted' };
-    }
-    const hash = sha256(buf);
-    const dup = await this.db.query<{ id: string }>(
-      `SELECT id FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2`,
-      [vid, hash],
-    );
-    if (dup.rows[0]) {
-      return {
-        filename,
-        status: 'duplicate',
-        documentId: dup.rows[0].id,
-        message: 'Already uploaded for this vacancy',
-      };
-    }
-
-    let text = '';
-    let pageStarts: number[] | null = null;
-    let parseStatus: 'parsed' | 'empty' | 'failed' = 'parsed';
-    let parseError: string | null = null;
-    try {
-      ({ text, pageStarts } = await extractTextWithPages(buf, kind));
-      if (text.length < MIN_READABLE_CHARS) parseStatus = 'empty'; // e.g. a scanned PDF: no OCR in the MVP
-    } catch (e) {
-      this.log.warn(`parse failed (${kind}): ${(e as Error).message}`);
-      parseStatus = 'failed';
-      parseError = 'The file could not be read';
-    }
-    const truncated = text.length > MAX_TEXT_CHARS;
-    if (truncated) {
-      text = text.slice(0, MAX_TEXT_CHARS);
-      pageStarts = pageStarts?.filter((o) => o < text.length) ?? null;
-    }
-    const readable = parseStatus === 'parsed';
-
-    const docId = newId();
-    await this.db.withTx(async (tx) => {
-      await tx.query(
-        `INSERT INTO cv_document
-           (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
-            parse_status, parse_error, uploaded_by, page_starts)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [
-          docId,
-          vid,
-          filename,
-          MIME[kind],
-          buf.length,
-          hash,
-          buf,
-          readable ? text : null,
-          truncated,
-          parseStatus,
-          parseError,
-          p.userId,
-          readable && pageStarts ? JSON.stringify(pageStarts) : null,
-        ],
-      );
-      await tx.query(
-        `INSERT INTO screening (id, document_id, requirement_set_id, state) VALUES ($1,$2,$3,$4)`,
-        [newId(), docId, setId, readable ? 'queued' : 'manual'],
-      );
-      // Spec 6.7: a vacancy becomes Open when its first screening starts.
-      await tx.query(`UPDATE vacancy SET status = 'open' WHERE id = $1 AND status = 'draft'`, [
-        vid,
-      ]);
-      await this.audit.record(tx, {
-        actorId: p.userId,
-        actorType: p.actorType,
-        sourceIp: ip,
-        action: 'document.upload',
-        entityType: 'document',
-        entityId: docId,
-        after: { vacancyId: vid, sha256: hash, parseStatus },
-      });
-    });
-    return readable
-      ? { filename, status: 'queued', documentId: docId }
-      : {
-          filename,
-          status: 'unreadable',
-          documentId: docId,
-          message: 'No readable text (scanned or protected file). Review the original manually.',
-        };
   }
 
   /** WORK-01: the ranked candidate table for the current frozen criteria. */
@@ -486,50 +337,73 @@ export class DocumentsController {
   ) {
     const vid = parse(ulidSchema, id);
     await this.scope.assert(p, vid);
-    return this.db.withTx(async (tx) => {
-      const set = (
-        await tx.query<{ id: string }>(
-          `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
-          [vid],
-        )
-      ).rows[0];
-      if (!set) throw new ConflictException('No frozen criteria');
-      const docs = await tx.query<{ id: string }>(
-        `SELECT d.id FROM cv_document d
+    return this.db
+      .withTx(async (tx) => {
+        const set = (
+          await tx.query<{ id: string }>(
+            `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
+            [vid],
+          )
+        ).rows[0];
+        if (!set) throw new ConflictException('No frozen criteria');
+        const docs = await tx.query<{ id: string }>(
+          `SELECT d.id FROM cv_document d
           WHERE d.vacancy_id = $1 AND d.erased_at IS NULL AND d.parse_status = 'parsed'
             AND NOT EXISTS (SELECT 1 FROM screening s WHERE s.document_id = d.id AND s.requirement_set_id = $2)`,
-        [vid, set.id],
-      );
-      for (const d of docs.rows) {
-        await tx.query(
-          `INSERT INTO screening (id, document_id, requirement_set_id) VALUES ($1,$2,$3)`,
-          [newId(), d.id, set.id],
+          [vid, set.id],
         );
-      }
-      await this.audit.record(tx, {
-        actorId: p.userId,
-        actorType: p.actorType,
-        sourceIp: req.ip,
-        action: 'screening.rescreen',
-        entityType: 'vacancy',
-        entityId: vid,
-        after: { queued: docs.rowCount },
+        for (const d of docs.rows) {
+          await tx.query(
+            `INSERT INTO screening (id, document_id, requirement_set_id) VALUES ($1,$2,$3)`,
+            [newId(), d.id, set.id],
+          );
+        }
+        await this.audit.record(tx, {
+          actorId: p.userId,
+          actorType: p.actorType,
+          sourceIp: req.ip,
+          action: 'screening.rescreen',
+          entityType: 'vacancy',
+          entityId: vid,
+          after: { queued: docs.rowCount },
+        });
+        return { queued: docs.rowCount };
+      })
+      .then((r) => {
+        this.processor.nudge();
+        return r;
       });
-      return { queued: docs.rowCount };
-    });
   }
 
   @Post('screenings/:id/retry')
   @HttpCode(200)
-  async retry(@Param('id') id: string, @CurrentPrincipal() p: Principal) {
+  async retry(
+    @Param('id') id: string,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
     const sid = parse(ulidSchema, id);
     await this.scope.assertScreening(p, sid);
-    const r = await this.db.query(
-      `UPDATE screening SET state = 'queued', attempts = 0, run_after = now(), error = NULL
-        WHERE id = $1 AND state = 'failed'`,
-      [sid],
-    );
-    if (!r.rowCount) throw new ConflictException('Only failed screenings can be retried');
+    await this.db.withTx(async (tx) => {
+      const r = await tx.query(
+        `UPDATE screening SET state = 'queued', attempts = 0, run_after = now(), error = NULL,
+                claim_id = NULL, lease_until = NULL
+          WHERE id = $1 AND state = 'failed'`,
+        [sid],
+      );
+      if (!r.rowCount) throw new ConflictException('Only failed screenings can be retried');
+      // S2-BE4: a retry is on the record, like every other change to a screening.
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'screening.retried',
+        entityType: 'screening',
+        entityId: sid,
+        after: { scope: 'one', count: 1 },
+      });
+    });
+    this.processor.nudge();
     return { queued: true };
   }
 
@@ -538,6 +412,7 @@ export class DocumentsController {
   async file(
     @Param('id') id: string,
     @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ) {
     const did = parse(ulidSchema, id);
@@ -549,6 +424,18 @@ export class DocumentsController {
     }>(`SELECT filename, mime, content FROM cv_document WHERE id = $1`, [did]);
     const d = rows[0];
     if (!d?.content) throw new NotFoundException();
+    // Every download is on the audit trail before the bytes leave (Stage 2, decision 5).
+    await this.db.withTx((tx) =>
+      this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'document.downloaded',
+        entityType: 'document',
+        entityId: did,
+        after: { via: 'file' },
+      }),
+    );
     void reply
       .header('content-type', d.mime)
       .header(

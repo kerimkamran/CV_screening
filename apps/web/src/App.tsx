@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   api,
   ApiError,
@@ -14,7 +14,7 @@ import { applyLang, tr, useT, type Lang } from './i18n';
 import { AiSettings, AssistantSettings, Users } from './pages/Admin';
 import { rememberUser } from './assistant';
 import { CandidatePool } from './pages/CandidatePool';
-import { CandidateReport } from './pages/CandidateReport';
+import { CvReview } from './pages/CvReview';
 import { Monitoring } from './pages/Monitoring';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
@@ -24,12 +24,11 @@ import { SharedList, SharedReport } from './pages/SharedReport';
 import { VacancyList } from './pages/VacancyList';
 import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
 import { Shell } from './Shell';
+import { parseReviewRoute, reviewRoute } from './review';
 import { useRoute } from './route';
 import { applyBackground, isBackground } from './theme';
-import { go } from './route';
 import { Notice } from './ui';
 
-const IDLE_MS = 30 * 60 * 1000; // IAM-06: idle sign-out
 const REFRESH_MS = 20 * 60 * 1000;
 
 const HEALTH_LABEL: Record<ApiHealth['state'], string> = {
@@ -63,9 +62,28 @@ function AdminNav({ route }: { route: string }) {
   );
 }
 
-function Redirect({ to }: { to: string }) {
-  useEffect(() => go(to), [to]);
-  return null;
+/**
+ * Old links (#/candidates/<screening> and #/screenings/<screening>) still work: the screening says
+ * which CV it belongs to, and the person lands on that CV's review page (Stage 2, S2-FE2).
+ */
+function LegacyCv({ screeningId }: { screeningId: string }) {
+  const t = useT();
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    api.get<{ documentId: string }>(`/screenings/${screeningId}`).then(
+      (s) => !dead && window.location.replace(`#${reviewRoute(s.documentId)}`),
+      () => !dead && setGone(true),
+    );
+    return () => {
+      dead = true;
+    };
+  }, [screeningId]);
+  return gone ? (
+    <Notice kind="error">{t('This CV is not available to you, or it no longer exists.')}</Notice>
+  ) : (
+    <p className="text-sm text-ink-3">{t('Loading…')}</p>
+  );
 }
 
 export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealth> }) {
@@ -75,7 +93,6 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   const [health, setHealth] = useState<ApiHealth>({ state: 'checking' });
   const [note, setNote] = useState('');
   const route = useRoute();
-  const lastActive = useRef(0);
 
   const signOut = useCallback((why = '') => {
     session.set(null);
@@ -105,26 +122,31 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     return subscribeUnauthorized(() => signOut(tr('Your session ended. Please sign in again.')));
   }, [check, loadMe, signOut]);
 
-  // Idle sign-out and keep-alive while the user is active.
+  // S2-FE16: the sign-in stays open for as long as the tab is open. There is no idle sign-out; the
+  // token is renewed on a timer (and when the tab comes back to the front), never lengthened.
+  // Sign out, closing the tab, a disabled account, or a device asleep longer than one token
+  // lifetime still end the session (the next call answers 401).
   useEffect(() => {
     if (!me) return;
-    const touch = () => (lastActive.current = Date.now());
-    touch();
-    const events = ['pointerdown', 'keydown'] as const;
-    events.forEach((e) => window.addEventListener(e, touch));
-    const t = setInterval(() => {
-      if (Date.now() - lastActive.current > IDLE_MS)
-        return signOut(tr('You were signed out after 30 minutes of inactivity.'));
+    let lastRefresh = Date.now();
+    const refresh = () => {
+      lastRefresh = Date.now();
       void api.post<Session>('/auth/refresh').then(
         (s) => session.set(s.token),
         () => undefined,
       );
-    }, REFRESH_MS);
+    };
+    const t = setInterval(refresh, REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRefresh > REFRESH_MS)
+        refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      events.forEach((e) => window.removeEventListener(e, touch));
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(t);
     };
-  }, [me, signOut]);
+  }, [me]);
 
   const isTa = !!me?.roles.some((r) => r === 'TA_PARTNER' || r === 'TA_LEAD');
   const isAdmin = !!me?.roles.includes('ADMIN');
@@ -218,14 +240,15 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     const vm = new RegExp(`^/vacancies/([0-9A-Z]{26})(?:/(${tabs}))?$`).exec(route);
     const cm = /^\/candidates\/([0-9A-Z]{26})$/.exec(route);
     const sm = /^\/screenings\/([0-9A-Z]{26})$/.exec(route);
+    const rv = parseReviewRoute(route);
     body = vm ? (
       <VacancyPage id={vm[1]!} key={vm[1]} tab={(vm[2] as Tab | undefined) ?? 'candidates'} />
     ) : route === '/vacancies/new' ? (
       <VacancyPage id="new" tab="candidates" key="new" />
-    ) : cm ? (
-      <CandidateReport id={cm[1]!} key={cm[1]} canMark={isTa} />
-    ) : sm ? (
-      <Redirect to={`/candidates/${sm[1]!}`} />
+    ) : rv ? (
+      <CvReview documentId={rv.documentId} listId={rv.listId} key={rv.documentId} canMark={isTa} />
+    ) : cm || sm ? (
+      <LegacyCv screeningId={(cm ?? sm)![1]!} key={(cm ?? sm)![1]} />
     ) : route === '/candidates' ? (
       <CandidatePool canMark={isTa} />
     ) : (

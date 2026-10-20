@@ -15,7 +15,8 @@ export async function eraseDocumentData(
   erasedBy: string,
 ): Promise<boolean> {
   const r = await tx.query(
-    `UPDATE cv_document SET content = NULL, text = NULL, page_starts = NULL, erased_at = now(), erased_by = $2
+    `UPDATE cv_document SET content = NULL, text = NULL, page_starts = NULL, erased_at = now(), erased_by = $2,
+            rendition_pdf = NULL, rendition_state = NULL, rendition_error = NULL, rendition_priority = false
       WHERE id = $1 AND erased_at IS NULL`,
     [documentId, erasedBy],
   );

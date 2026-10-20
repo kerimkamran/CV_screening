@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { session } from './api';
 import { rememberUser, resetAssistantConfigCache, setAssistantOpen } from './assistant';
+import { resetReviewCacheForTests } from './pages/CvReview';
 
 type Reply = { status?: number; body: unknown };
 type Handler = (url: string, init?: RequestInit) => Reply | undefined;
@@ -28,6 +29,35 @@ const ME = { userId: 'u', displayName: 'Ayla Karimova', email: 'a@x.az', roles: 
 const VID = '0'.repeat(25) + 'V';
 const MID = '0'.repeat(25) + 'M';
 const MID2 = '0'.repeat(25) + 'N';
+const DID = '0'.repeat(25) + 'D';
+const DID2 = '0'.repeat(25) + 'E';
+/** What GET /documents/:id answers for a CV that is a plain text file (no pages to load in a test). */
+const reviewDoc = (analysis: Record<string, unknown> | null, over: object = {}) => ({
+  documentId: DID,
+  vacancy: { id: VID, title: 'Network Engineer', status: 'open', archived: false },
+  filename: 'aysel.txt',
+  kind: 'txt',
+  sizeBytes: 1200,
+  uploadedAt: '2026-10-08T09:00:00Z',
+  name: 'Aysel Mammadova',
+  pseudonym: 'Candidate 01',
+  pseudonymNo: 1,
+  status: analysis ? 'analyzed' : 'unreadable',
+  statusDetail: { retryable: false },
+  screeningId: MID,
+  matchId: analysis ? MID : null,
+  original: { available: true, view: 'none' },
+  text: { available: true },
+  decision: (analysis?.decision as object) ?? {
+    mark: 'new',
+    note: null,
+    version: 0,
+    decidedAt: null,
+    decidedBy: null,
+  },
+  analysis,
+  ...over,
+});
 const SENAI = {
   enabled: true,
   name: 'SenAI',
@@ -99,7 +129,7 @@ const view = (over: object = {}) => ({
   ...over,
 });
 const poolRow = (n: number, over: object = {}) => ({
-  documentId: `D${n}`,
+  documentId: n === 1 ? DID : DID2,
   vacancyId: VID,
   vacancyTitle: 'Network Engineer',
   vacancyStatus: 'open',
@@ -143,6 +173,7 @@ beforeEach(() => {
   window.location.hash = '';
   localStorage.clear();
   sessionStorage.clear();
+  resetReviewCacheForTests();
   resetAssistantConfigCache();
   rememberUser('U1');
   setAssistantOpen(false);
@@ -568,7 +599,7 @@ describe('Candidate report', () => {
   const start = RESUME.indexOf('Designed BGP');
   const report = {
     matchId: MID,
-    documentId: 'D1',
+    documentId: DID,
     label: 'Aysel Mammadova',
     name: 'Aysel Mammadova',
     pseudonym: 'Candidate 01',
@@ -621,27 +652,22 @@ describe('Candidate report', () => {
     ],
   };
   const open = (extra?: Handler) => {
-    window.location.hash = `/candidates/${MID}`;
+    window.location.hash = `/cv/${DID}?l=LIST1`;
     sessionStorage.setItem(
-      'cv-pool-origin',
-      JSON.stringify({ ids: [MID, MID2], label: 'Candidates', back: '/candidates' }),
+      'cv-review-lists',
+      JSON.stringify([
+        { id: 'LIST1', label: 'Candidates', back: '/candidates', ids: [DID, DID2], savedAt: 1 },
+      ]),
     );
     return mockFetch(
       base((url, init) => {
         const e = extra?.(url, init);
         if (e) return e;
-        if (url.endsWith(`/candidates/${MID}/report`)) return { body: report };
-        if (url.includes(`/candidates/${MID}/resume`))
+        if (url.endsWith(`/documents/${DID}`)) return { body: reviewDoc(report) };
+        if (url.endsWith(`/documents/${DID2}`)) return { status: 404, body: { message: 'No.' } };
+        if (url.includes(`/documents/${DID}/text`))
           return {
-            body: {
-              view: 'original',
-              text: RESUME,
-              truncated: false,
-              pageStarts: [0],
-              blocks: [],
-              hidden: {},
-              notice: null,
-            },
+            body: { text: RESUME, truncated: false, pageStarts: [0], blocks: [] },
           };
         if (url.includes('/candidates?')) return { body: page([poolRow(1), poolRow(2)]) };
         return undefined;
@@ -653,14 +679,14 @@ describe('Candidate report', () => {
     open();
     render(<App check={up} />);
     expect(await screen.findByRole('heading', { name: 'Aysel Mammadova' })).toBeInTheDocument();
-    const resume = await screen.findByLabelText('Resume', { selector: 'div' });
+    const resume = await screen.findByLabelText('CV text', { selector: 'div' });
     expect(resume).toHaveTextContent('Designed BGP routing');
     expect(resume.querySelector('mark')).toBeNull();
     const bgp = screen.getByText('BGP routing').closest('li')!;
-    await userEvent.click(within(bgp).getByRole('button', { name: 'Show in resume' }));
+    await userEvent.click(within(bgp).getByRole('button', { name: 'Show in CV' }));
     await waitFor(() => expect(resume.querySelector('mark')).not.toBeNull());
     expect(resume.querySelector('mark')!.textContent).toContain('Designed BGP routing');
-    expect(screen.getByText('Nothing to show in the resume.')).toBeInTheDocument();
+    expect(screen.getByText('Nothing to show in the CV.')).toBeInTheDocument();
   });
 
   it('shows links the candidate gave only when link review is on: consent first, then a button per page', async () => {
@@ -744,12 +770,11 @@ describe('Candidate report', () => {
     open();
     render(<App check={up} />);
     await screen.findByRole('heading', { name: 'Aysel Mammadova' });
-    expect(screen.getByText('1 of 2')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Next' })).toHaveAttribute(
-      'href',
-      `#/candidates/${MID2}`,
-    );
-    expect(screen.getByRole('link', { name: 'Previous' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getAllByText('CV 1 of 2').length).toBeGreaterThan(0);
+    for (const next of screen.getAllByRole('link', { name: 'Next CV ›' }))
+      expect(next).toHaveAttribute('href', `#/cv/${DID2}?l=LIST1`);
+    for (const prev of screen.getAllByRole('link', { name: '‹ Previous CV' }))
+      expect(prev).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: '← Back to Candidates' })).toHaveAttribute(
       'href',
       '#/candidates',
@@ -784,9 +809,9 @@ describe('Candidate report', () => {
 
   it('shows an out-of-date banner that says what changed', async () => {
     open((url) =>
-      url.endsWith(`/candidates/${MID}/report`)
+      url.endsWith(`/documents/${DID}`)
         ? {
-            body: {
+            body: reviewDoc({
               ...report,
               outOfDate: {
                 scoredAgainst: null,
@@ -799,7 +824,7 @@ describe('Candidate report', () => {
                   },
                 ],
               },
-            },
+            }),
           }
         : undefined,
     );
@@ -812,7 +837,7 @@ describe('Candidate report', () => {
 
   it('shows the real name and the resume as written, with no Reveal or Hide buttons', async () => {
     open((url) => {
-      if (url.includes(`/candidates/${MID}/resume`))
+      if (url.includes(`/documents/${DID}/text`))
         return {
           body: {
             text: 'Aysel Mammadova. Network engineer.',
@@ -852,6 +877,7 @@ describe('SenAI Ask bar', () => {
                 rows: [
                   {
                     matchId: MID,
+                    documentId: DID,
                     label: 'Aysel Mammadova',
                     score: 88,
                     band: 'strong',
@@ -885,7 +911,7 @@ describe('SenAI Ask bar', () => {
     });
     expect(await within(panel).findByRole('link', { name: /Aysel Mammadova/ })).toHaveAttribute(
       'href',
-      `#/candidates/${MID}`,
+      `#/cv/${DID}`,
     );
     expect(within(panel).getByRole('button', { name: /Show all \(3 more\)/ })).toBeInTheDocument();
     expect(within(panel).getByText(/As of/)).toBeInTheDocument();
@@ -1264,15 +1290,15 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
   });
 
   it('the report names every control, has a labelled divider with a range, and tabs for phones', async () => {
-    window.location.hash = `/candidates/${MID}`;
+    window.location.hash = `/cv/${DID}`;
     const resume = 'Aysel Mammadova\nDesigned BGP routing for a carrier core.';
     mockFetch(
       base((url) => {
-        if (url.endsWith(`/candidates/${MID}/report`))
+        if (url.endsWith(`/documents/${DID}`))
           return {
-            body: {
+            body: reviewDoc({
               matchId: MID,
-              documentId: 'D1',
+              documentId: DID,
               label: 'Aysel Mammadova',
               name: 'Aysel Mammadova',
               pseudonym: 'Candidate 01',
@@ -1312,19 +1338,11 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
                   ],
                 },
               ],
-            },
+            }),
           };
-        if (url.includes(`/candidates/${MID}/resume`))
+        if (url.endsWith(`/documents/${DID}/text`))
           return {
-            body: {
-              view: 'original',
-              text: resume,
-              truncated: false,
-              pageStarts: [0],
-              blocks: [],
-              hidden: {},
-              notice: null,
-            },
+            body: { text: resume, truncated: false, pageStarts: [0], blocks: [] },
           };
         if (url.includes('/candidates?')) return { body: page([poolRow(1)]) };
         return undefined;
@@ -1332,17 +1350,17 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
     );
     const { container } = render(<App check={up} />);
     await screen.findByRole('heading', { name: 'Aysel Mammadova' });
-    await screen.findByLabelText('Resume', { selector: 'div' });
+    await screen.findByLabelText('CV text', { selector: 'div' });
     expect(unnamed(container)).toEqual([]);
     const sep = screen.getByRole('separator', { name: 'Resize the panes' });
     for (const a of ['aria-valuemin', 'aria-valuemax', 'aria-valuenow'])
       expect(sep).toHaveAttribute(a);
     expect(sep).toHaveAttribute('tabindex', '0');
     // Highlighted text is a real <mark>, and the button that shows it says what it does.
-    await userEvent.click(screen.getByRole('button', { name: 'Show in resume' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show in CV' }));
     await waitFor(() =>
       expect(
-        screen.getByLabelText('Resume', { selector: 'div' }).querySelector('mark'),
+        screen.getByLabelText('CV text', { selector: 'div' }).querySelector('mark'),
       ).not.toBeNull(),
     );
   });
@@ -1433,8 +1451,8 @@ describe('Accessibility of the new screens (WP 5.1)', () => {
     const bar = await screen.findByPlaceholderText(/Sən istə, Senai tapsın/);
     await userEvent.type(bar, 'Huawei core network?{Enter}');
     const panel = await screen.findByRole('complementary', { name: 'SenAI' });
-    expect(await within(panel).findByText('2 resumes mention it')).toBeInTheDocument();
-    expect(within(panel).getByText('Mentioned in the resume, not assessed')).toBeInTheDocument();
+    expect(await within(panel).findByText('2 CVs mention it')).toBeInTheDocument();
+    expect(within(panel).getByText('Mentioned in the CV, not assessed')).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: /Show all \(1 more\)/ })).toBeInTheDocument();
   });
 });
@@ -1451,7 +1469,7 @@ describe('Candidate preview and keys (Oct 2026)', () => {
     );
   const preview = {
     matchId: MID,
-    documentId: 'D1',
+    documentId: DID,
     label: 'Aysel Mammadova',
     name: 'Aysel Mammadova',
     pseudonym: 'Candidate 01',
@@ -1549,7 +1567,7 @@ describe('Candidate preview and keys (Oct 2026)', () => {
       'true',
     );
     await userEvent.click(within(panel).getByRole('button', { name: 'Open the full report' }));
-    expect(window.location.hash).toBe(`#/candidates/${MID}`);
+    expect(window.location.hash).toMatch(new RegExp(`^#/cv/${DID}\\?l=`));
   });
 
   it('moves with J and K, decides with S, closes with Escape, and ignores keys typed in a field', async () => {
@@ -1583,7 +1601,7 @@ describe('Candidate preview and keys (Oct 2026)', () => {
     render(<App check={up} />);
     await screen.findByRole('link', { name: 'Aysel Mammadova' });
     await userEvent.click(screen.getAllByText('Network Engineer', { selector: 'span' })[0]!);
-    expect(window.location.hash).toBe(`#/candidates/${MID}`);
+    expect(window.location.hash).toMatch(new RegExp(`^#/cv/${DID}\\?l=`));
   });
 });
 
@@ -1624,9 +1642,9 @@ describe('Vacancy page with results (Oct 2026)', () => {
     expect(await screen.findByRole('link', { name: 'Aysel Mammadova' })).toBeInTheDocument();
     const setup = document.getElementById('vacancy-setup')!;
     expect(setup).toHaveAttribute('hidden');
-    await userEvent.click(within(summary).getByRole('button', { name: 'Role and resumes' }));
+    await userEvent.click(within(summary).getByRole('button', { name: 'Role and CVs' }));
     expect(setup).not.toHaveAttribute('hidden');
-    expect(within(summary).getByRole('button', { name: 'Hide role and resumes' })).toHaveAttribute(
+    expect(within(summary).getByRole('button', { name: 'Hide role and CVs' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );

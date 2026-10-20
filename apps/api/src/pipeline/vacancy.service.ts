@@ -307,13 +307,27 @@ export class VacancyService {
         ).rows
       : [];
     const rows = await this.pool.rows([vid]);
+    // S2-BE1: every figure is on the CURRENT frozen criteria and each live document is counted once.
     const counts = (
-      await this.db.query<{ documents: number; running: number; stopped: number; failed: number }>(
-        `SELECT (SELECT count(*)::int FROM cv_document d WHERE d.vacancy_id = $1 AND d.erased_at IS NULL) AS documents,
+      await this.db.query<{
+        documents: number;
+        running: number;
+        stopped: number;
+        failed: number;
+        needsLook: number;
+        notAnalyzed: number;
+      }>(
+        `WITH cur AS (
+           SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1)
+         SELECT count(*)::int AS documents,
                 count(*) FILTER (WHERE sc.state IN ('queued','processing') AND sc.cancelled_at IS NULL)::int AS running,
                 count(*) FILTER (WHERE sc.state = 'queued' AND sc.cancelled_at IS NOT NULL)::int AS stopped,
-                count(*) FILTER (WHERE sc.state = 'failed')::int AS failed
-           FROM screening sc JOIN cv_document d ON d.id = sc.document_id
+                count(*) FILTER (WHERE sc.state = 'failed')::int AS failed,
+                count(*) FILTER (WHERE sc.state = 'manual'
+                                    OR (sc.state = 'completed' AND (sc.band = 'needs_review' OR sc.score IS NULL)))::int AS "needsLook",
+                count(*) FILTER (WHERE sc.id IS NULL)::int AS "notAnalyzed"
+           FROM cv_document d
+           LEFT JOIN screening sc ON sc.document_id = d.id AND sc.requirement_set_id = (SELECT id FROM cur)
           WHERE d.vacancy_id = $1 AND d.erased_at IS NULL`,
         [vid],
       )
@@ -355,7 +369,8 @@ export class VacancyService {
         running: counts.running,
         stopped: counts.stopped,
         failed: counts.failed,
-        needsLook: Math.max(0, counts.documents - rows.length - counts.running - counts.stopped),
+        needsLook: counts.needsLook,
+        notAnalyzed: counts.notAnalyzed,
       },
     };
   }

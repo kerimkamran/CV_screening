@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
-import { MARK_LABEL, VACANCY_STATUS_LABEL, type Mark, type VacancyStatus } from '@cv/shared';
+import {
+  MARK_LABEL,
+  VACANCY_STATUS_LABEL,
+  type CvStatus,
+  type Mark,
+  type VacancyStatus,
+} from '@cv/shared';
 import { tr } from './i18n';
 
 /** Shapes the Vacancy pool, the Candidate pool and the report use (Development Plan, Phases 1 to 3). */
@@ -130,8 +136,26 @@ export interface PoolRow {
   analyzedAt: string;
   updatedAt: string;
 }
+/** A CV with no result to rank yet (Stage 2): listed after the ranked ones when a status is asked for. */
+export interface StatusRow extends Omit<
+  PoolRow,
+  'matchId' | 'score' | 'band' | 'analyzedAt' | 'scoredAgainst'
+> {
+  matchId: null;
+  score: null;
+  band: null;
+  analyzedAt: null;
+  scoredAgainst: null;
+  status: CvStatus;
+  screeningId: string | null;
+  filename: string;
+  uploadedAt: string;
+}
+export type PoolItem = PoolRow | StatusRow;
+export const isRanked = (r: PoolItem): r is PoolRow => r.matchId !== null;
+
 export interface PoolPage {
-  rows: PoolRow[];
+  rows: PoolItem[];
   total: number;
   counts: { byMark: Record<Mark, number>; outOfDate: number; strong: number };
   nextCursor: string | null;
@@ -207,6 +231,37 @@ export interface CandidateReportData {
   };
   history: { mark: Mark; label: string; note: string | null; at: string; by: string }[];
   requirements: ReportRequirement[];
+}
+/** One CV in any state (Stage 2, S2-BE5): what the review screen is built from. */
+export interface CvReviewData {
+  documentId: string;
+  vacancy: { id: string; title: string; status: VacancyStatus; archived: boolean };
+  filename: string;
+  kind: 'pdf' | 'docx' | 'txt';
+  sizeBytes: number;
+  uploadedAt: string;
+  name: string | null;
+  pseudonym: string;
+  pseudonymNo: number;
+  status: CvStatus;
+  statusDetail: { error?: string; reason?: string; retryable: boolean };
+  screeningId: string | null;
+  matchId: string | null;
+  original: {
+    available: boolean;
+    view: 'pdf' | 'pending' | 'failed' | 'none' | 'unavailable';
+    /** Pages from the file itself, or made from it (Word). */
+    source?: 'file' | 'rendition';
+  };
+  text: { available: boolean };
+  decision: {
+    mark: Mark;
+    note: string | null;
+    version: number;
+    decidedAt: string | null;
+    decidedBy: string | null;
+  };
+  analysis: CandidateReportData | null;
 }
 export interface ResumeData {
   text: string;

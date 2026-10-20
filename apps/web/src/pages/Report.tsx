@@ -4,6 +4,7 @@ import {
   BAND_LABEL,
   experienceLine,
   isPending,
+  isNotAnalyzed,
   KIND_NAME,
   matchBand,
   mustHaveTally,
@@ -143,7 +144,7 @@ export function Report({
   }
   if (!data || !criteria) return <p className="text-sm text-ink-3">{t('Preparing the report…')}</p>;
   if (counts.total === 0) {
-    return <Notice kind="info">{t('No resumes yet, so there is nothing to report.')}</Notice>;
+    return <Notice kind="info">{t('No CVs yet, so there is nothing to report.')}</Notice>;
   }
 
   const reqs = criteria.current?.requirements ?? [];
@@ -167,7 +168,9 @@ export function Report({
   const frozen = criteria.versions.filter((v) => v.frozenAt).sort((a, b) => a.version - b.version);
   const changes = frozen.slice(1);
   const bandCount = (b: MatchBand) =>
-    all.filter((r) => matchBand(r) === b && !isPending(r) && r.state !== 'stopped').length;
+    all.filter(
+      (r) => matchBand(r) === b && !isPending(r) && !isNotAnalyzed(r) && r.state !== 'stopped',
+    ).length;
   const aiLine = (() => {
     const d = Object.values(details).find((x): x is Detail => typeof x === 'object' && !!x.aiModel);
     return d
@@ -243,7 +246,7 @@ export function Report({
       {!data.aiActive && counts.read < counts.total && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
           )}
         </Notice>
       )}

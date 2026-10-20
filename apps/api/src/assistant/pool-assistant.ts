@@ -182,7 +182,7 @@ const D = {
     ru: 'Кандидатов для «{title}»: {n} — Сильное {strong}, Хорошее {good}, Частичное {partial}, Слабое {limited}.',
   },
   count: {
-    en: '{title} has {n} analyzed resumes ({strong} Strong, {shortlist} on the Shortlist).',
+    en: '{title} has {n} analyzed CVs ({strong} Strong, {shortlist} on the Shortlist).',
     az: '{title} üçün {n} təhlil olunmuş CV var ({strong} Güclü, {shortlist} qısa siyahıda).',
     ru: 'Для «{title}» проанализировано резюме: {n} (Сильное {strong}, в коротком списке {shortlist}).',
   },
@@ -207,22 +207,22 @@ const D = {
     ru: '{n} результатов получены по прежним требованиям. Проанализируйте заново, чтобы обновить.',
   },
   running: {
-    en: '{n} resumes are being analyzed now, so this list will change.',
+    en: '{n} CVs are being analyzed now, so this list will change.',
     az: '{n} CV hazırda təhlil olunur, ona görə bu siyahı dəyişəcək.',
     ru: 'Сейчас анализируется резюме: {n}, поэтому список изменится.',
   },
   unanalyzed: {
-    en: '{n} resumes have no result yet and need a look.',
+    en: '{n} CVs have no result yet and need a look.',
     az: '{n} CV üçün hələ nəticə yoxdur və baxış tələb edir.',
     ru: 'Для {n} резюме пока нет результата, нужен ручной просмотр.',
   },
   noResumes: {
-    en: '{title} has no resumes yet. Add some on the vacancy page.',
+    en: '{title} has no CVs yet. Add some on the vacancy page.',
     az: '{title} üçün hələ CV yoxdur. Vakansiya səhifəsində əlavə edin.',
     ru: 'Для «{title}» пока нет резюме. Добавьте их на странице вакансии.',
   },
   noneAnalyzed: {
-    en: 'No resume for {title} has a result yet.',
+    en: 'No CV for {title} has a result yet.',
     az: '{title} üçün heç bir CV-nin hələ nəticəsi yoxdur.',
     ru: 'Ни у одного резюме для «{title}» пока нет результата.',
   },
@@ -267,22 +267,22 @@ const D = {
     ru: 'Я не могу менять правила работы. Могу найти лучшие совпадения для вакансии по сохранённым результатам.',
   },
   skillFound: {
-    en: 'Candidates whose resume mentions {skills}: {n} ({scope}).',
+    en: 'Candidates whose CV mentions {skills}: {n} ({scope}).',
     az: 'CV-sində {skills} qeyd olunan namizədlər: {n} ({scope}).',
     ru: 'Кандидаты, у которых в резюме упомянуто {skills}: {n} ({scope}).',
   },
   skillNone: {
-    en: 'No resume mentions {skills} ({scope}).',
+    en: 'No CV mentions {skills} ({scope}).',
     az: 'Heç bir CV-də {skills} qeyd olunmayıb ({scope}).',
     ru: 'Ни в одном резюме не упомянуто {skills} ({scope}).',
   },
   skillNote: {
-    en: 'This shows what the resumes say, not how well the person knows it. Open the resume to check.',
+    en: 'This shows what the CVs say, not how well the person knows it. Open the CV to check.',
     az: 'Bu, CV-lərdə yazılanı göstərir, biliyin səviyyəsini yox. Yoxlamaq üçün CV-yə baxın.',
     ru: 'Это то, что написано в резюме, а не уровень владения. Откройте резюме, чтобы проверить.',
   },
   skillUnsearched: {
-    en: '{n} resumes have no analysis yet, so they were not searched.',
+    en: '{n} CVs have no analysis yet, so they were not searched.',
     az: '{n} CV hələ təhlil olunmayıb, ona görə axtarışa daxil edilməyib.',
     ru: '{n} резюме ещё не проанализированы, поэтому поиск по ним не выполнялся.',
   },
@@ -327,7 +327,7 @@ const D = {
     ru: 'Не уверен, что вы хотите увидеть. Это что-то из этого?',
   },
   help: {
-    en: 'I can find the best matches for a vacancy, search the resumes for a skill, count candidates, or list the Shortlist. Try: Who knows Excel?',
+    en: 'I can find the best matches for a vacancy, search the CVs for a skill, count candidates, or list the Shortlist. Try: Who knows Excel?',
     az: 'Vakansiya üçün ən yaxşı uyğunları tapa, CV-lərdə bacarıq axtara, namizədləri say və qısa siyahını göstərə bilərəm. Məsələn: Excel bilən namizədləri çıxart.',
     ru: 'Я могу найти лучшие совпадения для вакансии, найти в резюме навык, посчитать кандидатов или показать короткий список. Например: Найди кандидатов, знающих Excel.',
   },

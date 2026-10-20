@@ -18,12 +18,16 @@ import {
 import {
   MARKS,
   MARK_LABEL,
+  CV_STATUSES,
+  CV_STATUS_LABEL,
   MARK_ORDER,
   POOL_BANDS,
   BAND_LABEL,
   azCollator,
+  foldText,
   markToStored,
   newId,
+  type CvStatus,
   type Mark,
 } from '@cv/shared';
 import ExcelJS from 'exceljs';
@@ -36,11 +40,12 @@ import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { CandidateViewService } from './candidate-view.service';
-import { PoolService, type PoolRow } from './pool.service';
+import { PoolService, type PoolRow, type StatusRow } from './pool.service';
 import { mirrorFor } from './mirror';
 
 const NOT_FOUND = 'We could not find this candidate.';
 const CURSOR_MINUTES = 15;
+const isRanked = (r: PoolRow | StatusRow): r is PoolRow => r.matchId !== null;
 const SORTS = ['match', 'updated', 'candidate', 'vacancy', 'decision'] as const;
 
 const list = (s: string | undefined) =>
@@ -53,6 +58,10 @@ const list = (s: string | undefined) =>
 
 const query = z.object({
   vacancy: z.string().optional(),
+  /** "Latest upload": only the CVs linked from one upload batch (Stage 2, S2-BE2). */
+  batch: ulidSchema.optional(),
+  /** `all`, or a list of CV statuses: CVs with no result to rank are listed after the ranked ones (S2-BE5). */
+  status: z.string().optional(),
   band: z.string().optional(),
   decision: z.string().optional(),
   outOfDate: z.enum(['true', 'false']).optional(),
@@ -115,6 +124,8 @@ export class CandidatePoolController {
     // is not continued, because rows may have moved (spec 6.8).
     const sig = JSON.stringify([
       q.vacancy,
+      q.batch,
+      q.status,
       q.band,
       q.decision,
       q.outOfDate,
@@ -138,14 +149,19 @@ export class CandidatePoolController {
     const next =
       offset + q.limit < filtered.length ? encode({ offset: offset + q.limit, at, sig }) : null;
     const byMark: Record<Mark, number> = { new: 0, shortlist: 0, maybe: 0, not_now: 0 };
-    for (const r of filtered) byMark[r.decision]++;
+    const ranked = filtered.filter(isRanked);
+    for (const r of ranked) byMark[r.decision]++;
     return {
-      rows: page.map(({ skills: _s, ...r }) => (void _s, r)),
+      rows: page.map((r) => {
+        if (!isRanked(r)) return r;
+        const { skills: _s, ...rest } = r;
+        return (void _s, rest);
+      }),
       total: filtered.length,
       counts: {
         byMark,
-        outOfDate: filtered.filter((r) => r.outOfDate).length,
-        strong: filtered.filter((r) => r.band === 'strong').length,
+        outOfDate: ranked.filter((r) => r.outOfDate).length,
+        strong: ranked.filter((r) => r.band === 'strong').length,
       },
       nextCursor: next,
       asOf: new Date().toISOString(),
@@ -153,15 +169,33 @@ export class CandidatePoolController {
   }
 
   /** The filtered, ordered rows for a query: shared by the list, the Excel export and the summary. */
-  private async select(p: Principal, q: z.infer<typeof query>): Promise<PoolRow[]> {
-    const ids = await this.scope.visibleIds(p, q.archived === 'true');
+  private async select(
+    p: Principal,
+    q: z.infer<typeof query>,
+  ): Promise<Array<PoolRow | StatusRow>> {
+    let ids = await this.scope.visibleIds(p, q.archived === 'true');
+    let inBatch: Set<string> | null = null;
+    if (q.batch) {
+      const b = await this.db.query<{ vacancyId: string; documentId: string | null }>(
+        `SELECT b.vacancy_id AS "vacancyId", i.document_id AS "documentId"
+           FROM upload_batch b LEFT JOIN upload_item i ON i.batch_id = b.id
+          WHERE b.id = $1`,
+        [q.batch],
+      );
+      const vid = b.rows[0]?.vacancyId;
+      // A batch of a vacancy this person cannot see is "not found", never an empty list.
+      if (!vid || !ids.includes(vid)) throw new NotFoundException();
+      ids = [vid];
+      inBatch = new Set(b.rows.flatMap((r) => (r.documentId ? [r.documentId] : [])));
+    }
     const want = list(q.vacancy);
-    const rows = await this.pool.rows(want.length ? ids.filter((i) => want.includes(i)) : ids, {
-      withSkills: !!q.q,
-    });
+    const scopeIds = want.length ? ids.filter((i) => want.includes(i)) : ids;
+    const rows = (await this.pool.rows(scopeIds, { withSkills: !!q.q })).filter(
+      (r) => !inBatch || inBatch.has(r.documentId),
+    );
     const bands = list(q.band).filter((b) => (POOL_BANDS as readonly string[]).includes(b));
     const marks = list(q.decision).filter((m) => (MARKS as readonly string[]).includes(m));
-    const filtered = rows.filter(
+    const filtered: Array<PoolRow | StatusRow> = rows.filter(
       (r) =>
         (q.archived === 'true' || !r.vacancyArchived) &&
         (!bands.length || bands.includes(r.band)) &&
@@ -186,9 +220,60 @@ export class CandidatePoolController {
           return PoolService.byMatch(b, a);
       }
     };
-    filtered.sort((a, b) => dir * cmp(a, b) || a.documentId.localeCompare(b.documentId));
+    (filtered as PoolRow[]).sort(
+      (a, b) => dir * cmp(a, b) || a.documentId.localeCompare(b.documentId),
+    );
 
+    // CVs with no result to rank come after the ranked ones, in upload order (S2-BE5).
+    if (q.status && !bands.length && q.outOfDate === undefined) {
+      const wanted =
+        q.status === 'all'
+          ? null
+          : new Set(
+              list(q.status).filter((s): s is CvStatus =>
+                (CV_STATUSES as readonly string[]).includes(s),
+              ),
+            );
+      const scored = new Set(rows.map((r) => r.documentId));
+      const words = q.q ? foldText(q.q).split(' ').filter(Boolean) : [];
+      const extra = (await this.pool.statusRows(scopeIds, scored)).filter(
+        (r) =>
+          (!inBatch || inBatch.has(r.documentId)) &&
+          (q.archived === 'true' || !r.vacancyArchived) &&
+          (!wanted || wanted.has(r.status)) &&
+          (!marks.length || marks.includes(r.decision)) &&
+          words.every((w) =>
+            foldText([r.pseudonym, r.name ?? '', r.vacancyTitle, r.filename].join(' ')).includes(w),
+          ),
+      );
+      extra.sort(
+        (a, b) =>
+          a.uploadedAt.localeCompare(b.uploadedAt) || a.documentId.localeCompare(b.documentId),
+      );
+      // A named status shows only those CVs; the ranked ones stay when "analyzed" is among them.
+      const keepRanked = !wanted || wanted.has('analyzed');
+      return [...(keepRanked ? filtered : []), ...extra];
+    }
     return filtered;
+  }
+
+  /**
+   * The whole ordered list for a query, as ids only (Stage 2, S2-BE5): what Previous and Next walk
+   * through, and what "Select all" selects. Same query and same order as the list. Capped at 5,000.
+   */
+  @Get('ids')
+  async ids(@Query() raw: unknown, @CurrentPrincipal() p: Principal) {
+    const q = parse(query, raw);
+    const filtered = await this.select(p, q);
+    const cap = 5000;
+    return {
+      items: filtered
+        .slice(0, cap)
+        .map((r) => [r.documentId, r.matchId] as [string, string | null]),
+      total: filtered.length,
+      truncated: filtered.length > cap,
+      asOf: new Date().toISOString(),
+    };
   }
 
   /** The filtered pool as a spreadsheet: what is on the screen, not more. */
@@ -199,7 +284,8 @@ export class CandidatePoolController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    const q = parse(query, raw);
+    // Every CV is in the spreadsheet, with its status (Stage 2, decision 25).
+    const q = { ...parse(query, raw), status: 'all' };
     const rows = await this.select(p, q);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Candidates');
@@ -214,12 +300,24 @@ export class CandidatePoolController {
       { header: 'Marked by', key: 'by', width: 20 },
       { header: 'Analyzed', key: 'a', width: 14 },
       { header: 'Out of date', key: 'o', width: 12 },
+      { header: 'Status', key: 'st', width: 26 },
     ];
     ws.getRow(1).font = { bold: true };
     ws.views = [{ state: 'frozen', ySplit: 1 }];
     // A cell that starts with = + - @ would be run as a formula by a spreadsheet; never let it.
     const safe = (v: string | null) => (v && /^[=+\-@\t\r]/.test(v) ? `'${v}` : (v ?? ''));
     for (const r of rows) {
+      if (!isRanked(r)) {
+        ws.addRow({
+          c: safe(r.label),
+          v: safe(r.vacancyTitle),
+          d: MARK_LABEL[r.decision],
+          n: safe(r.decisionNote),
+          by: safe(r.decidedBy),
+          st: CV_STATUS_LABEL[r.status],
+        });
+        continue;
+      }
       ws.addRow({
         c: safe(r.label),
         v: safe(r.vacancyTitle),
@@ -231,6 +329,7 @@ export class CandidatePoolController {
         by: safe(r.decidedBy),
         a: r.analyzedAt.slice(0, 10),
         o: r.outOfDate ? 'Yes' : '',
+        st: CV_STATUS_LABEL.analyzed,
       });
     }
     await this.db.withTx((tx) =>
@@ -391,8 +490,9 @@ export class CandidatePoolController {
     if (hit.erased) throw new ConflictException('This candidate was erased.');
     if (hit.archived)
       throw new ConflictException('This vacancy is archived. Restore it to change marks.');
-    if (hit.state !== 'completed')
-      throw new ConflictException('This resume is still being analyzed.');
+    // A CV with no readable text can be marked after the recruiter has read the original (decision 26).
+    if (hit.state !== 'completed' && hit.state !== 'manual')
+      throw new ConflictException('This CV is still being analyzed.');
 
     const cur = (
       await tx.query<{ outcome: string; reason: string | null; by: string; at: Date; n: number }>(

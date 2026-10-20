@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import multipart from '@fastify/multipart';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { CORRELATION_HEADER, LOG_REDACT_PATHS, requestId } from './common/correlation';
+import { CORRELATION_HEADER, LOG_REDACT_PATHS, requestId, requestLog } from './common/correlation';
 import { loadEnv } from './config/env';
 import { AppModule } from './app.module';
 
@@ -14,7 +14,7 @@ export interface AdapterOptions {
 export function createAdapter(logLevel: string, opts: AdapterOptions = {}): FastifyAdapter {
   const adapter = new FastifyAdapter({
     // Fastify's built-in pino logger: structured JSON, one line per request, correlation ID attached.
-    logger: { level: logLevel, redact: LOG_REDACT_PATHS },
+    logger: { level: logLevel, redact: LOG_REDACT_PATHS, serializers: { req: requestLog } },
     genReqId: requestId,
     requestIdHeader: false,
     // True only when running behind a known reverse proxy (Render), so req.ip is the client's.

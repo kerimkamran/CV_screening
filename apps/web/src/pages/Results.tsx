@@ -1,3 +1,4 @@
+import { reviewHref } from '../review';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
@@ -5,6 +6,7 @@ import {
   BAND_LABEL,
   bandMoves,
   isPending,
+  isNotAnalyzed,
   layoutStars,
   linkStars,
   matchBand,
@@ -16,7 +18,6 @@ import {
   type MatchBand,
 } from '../results-logic';
 import { btnSecondary, errMsg, Notice } from '../ui';
-import { useIntake } from '../intake';
 import { shortlistCsv, shortlistEntries, shortlistText } from '../shortlist';
 import { CandidateCard, type Detail } from './CandidateCard';
 import { registerAssistantTarget, useAssistantConfig, setAssistantOpen } from '../assistant';
@@ -57,8 +58,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [details, setDetails] = useState<Record<string, Detail | 'loading' | 'error'>>({});
   const [proof, setProof] = useState<{ doc: string; req: string } | null>(null);
 
-  const intake = useIntake(vacancyId);
-  const sending = intake !== null && intake.sent < intake.total;
   const [skipped, setSkipped] = useState<{ filename: string; reason: string }[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
   const [adj, setAdj] = useState<Adjustments | null>(null);
@@ -84,7 +83,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   }, [vacancyId]);
   useEffect(() => void load(), [load]);
   // Files that were not taken in are listed, never dropped silently (spec 6.1.4).
-  const sentCount = intake?.sent ?? 0;
   useEffect(() => {
     api
       .get<{ skipped: { filename: string; reason: string }[] }>(`/vacancies/${vacancyId}/skipped`)
@@ -92,13 +90,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         (r) => setSkipped(Array.isArray(r?.skipped) ? r.skipped : []),
         () => undefined,
       );
-  }, [vacancyId, sentCount, data?.counts.total]);
-  // While files are still going up, keep looking for the ones already read.
-  useEffect(() => {
-    if (!sending) return;
-    const t = setInterval(() => void load(), 4000);
-    return () => clearInterval(t);
-  }, [sending, load]);
+  }, [vacancyId, data?.counts.total]);
   const pending = data?.counts.queued ?? 0;
   useEffect(() => {
     if (!pending) return;
@@ -117,7 +109,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     ordered.filter((r) => b.includes(bandOf.get(r.documentId)!));
   const ranked = inBand('strong', 'good', 'partial');
   const limited = inBand('limited');
-  const human = inBand('human').filter((r) => !isPending(r) && r.state !== 'stopped');
+  const human = inBand('human').filter(
+    (r) => !isPending(r) && !isNotAnalyzed(r) && r.state !== 'stopped',
+  );
   const scored = [...ranked, ...limited];
   const stoppedCount = data?.counts.stopped ?? 0;
   const read = (data?.counts.total ?? 0) - pending - stoppedCount;
@@ -284,9 +278,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   if (data.counts.total === 0) {
     return (
       <Notice kind="info">
-        {t(
-          'No resumes yet. Add resumes on the Resumes card above, then choose “Find the best fit”.',
-        )}
+        {t('No CVs yet. Add CVs on the CVs card above, then choose “Find the best fit”.')}
       </Notice>
     );
   }
@@ -297,7 +289,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {!data.aiActive && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
           )}
         </Notice>
       )}
@@ -320,8 +312,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         )}
         <p className="text-sm text-ink-3" aria-live="polite">
           {data.counts.total === 1
-            ? t('{n} resume in this scan', { n: data.counts.total })
-            : t('{n} resumes in this scan', { n: data.counts.total })}
+            ? t('{n} CV in this scan', { n: data.counts.total })
+            : t('{n} CVs in this scan', { n: data.counts.total })}
           {data.counts.failed > 0 && ` · ${t('{n} failed (see Table)', { n: data.counts.failed })}`}
         </p>
       </div>
@@ -350,21 +342,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
         </Notice>
       )}
 
-      {sending && (
-        <Notice kind="info">
-          <span role="status">
-            {t(
-              'Sending {sent} of {total} files. You can start looking now: the rest appear here as they are read.',
-              { sent: intake!.sent, total: intake!.total },
-            )}
-          </span>
-        </Notice>
-      )}
-      {intake?.error && (
-        <Notice kind="error">
-          {t('Some files could not be sent.')} {intake.error}
-        </Notice>
-      )}
       {pending > 0 && (
         <div role="status" aria-live="polite" className="space-y-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -386,7 +363,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             className="h-2 w-full"
             max={data.counts.total}
             value={read}
-            aria-label={t('Resumes read')}
+            aria-label={t('CVs read')}
           />
         </div>
       )}
@@ -723,14 +700,9 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                         : t('no readable text')}
                   </span>
                   <span className="flex gap-3">
-                    {r.screeningId && (
-                      <a
-                        className="text-link hover:underline"
-                        href={`#/screenings/${r.screeningId}`}
-                      >
-                        {t('Open')}
-                      </a>
-                    )}
+                    <a className="text-link hover:underline" href={reviewHref(r.documentId)}>
+                      {t('Open')}
+                    </a>
                     {r.state === 'failed' && (
                       <button className="text-link hover:underline" onClick={onTable}>
                         {t('Retry on the Table tab')}

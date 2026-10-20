@@ -104,7 +104,7 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
       const res = r.json().results as { status: string; message?: string }[];
       expect(res.filter((x) => x.status === 'queued')).toHaveLength(2);
       expect(res.filter((x) => x.status === 'skipped')).toEqual([
-        expect.objectContaining({ message: 'A run holds at most 2 resumes' }),
+        expect.objectContaining({ message: 'This vacancy holds at most 2 CVs' }),
       ]);
       // Uploaded again later and taken in: it is no longer listed as skipped.
       const skippedNow = async () =>

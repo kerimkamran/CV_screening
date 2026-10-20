@@ -49,3 +49,13 @@ The link is built from the address you are using, so open the admin pages on the
 - **Logs**: structured JSON; CV text is never logged. Each response carries `x-correlation-id`.
 - **Rotate a key**: Admin → AI models → the company → Key and settings → Replace API key → Save. **Remove company** deletes its key and models; if one of them was active, no model is active until you choose another.
 - **Disable a user**: Admin → Users → Disable (their session stops working on the next request).
+
+## Stage 2 release notes for the operator
+
+Deploy `stage2` only when the owner decides to (the branch is not merged into `main`).
+
+- **Migrations 0035 to 0039 run on start**: upload batches (0036), worker lease (0037), Word pages (0038, which marks every live Word CV as waiting so its pages are made after the deploy) and download tickets (0039). They are additive; `npm run db:rollback` undoes them one by one.
+- **The image now carries LibreOffice Writer** (headless, no GUI) and metric-compatible fonts, so Word CVs are shown as their own pages. It makes the image larger (a few hundred MB; not measured here, as no Docker build ran in this workspace) and the first build slower. Check the start log for `Word pages: LibreOffice ...` and `Memory limit: ... MB`. If the log says `LibreOffice ... was not found`, Word CVs are shown as text only; nothing else is affected. The converter runs one file at a time, never while uploads are being read and never above 60 % of the memory limit; set `RENDITION_ENABLED=false` to turn it off entirely.
+- **New setting** `DOWNLOAD_MAX_CONCURRENT` (default 2): ZIP downloads streamed at once; a further one waits its turn.
+- **Download links** look like `/downloads/<token>`: single use, valid for two minutes, and the token is replaced by `[token]` in the request log.
+- **The OPS0 spike is still open**: measure LibreOffice on the real Render plan (memory peak and time for the hostile and the large fixtures) before UAT; if it is not safe there, the owner decides (decision #8).

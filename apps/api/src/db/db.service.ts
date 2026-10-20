@@ -38,6 +38,25 @@ export class DbService implements Queryable, OnModuleDestroy {
     }
   }
 
+  /**
+   * Runs `fn` on one read-only, repeatable-read snapshot: every read sees the database as it was at
+   * the first one, so a long read (a ZIP of CVs) is not changed by writes made meanwhile.
+   */
+  async withSnapshot<T>(fn: (q: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const out = await fn(client);
+      await client.query('COMMIT');
+      return out;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Readiness probe: resolves true only if a trivial query round-trips within `timeoutMs`. */
   async ping(timeoutMs: number): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;

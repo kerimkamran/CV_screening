@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/manrope';
+@import './motion.css';
 
 /*
  * Design tokens (spec section 4), redesigned October 2026 around the Azerconnect Group navy
@@ -47,6 +48,12 @@
   --c-err: #fadde6;
   --c-err-ink: #8a1f45;
   --c-err-line: #e79ab2;
+  /* coffeebay waiting scene (Stage 2, S2-FE11): five tokens, nothing else is new */
+  --c-cafe-wall: #efe6d2;
+  --c-cafe-wood: #8a5a33;
+  --c-cafe-board: #1d3a34;
+  --c-cafe-chalk: #f6f1e4;
+  --c-cafe-light: #f5c461;
   color-scheme: light;
 }
 
@@ -93,6 +100,7 @@
   --c-neutral: #ebe3d0;
   --c-warn-text: #7f4d00;
   --c-ok-text: #0b5a33;
+  --c-cafe-wall: #eadcba;
   color-scheme: light;
 }
 
@@ -134,6 +142,9 @@
   --c-err: #4d1b30;
   --c-err-ink: #f8b6cb;
   --c-err-line: #7d2f4c;
+  --c-cafe-wall: #16314f;
+  --c-cafe-wood: #7a4f2c;
+  --c-cafe-board: #10231f;
   color-scheme: dark;
 }
 
@@ -175,6 +186,9 @@
     --c-err: #4d1b30;
     --c-err-ink: #f8b6cb;
     --c-err-line: #7d2f4c;
+    --c-cafe-wall: #16314f;
+    --c-cafe-wood: #7a4f2c;
+    --c-cafe-board: #10231f;
     color-scheme: dark;
   }
 }
@@ -268,6 +282,32 @@
   .sky-twinkle {
     animation: none;
     opacity: 0.7;
+  }
+}
+
+/* Waiting screen: stars light and constellation lines draw as CVs finish (transform and opacity only). */
+.sky-star {
+  opacity: 0.45;
+  transform: scale(0.6);
+  transition:
+    opacity 600ms cubic-bezier(0.2, 0, 0, 1),
+    transform 600ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sky-star-on {
+  opacity: 1;
+  transform: scale(1);
+}
+.sky-line {
+  opacity: 0;
+  transition: opacity 800ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sky-line-on {
+  opacity: 0.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-star,
+  .sky-line {
+    transition: none;
   }
 }
 

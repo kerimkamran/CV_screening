@@ -10,6 +10,11 @@ export default defineConfig({
     // The browser talks only to our BFF (AISEC-01). There is no provider endpoint or key here.
     proxy: { '/api': { target: 'http://localhost:3000', rewrite: (p) => p.replace(/^\/api/, '') } },
   },
-  build: { sourcemap: false },
+  build: {
+    sourcemap: false,
+    // Nothing is inlined as a data: URL: the page policy allows fonts and scripts from 'self' only,
+    // so an inlined font (a small Manrope subset) would be refused in production (found by e2e).
+    assetsInlineLimit: 0,
+  },
   test: { environment: 'jsdom', globals: true, setupFiles: ['./src/test-setup.ts'] },
 });

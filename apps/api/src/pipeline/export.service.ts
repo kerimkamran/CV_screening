@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import type { Principal } from '../auth/principal';
-import { pseudonyms } from '@cv/shared';
+import { pseudonyms, type CvStatus } from '@cv/shared';
 import type { Breakdown } from './score';
 
 export interface CandidateRow {
@@ -12,6 +12,8 @@ export interface CandidateRow {
   parseStatus: string;
   candidateName: string | null;
   state: string;
+  /** S2-BE1: the shared status (see packages/shared/src/status.ts). */
+  status?: CvStatus;
   band: string | null;
   erased: boolean;
   score: { value: number; breakdown: Breakdown } | null;

@@ -4,7 +4,7 @@ export const AZ_REPORT: Record<string, string> = {
   'The report could not be prepared. {error}': 'Hesabatı hazırlamaq mümkün olmadı. {error}',
   'Try again': 'Yenidən cəhd edin',
   'Preparing the report…': 'Hesabat hazırlanır…',
-  'No resumes yet, so there is nothing to report.':
+  'No CVs yet, so there is nothing to report.':
     'Hələ CV yoxdur, ona görə hesabat üçün heç nə yoxdur.',
   'Read by {provider} ({model}).': 'Oxuyan: {provider} ({model}).',
   'the AI provider': 'süni intellekt provayderi',
@@ -16,7 +16,7 @@ export const AZ_REPORT: Record<string, string> = {
     '{total} CV-dən {read} oxunub, bu hesabat yenilənəcək.',
   'Stopped at {read} of {total}. Files not read are listed under Data quality.':
     '{total} CV-dən {read} oxunduqdan sonra dayandırıldı. Oxunmayan fayllar “Məlumatın keyfiyyəti” bölməsində göstərilir.',
-  'No AI provider is active, so resumes wait in the queue. An administrator can set one up under Admin → AI models.':
+  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.':
     'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu Admin → Süni intellekt modelləri bölməsində quraşdıra bilər.',
   'A shared link is offered when the scan is done. {read} of {total} read so far.':
     'Skan bitəndə paylaşım linki təklif olunur. İndiyədək {total} CV-dən {read} oxunub.',
@@ -147,7 +147,7 @@ export const AZ_REPORT: Record<string, string> = {
   'Real names will be visible to the people you choose.':
     'Həqiqi adlar seçdiyiniz şəxslərə görünəcək.',
   'Include quotes from the CVs.': 'CV-lərdən sitatları daxil et.',
-  'Quotes are text from resumes and count as personal data.':
+  'Quotes are text from CVs and count as personal data.':
     'Sitatlar CV-lərdən götürülmüş mətndir və şəxsi məlumat sayılır.',
   'Preparing…': 'Hazırlanır…',
   'Create link': 'Link yarat',
@@ -179,7 +179,7 @@ export const AZ_REPORT: Record<string, string> = {
   Good: 'Yaxşı',
   Partial: 'Qismən',
   Limited: 'Məhdud',
-  'Needs a human look': 'İnsan baxışı lazımdır',
+  'Needs a human look': 'İnsan baxışı tələb edir',
   Found: 'Tapıldı',
   'Partly found': 'Qismən tapıldı',
   'Not found': 'Tapılmadı',

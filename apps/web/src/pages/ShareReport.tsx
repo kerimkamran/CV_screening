@@ -240,7 +240,7 @@ export function ShareReport({
                   <span>
                     {t('Include quotes from the CVs.')}
                     <span className="block text-ink-3">
-                      {t('Quotes are text from resumes and count as personal data.')}
+                      {t('Quotes are text from CVs and count as personal data.')}
                     </span>
                   </span>
                 </label>

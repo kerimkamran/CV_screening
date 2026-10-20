@@ -7,9 +7,13 @@ import { CandidateViewService } from './candidate-view.service';
 import { CandidatesService } from './candidates.service';
 import { CriteriaController } from './criteria.controller';
 import { CriteriaSets } from './criteria-sets';
+import { DocumentReviewController } from './document-review.controller';
 import { DocumentsController } from './documents.controller';
+import { DownloadsController } from './downloads.controller';
 import { ExportService } from './export.service';
+import { IntakeService } from './intake.service';
 import { ProcessorService } from './processor.service';
+import { RenditionService } from './rendition.service';
 import { ReportService } from './report.service';
 import { RetentionController } from './retention.controller';
 import { RetentionService } from './retention.service';
@@ -19,6 +23,7 @@ import { LINK_READER } from './link-reader.token';
 import { LinkReader } from './link-reader';
 import { PoolService } from './pool.service';
 import { VacancyPoolController } from './vacancy-pool.controller';
+import { UploadBatchesController } from './upload-batches.controller';
 import { VacancyService } from './vacancy.service';
 
 @Module({
@@ -28,6 +33,9 @@ import { VacancyService } from './vacancy.service';
     CandidatePoolController,
     CriteriaController,
     DocumentsController,
+    DocumentReviewController,
+    DownloadsController,
+    UploadBatchesController,
     ScreeningsController,
     AdjustmentsController,
     ReportsController,
@@ -41,6 +49,8 @@ import { VacancyService } from './vacancy.service';
     CriteriaSets,
     ProcessorService,
     ExportService,
+    IntakeService,
+    RenditionService,
     AdjustmentService,
     CandidatesService,
     ReportService,
@@ -51,6 +61,7 @@ import { VacancyService } from './vacancy.service';
     PoolService,
     CriteriaSets,
     ProcessorService,
+    IntakeService,
     AdjustmentService,
     CandidatesService,
     ReportService,

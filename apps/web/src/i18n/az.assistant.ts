@@ -17,7 +17,7 @@ export const AZ_ASSISTANT: Record<string, string> = {
   Good: 'Yaxşı',
   Partial: 'Qismən',
   Limited: 'Məhdud',
-  'Needs a human look': 'İnsan baxışı lazımdır',
+  'Needs a human look': 'İnsan baxışı tələb edir',
 
   // Progress, stop, errors
   '{name} is reading the record…': '{name} qeydi oxuyur…',

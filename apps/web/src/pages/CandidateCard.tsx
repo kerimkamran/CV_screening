@@ -1,3 +1,4 @@
+import { reviewHref } from '../review';
 import { useState } from 'react';
 import { useT } from '../i18n';
 import { api, type CandidateRow } from '../api';
@@ -46,7 +47,7 @@ export function CandidateCard(props: {
   return (
     <article
       id={`card-${r.documentId}`}
-      className={`rounded-2xl border bg-card p-3 ${selected ? 'border-accent bg-sel' : 'border-line'}`}
+      className={`m-lift rounded-2xl border bg-card p-3 ${selected ? 'border-accent bg-sel' : 'border-line'}`}
     >
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -167,7 +168,7 @@ export function CandidateCard(props: {
           )}
           <p className="text-sm">
             {r.screeningId && (
-              <a className="text-link hover:underline" href={`#/screenings/${r.screeningId}`}>
+              <a className="text-link hover:underline" href={reviewHref(r.documentId)}>
                 {t('Open the full review and record a decision')}
               </a>
             )}

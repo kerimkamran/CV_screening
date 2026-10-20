@@ -9,6 +9,11 @@
 export const BRAND_NAME = 'parallax';
 export const BRAND_BY = 'by Azerconnect Group';
 export const BRAND_FULL = `${BRAND_NAME} ${BRAND_BY}`;
+/**
+ * The waiting scene's café name (Stage 2, S2-FE11). Brand/Legal must clear it before the first UAT
+ * build that shows it (S2-FE15); a rename touches only this constant.
+ */
+export const SCENE_NAME = 'coffeebay';
 
 /** Two viewpoints joined to one star (spec 2.2). Lines follow the text colour; the star is gold. */
 export function Mark({

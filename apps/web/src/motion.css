@@ -1,0 +1,389 @@
+/*
+ * parallax motion (design, October 2026).
+ *
+ * One small vocabulary of movement for the whole app. The rules it keeps:
+ * - Motion never carries meaning. Every state is also shown by text, colour or shape, so nothing is
+ *   lost when motion is off, in forced-colors mode, or to a screen reader.
+ * - "Reduce motion" turns all of it off: every animation below sits inside
+ *   `prefers-reduced-motion: no-preference`, and the scripts in motion.ts ask the same question.
+ * - Only `transform`, `opacity`, `scale`, `translate` and colours are animated, never layout, and no
+ *   filters or shadows inside keyframes (they are expensive on the low-end laptops HR uses).
+ * - Short: 90 to 520 ms for anything a person waits on; only the decorative sky loops.
+ * Tokens are documented in docs/design-tokens.md (Motion).
+ */
+:root {
+  --m-instant: 90ms;
+  --m-fast: 160ms;
+  --m-med: 280ms;
+  --m-slow: 520ms;
+  --m-stagger: 40ms;
+  /* Material 3 easing: standard for small changes, emphasised for things arriving. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emph: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  /* A soft spring (one small overshoot). Browsers without linear() fall back to their default ease. */
+  --ease-spring: linear(
+    0,
+    0.04 2%,
+    0.16 5%,
+    0.5 11%,
+    0.86 18%,
+    1.04 25%,
+    1.09 30%,
+    1.07 36%,
+    1.01 46%,
+    0.99 56%,
+    1
+  );
+}
+
+@property --m-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@layer components {
+  /* Buttons and chips give under the finger. */
+  .m-press {
+    transition-property: color, background-color, border-color, scale;
+    transition-duration: var(--m-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .m-press:not(:disabled):active {
+      scale: 0.96;
+      transition-duration: var(--m-instant);
+    }
+
+    /* Arriving: content rises a little and fades in. `--i` staggers a list (capped by the caller). */
+    .m-rise {
+      animation: m-rise var(--m-slow) var(--ease-emph) both;
+      animation-delay: calc(var(--i, 0) * var(--m-stagger));
+    }
+    .m-fade {
+      animation: m-fade var(--m-med) var(--ease-standard) both;
+    }
+    /* Something new and important: a badge, a saved decision. */
+    .m-pop {
+      animation: m-pop var(--m-slow) var(--ease-spring) both;
+    }
+    /* A toast slides up from the bottom edge. */
+    .m-toast {
+      animation: m-toast var(--m-med) var(--ease-emph) both;
+    }
+
+    /* The highlight of a segmented control glides to the chosen tab. */
+    .m-pill {
+      transition:
+        translate var(--m-med) var(--ease-emph),
+        width var(--m-med) var(--ease-emph);
+    }
+    /* A soft wash of the decision's colour over the card that holds it, fading out. */
+    .m-wash {
+      animation: m-wash 900ms var(--ease-standard) both;
+    }
+    /* A page or a panel still being drawn: a faint light passes over it. */
+    .m-loading {
+      position: relative;
+      overflow: hidden;
+    }
+    .m-loading::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        100deg,
+        transparent 30%,
+        rgb(19 62 114 / 0.07) 50%,
+        transparent 70%
+      );
+      translate: -100% 0;
+      animation: m-sheen 1.6s var(--ease-standard) infinite;
+    }
+
+    /* Cards lift towards the pointer. */
+    .m-lift {
+      transition:
+        translate var(--m-med) var(--ease-standard),
+        box-shadow var(--m-med) var(--ease-standard),
+        border-color var(--m-fast) var(--ease-standard),
+        background-color var(--m-fast) var(--ease-standard);
+    }
+    @media (hover: hover) {
+      .m-lift:hover {
+        translate: 0 -2px;
+        box-shadow: 0 10px 24px -14px rgb(11 31 58 / 0.35);
+      }
+    }
+
+    /* "Show in CV": the found line lights up, then settles to the usual highlight. */
+    .m-spot {
+      animation: m-spot 1400ms var(--ease-standard) both;
+    }
+    /* The found lines on a PDF page: a highlighter stroke sweeps across from the left. */
+    .m-highlight {
+      transform-origin: left center;
+      animation: m-swipe var(--m-slow) var(--ease-emph) both;
+      animation-delay: calc(140ms + var(--i, 0) * 90ms);
+    }
+
+    /* Ticks draw themselves (SVG paths with pathLength="1"). */
+    .m-draw {
+      stroke-dasharray: 1;
+      animation: m-draw var(--m-slow) var(--ease-emph) both;
+      animation-delay: calc(120ms + var(--i, 0) * var(--m-stagger));
+    }
+
+    /* The score ring fills to its value (stroke-dashoffset is set inline). */
+    .m-ring {
+      animation: m-ring 900ms var(--ease-emph) both;
+      animation-delay: 80ms;
+    }
+
+    /* Work in progress: a soft light moves along a bar. */
+    .m-sheen {
+      position: relative;
+      overflow: hidden;
+    }
+    .m-sheen::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        100deg,
+        transparent 30%,
+        rgb(255 255 255 / 0.35) 50%,
+        transparent 70%
+      );
+      translate: -100% 0;
+      animation: m-sheen 1.8s var(--ease-standard) infinite;
+    }
+
+    /* The drop area: a light runs round its edge while files are dragged over it. */
+    .m-orbit {
+      border-color: transparent !important;
+      background:
+        linear-gradient(var(--c-sel), var(--c-sel)) padding-box,
+        conic-gradient(
+            from var(--m-angle),
+            var(--c-accent),
+            var(--c-star),
+            var(--c-focus),
+            var(--c-accent)
+          )
+          border-box;
+      animation: m-orbit 2.4s linear infinite;
+    }
+  }
+}
+
+@keyframes m-rise {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+@keyframes m-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes m-pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+@keyframes m-toast {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}
+@keyframes m-spot {
+  0%,
+  30% {
+    background-color: var(--c-accent);
+    color: var(--c-on-accent);
+  }
+}
+@keyframes m-swipe {
+  from {
+    scale: 0 1;
+    opacity: 0.4;
+  }
+}
+@keyframes m-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes m-ring {
+  from {
+    stroke-dashoffset: 100;
+  }
+}
+@keyframes m-wash {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes m-sheen {
+  to {
+    translate: 100% 0;
+  }
+}
+@keyframes m-orbit {
+  to {
+    --m-angle: 360deg;
+  }
+}
+
+/*
+ * Moving between screens (View Transitions, where the browser has them). The header band stays still;
+ * the page underneath cross-fades and drifts. Going to the next CV slides left, the previous one right.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* The old page leaves quickly, then the new one arrives: no double image in between. */
+  ::view-transition-old(root) {
+    animation: m-vt-out var(--m-instant) var(--ease-exit) both;
+  }
+  ::view-transition-new(root) {
+    animation: m-vt-in var(--m-med) var(--ease-emph) both;
+    animation-delay: 60ms;
+  }
+  :root[data-nav='next']::view-transition-old(root) {
+    animation-name: m-vt-out-left;
+  }
+  :root[data-nav='next']::view-transition-new(root) {
+    animation-name: m-vt-in-right;
+  }
+  :root[data-nav='prev']::view-transition-old(root) {
+    animation-name: m-vt-out-right;
+  }
+  :root[data-nav='prev']::view-transition-new(root) {
+    animation-name: m-vt-in-left;
+  }
+  ::view-transition-group(app-header),
+  ::view-transition-group(app-rail) {
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+@keyframes m-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes m-vt-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+@keyframes m-vt-out-left {
+  to {
+    opacity: 0;
+    translate: -32px 0;
+  }
+}
+@keyframes m-vt-in-right {
+  from {
+    opacity: 0;
+    translate: 32px 0;
+  }
+}
+@keyframes m-vt-out-right {
+  to {
+    opacity: 0;
+    translate: 32px 0;
+  }
+}
+@keyframes m-vt-in-left {
+  from {
+    opacity: 0;
+    translate: -32px 0;
+  }
+}
+
+/* Forced colours: the system draws the page; keep the outline of the page spot, drop the colours. */
+@media (forced-colors: active) {
+  .m-orbit {
+    background: none;
+    border-color: Highlight !important;
+  }
+  .m-spot {
+    animation: none;
+  }
+}
+
+/* The wash is invisible unless it is moving: with reduced motion nothing shows. */
+.m-wash {
+  opacity: 0;
+}
+
+/* The highlighter itself is not motion: it is drawn in every mode. */
+.m-highlight {
+  background: rgb(245 196 97 / 0.5);
+  mix-blend-mode: multiply;
+  box-shadow: 0 0 0 1px rgb(154 95 0 / 0.35);
+}
+@media (forced-colors: active) {
+  .m-highlight {
+    background: none;
+    mix-blend-mode: normal;
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+}
+
+/* The home sky: layers drift at different depths as the pointer moves (the "parallax" in the name). */
+.sky-depth {
+  translate: calc(var(--px, 0) * var(--d, 0) * 1px) calc(var(--py, 0) * var(--d, 0) * 1px);
+  transition: translate 600ms var(--ease-standard);
+}
+/* A shooting star now and then. */
+.sky-meteor {
+  position: absolute;
+  width: 120px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.9));
+  rotate: 18deg;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-meteor {
+    animation: sky-meteor 11s var(--ease-standard) infinite;
+  }
+}
+@keyframes sky-meteor {
+  0%,
+  86% {
+    opacity: 0;
+    translate: 0 0;
+  }
+  88% {
+    opacity: 1;
+  }
+  96%,
+  100% {
+    opacity: 0;
+    translate: 260px 84px;
+  }
+}

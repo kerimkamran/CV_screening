@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { AdjustmentService } from './adjustments.service';
 import type { CandidateRow } from './export.service';
+import { cvStatus } from '@cv/shared';
 import type { Breakdown } from './score';
 
 /** The ranked candidate rows for a vacancy: one query, requirement adjustments applied. */
@@ -21,7 +22,7 @@ export class CandidatesService {
        SELECT sc.id AS "screeningId", d.id AS "documentId", d.filename, d.uploaded_at AS "uploadedAt",
               d.parse_status AS "parseStatus", d.erased_at IS NOT NULL AS erased,
               CASE WHEN sc.state = 'queued' AND sc.cancelled_at IS NOT NULL THEN 'stopped'
-                   ELSE COALESCE(sc.state::text, 'queued') END AS state, sc.candidate_name AS "candidateName", sc.band,
+                   ELSE COALESCE(sc.state::text, 'not_analyzed') END AS state, sc.candidate_name AS "candidateName", sc.band,
               sc.score::float AS score, sc.breakdown, sc.knockout_triggered AS "knockoutTriggered",
               sc.injection_suspected AS "injectionSuspected", sc.error,
               (SELECT json_build_object('outcome', x.outcome, 'reason', x.reason, 'decidedAt', x.decided_at,
@@ -39,6 +40,21 @@ export class CandidatesService {
       ...r,
       uploadedAt: new Date(r.uploadedAt).toISOString(),
       score: score !== null && breakdown ? { value: score, breakdown } : null,
+      // S2-BE1: one status vocabulary. No screening on the current criteria is `not_analyzed`,
+      // never `queued`, so the 4 s poll stops when nothing is coming.
+      status: cvStatus({
+        erased: r.erased,
+        screening:
+          r.state === 'not_analyzed'
+            ? null
+            : {
+                state: (r.state === 'stopped' ? 'queued' : r.state) as
+                  'queued' | 'processing' | 'completed' | 'failed' | 'manual',
+                cancelled: r.state === 'stopped',
+                band: r.band,
+                scored: score !== null && !!breakdown,
+              },
+      }),
     }));
     // Spec 6.2.5: the recruiter's requirement changes re-rank without re-reading anyone.
     await this.adj.apply(vid, out);

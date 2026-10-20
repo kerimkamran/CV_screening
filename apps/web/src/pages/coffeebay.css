@@ -1,0 +1,263 @@
+/*
+ * The coffeebay waiting scene (Stage 2, S2-FE11). Loaded only with the scene (lazy chunk).
+ * Only `transform` and `opacity` are animated, plus the one-shot line draw in index.css.
+ * No filters or shadows in keyframes. Material easing:
+ *   standard            cubic-bezier(0.2, 0, 0, 1)
+ *   emphasized decel.   cubic-bezier(0.05, 0.7, 0.1, 1)
+ *   ambient sine        cubic-bezier(0.37, 0, 0.63, 1)
+ */
+.cb-scene {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 720 / 300;
+  max-height: 216px;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  background: var(--c-cafe-wall);
+  contain: layout paint;
+}
+@media (min-width: 48rem) {
+  .cb-scene {
+    max-height: 300px;
+  }
+}
+.cb-scene svg.cb-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* The café window: wood frame around the star sky. Percentages follow the 720 x 300 drawing. */
+.cb-window {
+  position: absolute;
+  left: 4.2%;
+  top: 10%;
+  width: 46%;
+  height: 52%;
+  overflow: hidden;
+  border: 7px solid var(--c-cafe-wood);
+  border-radius: 10px;
+  background: #0a1530;
+}
+.cb-drop {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 14px;
+  border-radius: 2px;
+  background: rgb(185 200 242 / 0.55);
+  opacity: 0;
+}
+.cb-wall {
+  fill: var(--c-cafe-wall);
+}
+.cb-floor {
+  fill: var(--c-cafe-wood);
+  opacity: 0.55;
+}
+.cb-wood {
+  fill: var(--c-cafe-wood);
+}
+.cb-board {
+  fill: var(--c-cafe-board);
+}
+.cb-chalk {
+  fill: var(--c-cafe-chalk);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 700;
+}
+.cb-light {
+  fill: var(--c-cafe-light);
+}
+.cb-sign {
+  fill: var(--c-brand);
+}
+.cb-sign-text {
+  fill: var(--c-on-brand);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.cb-counter {
+  fill: var(--c-brand);
+}
+.cb-cup {
+  fill: var(--c-card);
+  stroke: var(--c-edge);
+  stroke-width: 1.5;
+}
+.cb-steam {
+  fill: none;
+  stroke: var(--c-card);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+.cb-leaf {
+  fill: var(--c-ok-line);
+}
+
+/* ---------------------------------------------------------------- motion */
+@keyframes cb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cb-panel {
+  animation: cb-rise 400ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+
+@keyframes cb-steam {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  25% {
+    opacity: 0.8;
+    transform: translate(3px, -7px);
+  }
+  60% {
+    opacity: 0.6;
+    transform: translate(-3px, -17px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, -28px);
+  }
+}
+.cb-steam {
+  animation: cb-steam 4.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  transform-box: fill-box;
+}
+.cb-steam:nth-of-type(2) {
+  animation-delay: 1.6s;
+}
+.cb-steam:nth-of-type(3) {
+  animation-delay: 3.2s;
+}
+
+@keyframes cb-sway {
+  from {
+    transform: rotate(-1.5deg);
+  }
+  to {
+    transform: rotate(1.5deg);
+  }
+}
+.cb-lamp {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: cb-sway 7s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+}
+.cb-lamp-2 {
+  animation-duration: 9s;
+}
+
+@keyframes cb-glow {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 0.65;
+  }
+}
+.cb-glow {
+  fill: var(--c-cafe-light);
+  opacity: 0.5;
+  animation: cb-glow 6s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+}
+
+@keyframes cb-drizzle {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(120px);
+  }
+}
+.cb-drop {
+  animation: cb-drizzle 14s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+.cb-drop:nth-child(1) {
+  left: 20%;
+  animation-duration: 11s;
+}
+.cb-drop:nth-child(2) {
+  left: 45%;
+  animation-duration: 14s;
+  animation-delay: 3s;
+}
+.cb-drop:nth-child(3) {
+  left: 70%;
+  animation-duration: 17s;
+  animation-delay: 6s;
+}
+.cb-drop:nth-child(4) {
+  left: 88%;
+  animation-duration: 13s;
+  animation-delay: 9s;
+}
+
+/* Finished: the steam fades over 1.2 s. */
+@keyframes cb-steam-out {
+  to {
+    opacity: 0;
+  }
+}
+.cb-scene[data-finished='true'] .cb-steam {
+  animation: cb-steam-out 1.2s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+/* Twelve seconds after the finish every loop stops (WCAG 2.2.2). */
+.cb-scene[data-still='true'] .cb-lamp,
+.cb-scene[data-still='true'] .cb-glow,
+.cb-scene[data-still='true'] .cb-drop,
+.cb-scene[data-still='true'] .sky-twinkle {
+  animation: none;
+}
+.cb-scene[data-still='true'] .cb-glow {
+  opacity: 0.5;
+}
+/* Off screen or in a background tab: everything holds still. */
+.cb-scene[data-paused='true'] * {
+  animation-play-state: paused !important;
+}
+
+/* Phones: fewer things to draw and to move (at most five animations). */
+@media (max-width: 40rem) {
+  .cb-drop,
+  .cb-lamp-2,
+  .cb-plant {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-panel,
+  .cb-steam,
+  .cb-lamp,
+  .cb-glow,
+  .cb-drop {
+    animation: none;
+  }
+  .cb-steam {
+    opacity: 0.5;
+  }
+  .cb-drop {
+    display: none;
+  }
+}
+@media (forced-colors: active) {
+  .cb-scene {
+    display: none;
+  }
+}
