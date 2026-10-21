@@ -59,3 +59,4 @@ Deploy `stage2` only when the owner decides to (the branch is not merged into `m
 - **New setting** `DOWNLOAD_MAX_CONCURRENT` (default 2): ZIP downloads streamed at once; a further one waits its turn.
 - **Download links** look like `/downloads/<token>`: single use, valid for two minutes, and the token is replaced by `[token]` in the request log.
 - **The OPS0 spike is still open**: measure LibreOffice on the real Render plan (memory peak and time for the hostile and the large fixtures) before UAT; if it is not safe there, the owner decides (decision #8).
+- **Who may change a vacancy**: every recruiter and team lead, for every vacancy they can see (owner decision, 21 Oct 2026). Set `VACANCY_EDIT=owner` to go back to "only the owner or a team lead".

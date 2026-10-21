@@ -116,6 +116,7 @@ export async function boot(
     WORKER_ENABLED: 'false',
     RENDITION_ENABLED: 'false',
     VACANCY_VISIBILITY: process.env['TEST_VISIBILITY'] ?? 'granted',
+    VACANCY_EDIT: process.env['TEST_VACANCY_EDIT'] ?? 'everyone',
     LOG_LEVEL: 'silent',
   });
   const sent: { to: string; text: string }[] = [];

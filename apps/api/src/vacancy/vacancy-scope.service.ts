@@ -20,8 +20,9 @@ export interface VacancyRow {
  * vacancy; with `granted` a TA_PARTNER sees only vacancies granted to them. TA_LEAD and GOVERNANCE
  * always see all. Out of scope is a 404, never a 403, so existence is not disclosed.
  *
- * Changing a vacancy (edit, archive, restore, status) is for its owner or a TA_LEAD (6.10). Anyone
- * who can see a vacancy may set decisions on its candidates and reveal names.
+ * Changing a vacancy (edit, upload, archive, restore, status): with VACANCY_EDIT=everyone (the
+ * default since 21 Oct 2026) every recruiter and team lead who can see it; with `owner` only its
+ * owner or a TA_LEAD (6.10). Anyone who can see a vacancy may set decisions on its candidates.
  */
 @Injectable()
 export class VacancyScope {
@@ -39,7 +40,9 @@ export class VacancyScope {
   }
 
   canEdit(p: Principal, ownerId: string) {
-    return p.userId === ownerId || p.roles.includes('TA_LEAD');
+    if (this.env.VACANCY_EDIT === 'owner')
+      return p.userId === ownerId || p.roles.includes('TA_LEAD');
+    return p.roles.includes('TA_PARTNER') || p.roles.includes('TA_LEAD');
   }
 
   async assert(p: Principal, vacancyId: string): Promise<VacancyRow> {

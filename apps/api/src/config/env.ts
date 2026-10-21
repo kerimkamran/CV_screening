@@ -55,6 +55,12 @@ const EnvSchema = z.object({
    * vacancies they were given access to (the earlier IAM-04 rule).
    */
   VACANCY_VISIBILITY: z.enum(['all', 'granted']).default('all'),
+  /**
+   * Who may change a vacancy (owner decision, 21 Oct 2026). `everyone`: every recruiter and team lead
+   * who can see it may edit, upload, archive and restore it; every change is on the audit trail
+   * under the person's name. `owner`: only its owner or a team lead (the earlier rule, spec 6.10).
+   */
+  VACANCY_EDIT: z.enum(['everyone', 'owner']).default('everyone'),
   /** In-process screening worker (MVP). Set false to run API-only. */
   WORKER_ENABLED: z.enum(['true', 'false']).default('true'),
   /** How many CVs are analyzed at once (Stage 2: 4 by default, up to 12; the production value comes from the calibration run). */

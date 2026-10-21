@@ -1,5 +1,6 @@
 import { describeDb } from '../testing/pg-harness';
 import { boot, JD, type Harness } from '../testing/app-harness';
+import { VacancyScope } from '../vacancy/vacancy-scope.service';
 
 process.env['TEST_VISIBILITY'] = 'all';
 
@@ -31,23 +32,59 @@ describeDb('Vacancy pool (Development Plan WP 1.2 to 1.6; spec 6.7, 6.10)', () =
     expect((await a.api.post('/vacancies', { title: '' })).statusCode).toBe(400);
   });
 
-  it('every recruiter sees every vacancy, but only the owner or a lead changes it', async () => {
+  it('every recruiter sees and changes every vacancy, and each change is under their own name', async () => {
     const a = await h.recruiter('own@azerconnect.test');
     const b = await h.recruiter('other@azerconnect.test');
-    const lead = await h.recruiter('lead2@azerconnect.test', 'TA_LEAD');
     const id = (await a.api.post('/vacancies', { title: 'Shared role' })).json().id;
     const seen = (await b.api.get('/vacancies')).json();
     expect(seen.map((x: { id: string }) => x.id)).toContain(id);
+    expect(seen.find((x: { id: string }) => x.id === id).canEdit).toBe(true);
     const theirs = (await b.api.get(`/vacancies/${id}`)).json();
-    expect(theirs.canEdit).toBe(false);
-    const denied = await b.api.patch(`/vacancies/${id}`, { expectedVersion: 1, title: 'Hijack' });
-    expect(denied.statusCode).toBe(403);
-    expect(denied.json().message).toMatch(/owner or a recruiting lead/);
-    expect((await b.api.post(`/vacancies/${id}/archive`)).statusCode).toBe(403);
+    expect(theirs.canEdit).toBe(true);
+    const edit = await b.api.patch(`/vacancies/${id}`, {
+      expectedVersion: 1,
+      title: 'Edited by B',
+    });
+    expect(edit.statusCode).toBe(200);
+    expect((await b.api.post(`/vacancies/${id}/archive`)).statusCode).toBe(200);
+    expect((await b.api.post(`/vacancies/${id}/restore`)).statusCode).toBe(200);
+    // The owner stays the owner; the change is recorded under the person who made it.
+    expect((await a.api.get(`/vacancies/${id}`)).json().owner.id).not.toBe(
+      (await b.api.get('/me')).json().userId,
+    );
+    const audit = (
+      await h.db.owner.query(
+        `SELECT actor_id FROM audit_event WHERE entity_id = $1 AND action LIKE 'vacancy.%' ORDER BY seq`,
+        [id],
+      )
+    ).rows.map((r: { actor_id: string }) => r.actor_id);
+    expect(audit).toContain((await b.api.get('/me')).json().userId);
+    // Governance and administrators still cannot change vacancies.
     expect(
-      (await lead.api.patch(`/vacancies/${id}`, { expectedVersion: 1, title: 'Lead edit' }))
-        .statusCode,
-    ).toBe(200);
+      (await h.admin.patch(`/vacancies/${id}`, { expectedVersion: 2, title: 'x' })).statusCode,
+    ).toBe(403);
+  });
+
+  it('with VACANCY_EDIT=owner, only the owner or a lead changes a vacancy (the earlier rule)', async () => {
+    const env = (h.app.get(VacancyScope) as unknown as { env: { VACANCY_EDIT: string } }).env;
+    env.VACANCY_EDIT = 'owner';
+    try {
+      const a = await h.recruiter('own2@azerconnect.test');
+      const b = await h.recruiter('other2@azerconnect.test');
+      const lead = await h.recruiter('lead2@azerconnect.test', 'TA_LEAD');
+      const id = (await a.api.post('/vacancies', { title: 'Owned role' })).json().id;
+      expect((await b.api.get(`/vacancies/${id}`)).json().canEdit).toBe(false);
+      const denied = await b.api.patch(`/vacancies/${id}`, { expectedVersion: 1, title: 'Hijack' });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json().message).toMatch(/owner or a recruiting lead/);
+      expect((await b.api.post(`/vacancies/${id}/archive`)).statusCode).toBe(403);
+      expect(
+        (await lead.api.patch(`/vacancies/${id}`, { expectedVersion: 1, title: 'Lead edit' }))
+          .statusCode,
+      ).toBe(200);
+    } finally {
+      env.VACANCY_EDIT = 'everyone';
+    }
   });
 
   it('saves the Role card with a version check, and refuses a stale save with who changed it', async () => {

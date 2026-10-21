@@ -1,3 +1,4 @@
+import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { describeDb } from '../testing/pg-harness';
@@ -238,14 +239,24 @@ describeDb('Upload batches and reliable intake (Stage 2, S2-BE2, S2-BE3)', () =>
     expect(up3).toMatchObject({ status: 'duplicate', documentId: up2.documentId });
   });
 
-  it('refuses an archived vacancy (409) and a person who may see but not change it (403)', async () => {
+  it('refuses an archived vacancy (409) and, with VACANCY_EDIT=owner, a person who may see but not change it (403)', async () => {
     const owner = await h.recruiter('owner@azerconnect.test');
     const other = await h.recruiter('other@azerconnect.test');
     const vid = await ready(owner.api);
+    // Since 21 Oct 2026 every recruiter may change every vacancy they see, uploads included.
     expect(
       (await other.api.upload(`/vacancies/${vid}/documents`, [file('X Y Person')])).statusCode,
-    ).toBe(403);
-    expect((await batch(other.api, vid, [{ name: 'a.txt', size: 5 }])).statusCode).toBe(403);
+    ).toBe(200);
+    const env = (h.app.get(VacancyScope) as unknown as { env: { VACANCY_EDIT: string } }).env;
+    env.VACANCY_EDIT = 'owner';
+    try {
+      expect(
+        (await other.api.upload(`/vacancies/${vid}/documents`, [file('Z W Person')])).statusCode,
+      ).toBe(403);
+      expect((await batch(other.api, vid, [{ name: 'a.txt', size: 5 }])).statusCode).toBe(403);
+    } finally {
+      env.VACANCY_EDIT = 'everyone';
+    }
     const lead = await h.recruiter('lead2@azerconnect.test', 'TA_LEAD');
     expect(
       (await lead.api.upload(`/vacancies/${vid}/documents`, [file('Lead Upload')])).statusCode,
