@@ -4,13 +4,13 @@
   "summary": "Guards AQE learning data (.agentic-qe/*.db, -wal, -shm, *.rvf) from rm, overwrite, truncate and DROP/DELETE",
   "guard": true,
   "mode": "enforce",
-  "calls": 908,
+  "calls": 916,
   "blocked": 0,
   "flagged": 0,
   "startedMs": 1793595022468,
-  "updatedMs": 1793677819332,
+  "updatedMs": 1793677999269,
   "totals": {
-    "calls": 2141,
+    "calls": 2149,
     "blocked": 0,
     "flagged": 0,
     "since": 1793424649086
