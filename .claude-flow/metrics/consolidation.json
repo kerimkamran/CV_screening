@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-10-31T19:46:43.874Z",
+  "distillationEnabled": true,
+  "patternsConsolidated": 2,
+  "memoryCleaned": 2,
+  "duplicatesRemoved": 0,
+  "episodes": 2,
+  "episodeEmbeddings": 2,
+  "patternEmbeddings": 2,
+  "causalEdges": 0,
+  "promoted": 0,
+  "byProvenance": {
+    "proxy:structural": 2
+  },
+  "namespaces": [
+    "cost-tracking"
+  ],
+  "dryRun": false,
+  "corrupt": false,
+  "stores": [
+    {
+      "dbPath": "/Users/kamran/Documents/GitHub/CV_screening/.swarm/memory.db",
+      "processed": 1,
+      "patterns": 1
+    },
+    {
+      "dbPath": "/Users/kamran/Documents/GitHub/CV_screening/.swarm/agentdb-memory.db",
+      "processed": 1,
+      "patterns": 1
+    }
+  ]
+}

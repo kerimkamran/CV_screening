@@ -1,0 +1,23 @@
+[2026-10-31T19:38:43.471Z] [INFO] AI workers disabled (default) - all workers run local-only. Enable with `daemon start --headless`, daemon.aiWorkers.enabled=true in ~/.claude-flow/config.json (a project config cannot enable it), or RUFLO_DAEMON_AI_WORKERS=1 (#2661)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled map (interval: 900s, first run in 0s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled audit (interval: 600s, first run in 120s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled optimize (interval: 900s, first run in 240s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled consolidate (interval: 1800s, first run in 360s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled testgaps (interval: 1200s, first run in 480s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled backup (interval: 86400s, first run in 600s)
+[2026-10-31T19:38:43.472Z] [INFO] Scheduled harness (interval: 21600s, first run in 720s)
+[2026-10-31T19:38:43.472Z] [INFO] Lifecycle monitor active (workspace-removal, ttl=43200s, idle=1800s)
+[2026-10-31T19:38:43.541Z] [INFO] Daemon started (PID: 49262, CPUs: 8, workers: 7, maxCpuLoad: 6.4, minFreeMemoryPercent: 5%)
+[2026-10-31T19:38:43.587Z] [INFO] Starting worker: map (1/2 concurrent)
+[2026-10-31T19:38:43.587Z] [INFO] Worker map completed in 44ms
+[2026-10-31T19:40:43.472Z] [INFO] Worker audit deferred: Memory too low: 3.5% free
+[2026-10-31T19:42:43.471Z] [INFO] Worker optimize deferred: Memory too low: 2.3% free
+[2026-10-31T19:44:43.469Z] [INFO] Worker consolidate deferred: Memory too low: 3.5% free
+[2026-10-31T19:46:43.495Z] [INFO] Starting worker: testgaps (1/2 concurrent)
+[2026-10-31T19:46:43.496Z] [INFO] Worker testgaps completed in 28ms
+[2026-10-31T19:46:43.617Z] [INFO] Starting worker: audit (1/2 concurrent)
+[2026-10-31T19:46:43.620Z] [INFO] Worker audit completed in 25ms
+[2026-10-31T19:46:43.680Z] [INFO] Starting worker: optimize (1/2 concurrent)
+[2026-10-31T19:46:43.769Z] [INFO] Starting worker: consolidate (2/2 concurrent)
+[2026-10-31T19:46:43.827Z] [INFO] Worker optimize completed in 174ms
+[2026-10-31T19:46:43.874Z] [INFO] Worker consolidate completed in 193ms

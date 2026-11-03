@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-10-31T19:38:43.587Z",
+  "projectRoot": "/Users/kamran/Documents/GitHub/CV_screening",
+  "structure": {
+    "hasPackageJson": true,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1793475523587
+}

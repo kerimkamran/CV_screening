@@ -1,0 +1,1 @@
+{"id":"mvys60-1","at":1793611945506,"rule":"PR-006","owasp":["LLM06","T2"],"severity":"critical","action":"notified","tool":"Bash","summary":"destructive operation (root/home/project delete, force push to default branch, DROP DATABASE, disk wipe) (Bash · head cd)","fp":"4492fc15bf1f","state":"open","session":"mvys60ch"}
