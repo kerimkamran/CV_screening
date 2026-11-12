@@ -1,0 +1,1 @@
+{"v":1,"endedAt":1793761880747,"reason":"other","totalUsd":306.738964,"byAgent":{"main":260.752294,"workflow-subagent":45.98667},"byTool":{"(model)":255.487076,"Bash":45.853919,"StructuredOutput":2.092821,"Write":1.575541,"Read":1.320167,"Workflow":0.326076,"SendUserFile":0.083364},"refusals":0,"budget":null}
