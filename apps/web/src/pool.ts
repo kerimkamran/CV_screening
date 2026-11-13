@@ -6,7 +6,7 @@ import {
   type Mark,
   type VacancyStatus,
 } from '@cv/shared';
-import { tr } from './i18n';
+import { locale, tr } from './i18n';
 
 /** Shapes the Vacancy pool, the Candidate pool and the report use (Development Plan, Phases 1 to 3). */
 
@@ -282,15 +282,24 @@ export function ago(iso: string, now = Date.now()): string {
   if (h < 24) return tr('{n} h ago', { n: h });
   const d = Math.round(h / 24);
   if (d < 14) return d === 1 ? tr('yesterday') : tr('{n} days ago', { n: d });
-  return new Date(iso).toLocaleDateString(undefined, {
+  // In the app's language, not the browser's (VL-01).
+  return new Date(iso).toLocaleDateString(locale(), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
 }
 
-/** Warn before leaving a page with unsaved work: reloads, closing the tab, and in-app links. */
-export function useLeaveGuard(dirty: boolean, message: string, bypass?: { current: boolean }) {
+/**
+ * Warn before leaving a page with unsaved work: reloads, closing the tab, and in-app links. Moving
+ * inside `within` (a hash prefix, e.g. the vacancy's own tabs) is not leaving (VP-09).
+ */
+export function useLeaveGuard(
+  dirty: boolean,
+  message: string,
+  bypass?: { current: boolean },
+  within?: string,
+) {
   useEffect(() => {
     if (!dirty) return;
     const before = (e: BeforeUnloadEvent) => {
@@ -300,6 +309,11 @@ export function useLeaveGuard(dirty: boolean, message: string, bypass?: { curren
     let last = window.location.hash;
     const onHash = () => {
       if (window.location.hash === last || bypass?.current) return;
+      const h = window.location.hash;
+      if (within && (h === within || h.startsWith(`${within}/`))) {
+        last = h;
+        return;
+      }
       if (window.confirm(message)) {
         last = window.location.hash;
         return;
@@ -314,5 +328,5 @@ export function useLeaveGuard(dirty: boolean, message: string, bypass?: { curren
       window.removeEventListener('beforeunload', before);
       window.removeEventListener('hashchange', onHash);
     };
-  }, [dirty, message, bypass]);
+  }, [dirty, message, bypass, within]);
 }

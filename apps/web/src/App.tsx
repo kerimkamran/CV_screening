@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   api,
   ApiError,
+  BASE,
   fetchReadiness,
   session,
   subscribeUnauthorized,
@@ -30,6 +31,7 @@ import { applyBackground, isBackground } from './theme';
 import { Notice } from './ui';
 
 const REFRESH_MS = 20 * 60 * 1000;
+const HEALTH_MS = 30_000;
 
 const HEALTH_LABEL: Record<ApiHealth['state'], string> = {
   checking: 'Checking service…',
@@ -99,6 +101,23 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     setMe(null);
     setNote(why);
   }, []);
+  /**
+   * Signing out on purpose (SD-51): the server withdraws the token, and this browser forgets the
+   * person's background, language and place, so the next person starts clean on #/.
+   */
+  const leave = useCallback(() => {
+    const token = session.get();
+    if (token)
+      void fetch(`${BASE}/auth/logout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => undefined);
+    signOut();
+    applyBackground(null);
+    applyLang(null);
+    if (window.location.hash && window.location.hash !== '#/') window.location.hash = '/';
+  }, [signOut]);
 
   const loadMe = useCallback(async () => {
     if (!session.get()) return setBooting(false);
@@ -121,6 +140,20 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     void check().then(setHealth);
     return subscribeUnauthorized(() => signOut(tr('Your session ended. Please sign in again.')));
   }, [check, loadMe, signOut]);
+
+  // The footer's service line follows the service: checked every 30 s while the tab is in front,
+  // so an outage shows within a minute and clears within a minute of recovery (SD-88).
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === 'visible') void check().then(setHealth);
+    };
+    const id = setInterval(tick, HEALTH_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [check]);
 
   // S2-FE16: the sign-in stays open for as long as the tab is open. There is no idle sign-out; the
   // token is renewed on a timer (and when the tab comes back to the front), never lengthened.
@@ -279,7 +312,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         isGov={isGov}
         route={route}
         footer={footer}
-        onSignOut={() => signOut()}
+        onSignOut={leave}
         onMe={setMe}
       >
         {body}
@@ -297,7 +330,23 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           >
             <Brand onBrand />
           </a>
-          {!me && <LanguageSwitch signedIn={false} />}
+          {/* The forced change and the invitation pages also let a person switch language or
+              leave: someone without the temporary password must not be stuck (SD-41). */}
+          <div className="flex items-center gap-2">
+            <LanguageSwitch signedIn={!!me && !me.mustChangePassword} />
+            {me && (
+              <button
+                type="button"
+                className="rounded-full border border-white/40 px-3 py-1 text-sm font-semibold hover:bg-white/10 pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                onClick={() => {
+                  if (setupToken) window.location.hash = '/';
+                  leave();
+                }}
+              >
+                {t('Sign out')}
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>

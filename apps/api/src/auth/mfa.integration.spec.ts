@@ -62,7 +62,7 @@ describeDb('Two-step sign-in (TOTP)', () => {
     // Turning it off needs the password; an administrator can reset it for someone who lost the phone.
     expect(
       (await u.api.post('/auth/mfa/disable', { password: 'wrong-password-123' })).statusCode,
-    ).toBe(401);
+    ).toBe(400);
     expect((await h.admin.post(`/admin/users/${u.userId}/mfa-reset`)).statusCode).toBe(200);
     expect((await login(email, PW)).statusCode).toBe(200);
     const users = (await h.admin.get('/admin/users')).json() as { email: string; mfa: boolean }[];

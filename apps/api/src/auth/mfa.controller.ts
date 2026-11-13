@@ -7,7 +7,6 @@ import {
   HttpCode,
   Post,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
@@ -121,7 +120,8 @@ export class MfaController {
         [p.userId],
       );
       if (!rows[0] || !(await verifyPassword(password, rows[0].password_hash)))
-        throw new UnauthorizedException('Password is incorrect');
+        // 400, not 401: the session is valid and must stay signed in (SD-49).
+        throw new BadRequestException({ message: 'Password is incorrect', code: 'WRONG_PASSWORD' });
       await tx.query(
         `UPDATE local_credential SET totp_secret = NULL, totp_pending = NULL, totp_enabled_at = NULL,
                 totp_last_step = NULL, recovery_hashes = '{}' WHERE user_id = $1`,

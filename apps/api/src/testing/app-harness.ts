@@ -35,7 +35,7 @@ export interface Harness {
   as: (token: string) => Api;
   recruiter: (
     email: string,
-    role?: 'TA_PARTNER' | 'TA_LEAD' | 'NONE',
+    role?: 'TA_PARTNER' | 'TA_LEAD' | 'GOVERNANCE' | 'NONE',
   ) => Promise<{ token: string; userId: string; api: Api }>;
   scenario: (who: Api, cvs: { name: string; lines: string[] }[], title?: string) => Promise<string>;
   sent: { to: string; text: string }[];
@@ -176,7 +176,10 @@ export async function boot(
   });
   const admin: Api = as(adminToken);
   /** A recruiter account; returns its token and user id. */
-  async function recruiter(email: string, role: 'TA_PARTNER' | 'TA_LEAD' | 'NONE' = 'TA_PARTNER') {
+  async function recruiter(
+    email: string,
+    role: 'TA_PARTNER' | 'TA_LEAD' | 'GOVERNANCE' | 'NONE' = 'TA_PARTNER',
+  ) {
     const r = await admin.post('/admin/users', { email, displayName: email.split('@')[0], role });
     if (r.statusCode !== 201) throw new Error(`could not create ${email}: ${r.body}`);
     const pw = /Password:\s+(\S+)/.exec(sent.at(-1)!.text)![1]!;

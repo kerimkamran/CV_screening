@@ -13,7 +13,9 @@ import { Brand, BRAND_FULL, Mark } from './brand';
 import { useT } from './i18n';
 import { AssistantPanel } from './pages/AssistantPanel';
 import { PoolPanel } from './pages/PoolPanel';
+import { getReviewList, parseReviewRoute } from './review';
 import { isBackground } from './theme';
+import { useDetailsMenu, usePublishedHeight } from './ui';
 
 /**
  * The frame around every signed-in page (Development Plan, Phase 1): a left rail with Vacancies and
@@ -26,6 +28,19 @@ const NAV = [
   ['/candidates', 'Candidates'],
 ] as const;
 const inSection = (route: string, href: string) => route === href || route.startsWith(`${href}/`);
+/**
+ * Which rail item is current. The landing page #/ is the vacancy list; a CV review belongs to the
+ * list it was opened from (SH-14). At most one item is ever current.
+ */
+function sectionOf(route: string): string | null {
+  if (route === '/' || route === '') return '/vacancies';
+  const rv = parseReviewRoute(route);
+  if (rv) {
+    const back = getReviewList(rv.listId)?.back ?? '';
+    return NAV.find(([href]) => inSection(back, href))?.[0] ?? null;
+  }
+  return NAV.find(([href]) => inSection(route, href))?.[0] ?? null;
+}
 
 function Icon({ name }: { name: 'vacancies' | 'candidates' | 'ask' }) {
   const d =
@@ -63,6 +78,7 @@ function AskBar() {
     const on = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.documentElement.dataset.cvFull) return; // the CV is open full screen
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
         return;
       e.preventDefault();
@@ -108,6 +124,7 @@ function SenaiPrefs({ name }: { name: string }) {
   const t = useT();
   const [top, setTop] = useState<number | null | undefined>(undefined);
   const [draft, setDraft] = useState('5');
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
     api.get<{ top: number | null }>('/assistant/preferences').then(
@@ -125,8 +142,11 @@ function SenaiPrefs({ name }: { name: string }) {
   if (top === undefined) return null;
   const save = (v: number | null) =>
     api.put<{ top: number | null }>('/assistant/preferences', { top: v }).then(
-      (r) => setTop(r.top),
-      () => undefined,
+      (r) => {
+        setTop(r.top);
+        setFailed(false);
+      },
+      () => setFailed(true), // the saved value stays as it was, and the person is told (AC-12)
     );
   const n = Math.min(50, Math.max(1, Number(draft) || 5));
   return (
@@ -145,11 +165,11 @@ function SenaiPrefs({ name }: { name: string }) {
           value={draft}
           aria-label={t('How many to show')}
           onChange={(e) => setDraft(e.target.value)}
-          className="w-16 rounded-lg border border-edge px-2 py-1 text-sm"
+          className="w-16 rounded-lg border border-edge px-2 py-1 text-sm pointer-coarse:min-h-11"
         />
         <button
           type="button"
-          className="rounded-full border border-edge px-2.5 py-1 font-semibold hover:bg-hover"
+          className="rounded-full border border-edge px-2.5 py-1 font-semibold hover:bg-hover pointer-coarse:min-h-11"
           onClick={() => void save(n)}
         >
           {t('Save')}
@@ -157,13 +177,18 @@ function SenaiPrefs({ name }: { name: string }) {
         {top ? (
           <button
             type="button"
-            className="rounded-full px-2.5 py-1 font-semibold text-link hover:bg-hover"
+            className="rounded-full px-2.5 py-1 font-semibold text-link hover:bg-hover pointer-coarse:min-h-11"
             onClick={() => void save(null)}
           >
             {t('Clear')}
           </button>
         ) : null}
       </div>
+      {failed && (
+        <p role="alert" className="mt-1.5 text-warn-text">
+          {t('Not saved. Check your connection and try again.')}
+        </p>
+      )}
     </div>
   );
 }
@@ -193,28 +218,31 @@ function AccountMenu({
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join('');
-  const close = () => ref.current?.removeAttribute('open');
-  const link = 'block rounded-lg px-2 py-1.5 hover:bg-hover';
+  const { close, onToggle } = useDetailsMenu(ref);
+  const link =
+    'flex items-center rounded-lg px-2 py-1.5 hover:bg-hover pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none';
   return (
-    <details ref={ref} className="relative shrink-0">
+    <details ref={ref} className="relative shrink-0" onToggle={onToggle}>
       <summary
         aria-label={t('Account menu')}
-        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-white text-sm font-bold text-brand focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand focus-visible:outline-none"
+        title={name || undefined}
+        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-white text-sm font-bold text-brand pointer-coarse:h-11 pointer-coarse:w-11 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand focus-visible:outline-none"
       >
         {initials || '·'}
       </summary>
       <div
-        className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-line bg-card p-2 text-sm text-ink shadow-xl"
+        className="absolute right-0 z-40 mt-2 max-h-[calc(100dvh-4.5rem-var(--bottombar-h,0px))] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-card p-2 text-sm text-ink shadow-xl"
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('a')) close();
         }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') close();
-        }}
       >
-        <p className="truncate px-2 py-1 font-medium text-ink">{name}</p>
+        <p className="truncate px-2 py-1 font-medium text-ink" title={name}>
+          {name}
+        </p>
         {me.email && me.email !== name && (
-          <p className="truncate px-2 pb-1 text-xs text-ink-3">{me.email}</p>
+          <p className="truncate px-2 pb-1 text-xs text-ink-3" title={me.email}>
+            {me.email}
+          </p>
         )}
         <div className="border-t border-line pt-1">
           <a href="#/reports" className={link}>
@@ -238,7 +266,7 @@ function AccountMenu({
           </a>
         </div>
         {isTa && cfg && <SenaiPrefs name={cfg.name} />}
-        <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-2 py-2">
           <LanguageSwitch signedIn />
           <Appearance
             value={isBackground(me.background) ? me.background : null}
@@ -305,16 +333,22 @@ export function Shell({
   const cfg = useAssistantConfig();
   const open = useAssistantOpen();
   const rail = isTa;
+  const section = sectionOf(route);
+  // The phone's bottom bar can grow (a long label in Azerbaijani wraps), so its real height is
+  // published for the content, the toasts and the SenAI sheet to keep clear of it (SD-08).
+  const [bar, setBar] = useState<HTMLElement | null>(null);
+  usePublishedHeight('--bottombar-h', bar);
   const link = (active: boolean) =>
     `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
 
   return (
     <div className="min-h-screen bg-page text-ink">
       <header
-        className="sticky top-0 z-20 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
+        className="sticky top-0 z-40 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
         style={{ viewTransitionName: 'app-header' }}
       >
-        <div className="flex items-center gap-3 px-4 py-2.5">
+        {/* 57 px tall: the rail and the SenAI panel start right below it (SD-16). */}
+        <div className="flex h-[57px] items-center gap-3 px-4">
           <a
             href={isTa ? '#/vacancies' : '#/'}
             className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
@@ -327,7 +361,7 @@ export function Shell({
               <Brand compact onBrand />
             </span>
           </a>
-          <AskBar />
+          {isTa ? <AskBar /> : <div className="flex-1" />}
           <AccountMenu
             me={me}
             isTa={isTa}
@@ -350,8 +384,8 @@ export function Shell({
               <a
                 key={href}
                 href={`#${href}`}
-                aria-current={inSection(route, href) ? 'page' : undefined}
-                className={link(inSection(route, href))}
+                aria-current={section === href ? 'page' : undefined}
+                className={link(section === href)}
               >
                 <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
                 {t(label)}
@@ -360,7 +394,7 @@ export function Shell({
           </nav>
         )}
         <div
-          className={`min-w-0 flex-1 ${open && cfg ? 'min-[1280px]:pr-96' : ''} ${rail ? 'pb-16 sm:pb-0' : ''}`}
+          className={`min-w-0 flex-1 ${isTa && open && cfg ? 'min-[1280px]:pr-96' : ''} ${rail ? 'pb-[var(--bottombar-h,0px)] sm:pb-0' : ''}`}
         >
           <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
           <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>
@@ -369,15 +403,16 @@ export function Shell({
 
       {rail && (
         <nav
+          ref={setBar}
           aria-label={t('Main')}
-          className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-card p-1 sm:hidden"
+          className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-card p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] sm:hidden"
         >
           {NAV.map(([href, label]) => (
             <a
               key={href}
               href={`#${href}`}
-              aria-current={inSection(route, href) ? 'page' : undefined}
-              className={`${link(inSection(route, href))} flex-1`}
+              aria-current={section === href ? 'page' : undefined}
+              className={`${link(section === href)} flex-1`}
             >
               <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
               {t(label)}
@@ -395,7 +430,7 @@ export function Shell({
           )}
         </nav>
       )}
-      <SenAI />
+      {isTa && <SenAI />}
     </div>
   );
 }

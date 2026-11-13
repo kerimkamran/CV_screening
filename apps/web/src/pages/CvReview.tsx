@@ -36,6 +36,7 @@ import {
   input,
   Notice,
   UndoBar,
+  usePublishedHeight,
   useUndoToast,
   when,
 } from '../ui';
@@ -137,30 +138,48 @@ export function CvReview({
   }, [d?.decision.version]);
   useEffect(() => {
     const c = takeCarried();
-    if (c) show(c.text, c.undo);
+    // An Undo carried from the previous CV reports its failure here, on the screen now open (SD-59).
+    if (c)
+      show(c.text, async () => {
+        const failed = await c.undo();
+        if (failed) setError(errMsg(failed));
+      });
   }, [show]);
   const box = useRef<HTMLDivElement>(null);
+  const [reviewBar, setReviewBar] = useState<HTMLDivElement | null>(null);
+  const [noteSaved, setNoteSaved] = useState(false);
+  usePublishedHeight('--reviewbar-h', reviewBar);
   const heading = useRef<HTMLHeadingElement>(null);
   const alive = useRef(new AbortController());
   const list = useMemo(() => getReviewList(listId), [listId]);
   const nav = neighbours(list, documentId);
 
   // ---------------------------------------------------------------- loading
-  const load = useCallback(async () => {
-    try {
-      const r = await api.get<CvReviewData>(`/documents/${documentId}`, alive.current.signal);
-      if (alive.current.signal.aborted) return;
-      if (!r?.documentId) throw new Error('The CV could not be read.');
-      remember(r);
-      setD(r);
-      setNote(r.decision.note ?? '');
-      setError('');
-    } catch (e) {
-      if (alive.current.signal.aborted) return;
-      if (e instanceof ApiError && e.status === 404) setNotFound(true);
-      else setError(errMsg(e));
-    }
-  }, [documentId]);
+  // The note as last saved: a refresh replaces the box only while it still holds that (SD-09), so
+  // what the person is typing is never wiped by the page refreshing itself.
+  const savedNote = useRef<string | null>(null);
+  const load = useCallback(
+    async (keepError = false) => {
+      try {
+        const r = await api.get<CvReviewData>(`/documents/${documentId}`, alive.current.signal);
+        if (alive.current.signal.aborted) return;
+        if (!r?.documentId) throw new Error('The CV could not be read.');
+        remember(r);
+        setD(r);
+        const saved = r.decision.note ?? '';
+        const prev = savedNote.current;
+        setNote((cur) => (prev === null || cur === prev ? saved : cur));
+        savedNote.current = saved;
+        // A refresh after a failed action keeps that action's message on screen (CV-02).
+        if (!keepError) setError('');
+      } catch (e) {
+        if (alive.current.signal.aborted) return;
+        if (e instanceof ApiError && e.status === 404) setNotFound(true);
+        else setError(errMsg(e));
+      }
+    },
+    [documentId],
+  );
   useEffect(() => {
     alive.current = new AbortController();
     void load();
@@ -180,7 +199,7 @@ export function CvReview({
     const tick = () => {
       timer = setTimeout(
         async () => {
-          await load();
+          await load(true);
           if (!alive.current.signal.aborted) tick();
         },
         document.visibilityState === 'hidden' ? POLL_HIDDEN_MS : POLL_VISIBLE_MS,
@@ -255,6 +274,8 @@ export function CvReview({
     const mid = d.matchId;
     const who = d.analysis?.label ?? d.name ?? d.pseudonym;
     const docId = d.documentId;
+    setError('');
+    setNoteSaved(false);
     try {
       const res = await api.put<MarkResult>(`/candidates/${mid}/decision`, {
         mark: to,
@@ -264,6 +285,7 @@ export function CvReview({
       if (listId) recordDecision(listId, docId, to);
       const said = mirrorNote(t, res.mirror);
       const undo = async () => {
+        setError('');
         try {
           await api.put(`/candidates/${mid}/decision`, {
             mark: res.previous.mark,
@@ -274,8 +296,11 @@ export function CvReview({
           cache.delete(docId);
         } catch (e) {
           setError(errMsg(e));
+          await load(true);
+          return e;
         }
-        await load();
+        await load(true);
+        return null;
       };
       // The sprint: the decision is made, its Undo comes along, and the next CV opens.
       if (advance && to !== 'new' && to !== before.mark) {
@@ -297,9 +322,10 @@ export function CvReview({
       if (to !== before.mark)
         show([t('Marked {mark}.', { mark: markName(to) }), said].filter(Boolean).join(' '), undo);
       else if (said) show(said, undo);
+      if (to === before.mark && withNote !== undefined) setNoteSaved(true);
     } catch (e) {
       setError(errMsg(e));
-      if (e instanceof ApiError && e.code === 'STALE_VERSION') await load();
+      if (e instanceof ApiError && e.code === 'STALE_VERSION') await load(true);
     }
   }
 
@@ -336,6 +362,8 @@ export function CvReview({
       if (el instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(el.type))
         return;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
+      // Nothing is decided out of sight while the CV is open full screen (UAT-BUG-001).
+      if (document.documentElement.dataset.cvFull) return;
       const k = e.key.toLowerCase();
       if (k === 'j') {
         if (nav.next) toCv(nav.next, 'next');
@@ -429,7 +457,7 @@ export function CvReview({
           <Notice kind="warn">
             <p className="font-medium">{t(CV_STATUS_LABEL[d.status])}</p>
             <p className="mt-1">{d.statusDetail.reason}</p>
-            <p className="mt-1">{t('Read the CV on the left and decide yourself.')}</p>
+            <p className="mt-1">{t('Read the CV and decide yourself.')}</p>
           </Notice>
         );
       case 'stopped':
@@ -623,7 +651,11 @@ export function CvReview({
         {list && nav.at >= 0 && prevNext('hidden items-center gap-2 md:flex')}
       </div>
       {list && nav.at >= 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card px-4 py-2 md:hidden">
+        // Above the app's own bottom bar on phones, never under it (SD-08).
+        <div
+          ref={setReviewBar}
+          className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-20 border-t border-line bg-card px-4 py-2 md:hidden"
+        >
           {prevNext('flex items-center justify-between gap-2')}
         </div>
       )}
@@ -714,6 +746,11 @@ export function CvReview({
                 onChange={(m) => void setMark(m)}
               />
             </div>
+            {canMark && d.vacancy.archived && (
+              <p className="text-sm text-ink-2">
+                {t('This vacancy is archived, so decisions are off.')}
+              </p>
+            )}
             {markable && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
                 <span className="hidden sm:inline" aria-hidden="true">
@@ -751,7 +788,10 @@ export function CvReview({
                     maxLength={2000}
                     placeholder={t('Add a note (optional)')}
                     value={note}
-                    onChange={(e) => setNote(e.target.value)}
+                    onChange={(e) => {
+                      setNote(e.target.value);
+                      setNoteSaved(false);
+                    }}
                   />
                 </label>
                 <button
@@ -762,6 +802,9 @@ export function CvReview({
                 >
                   {t('Save note')}
                 </button>
+                <span role="status" className="ml-2 text-sm text-ok-text">
+                  {noteSaved ? t('Note saved.') : ''}
+                </span>
               </>
             )}
             {d.decision.decidedBy && (
@@ -786,6 +829,7 @@ export function CvReview({
         stretch
         value={view}
         onChange={setView}
+        panelId={(k) => (k === 'cv' ? 'review-cv' : 'review-analysis')}
         items={[
           { key: 'cv', label: t('CV') },
           { key: 'analysis', label: t('Analysis') },
@@ -796,6 +840,7 @@ export function CvReview({
         <div
           className={`${view === 'cv' ? '' : 'hidden'} min-w-0 @min-[60rem]:block`}
           style={{ flexBasis: `${split}%`, flexGrow: 0, flexShrink: 0 }}
+          id="review-cv"
           data-testid="cv-pane"
         >
           <div className="@min-[60rem]:sticky @min-[60rem]:top-28 @min-[60rem]:pr-3">
@@ -832,6 +877,7 @@ export function CvReview({
           className="hidden w-2 shrink-0 cursor-col-resize rounded bg-line hover:bg-edge focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none @min-[60rem]:block"
         />
         <div
+          id="review-analysis"
           className={`${view === 'analysis' ? '' : 'hidden'} min-w-0 flex-1 @min-[60rem]:block @min-[60rem]:pl-3`}
         >
           {analysisPane}
@@ -862,6 +908,12 @@ function SprintDone({
   const t = useT();
   const tally = tallyOf(listId);
   const parts = (['shortlist', 'maybe', 'not_now'] as const).filter((m) => tally[m] > 0);
+  // The summary is where the review ends: it is brought into view and takes the focus (SD-110).
+  const head = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    head.current?.scrollIntoView?.({ block: 'nearest' });
+    head.current?.focus({ preventScroll: true });
+  }, []);
   return (
     <section
       aria-labelledby="sprint-done"
@@ -891,7 +943,7 @@ function SprintDone({
         />
       </svg>
       <div className="min-w-0 space-y-2">
-        <h2 id="sprint-done" className="font-semibold" tabIndex={-1}>
+        <h2 id="sprint-done" ref={head} className="font-semibold" tabIndex={-1}>
           {t('That was the last CV in this list.')}
         </h2>
         <p role="status" className="flex flex-wrap items-center gap-2 text-sm">

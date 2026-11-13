@@ -89,7 +89,7 @@ export function CandidatePreview({
   return (
     <aside
       aria-label={t('Preview of {name}', { name: row.label })}
-      className="space-y-4 rounded-2xl border border-line bg-card p-4 text-sm shadow-[0_6px_20px_-12px_rgb(11_31_58/0.25)] lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
+      className="space-y-4 rounded-2xl border border-line bg-card p-4 text-sm shadow-[0_6px_20px_-12px_rgb(11_31_58/0.25)] lg:sticky lg:top-[calc(57px+1rem)] lg:max-h-[calc(100vh-57px-2rem)] lg:overflow-y-auto"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -169,7 +169,7 @@ export function CandidatePreview({
       </div>
 
       <button type="button" className={`${btnPrimary} w-full`} onClick={onOpen}>
-        {t('Open the full report')}
+        {t('Open the CV review')}
       </button>
     </aside>
   );

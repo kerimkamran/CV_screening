@@ -62,7 +62,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
             <div className="relative">
               <Field label={t('Password')}>
                 <input
-                  className={`${input} pr-16`}
+                  className={`${input} pr-20`}
                   type={showPw ? 'text' : 'password'}
                   autoComplete="current-password"
                   required

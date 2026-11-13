@@ -227,7 +227,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
           setAssistantOpen(false);
         }
       }}
-      className="fixed inset-x-0 bottom-0 z-30 flex max-h-[85dvh] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:h-dvh sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
+      className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:top-[57px] sm:right-0 sm:bottom-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
     >
       <header className="flex items-start justify-between gap-2 border-b border-line p-3">
         <div className="min-w-0">

@@ -253,7 +253,12 @@ export function RoleCard({
 
   useEffect(() => onDirty?.(dirty && !locked), [dirty, locked, onDirty]);
   const leaving = useRef(false);
-  useLeaveGuard(dirty && !locked, t('You have unsaved changes. Leave without saving?'), leaving);
+  useLeaveGuard(
+    dirty && !locked,
+    t('You have unsaved changes. Leave without saving?'),
+    leaving,
+    vacancy ? `#/vacancies/${vacancy.id}` : undefined,
+  );
 
   // ---------------------------------------------------------------- similar titles
   const checkSimilar = useCallback(
@@ -798,8 +803,8 @@ export function RoleCard({
           </div>
         )}
         {savedLink && (
-          <p className="truncate text-xs text-ink-3">
-            {t('Saved link')}: <span className="text-ink-2">{savedLink.url}</span>
+          <p className="max-w-full min-w-0 truncate text-xs text-ink-3" title={savedLink.url}>
+            {t('Saved link')}: <span className="break-all text-ink-2">{savedLink.url}</span>
             {savedLink.readAt && <> · {t('read {when}', { when: ago(savedLink.readAt) })}</>}
           </p>
         )}
@@ -942,26 +947,29 @@ export function RoleCard({
             <p className="text-sm text-ink-3">
               {t('No skills yet. Read the requirements or add your own.')}
             </p>
-            {!locked && (
-              <div className="flex gap-2">
-                <input
-                  className={input}
-                  aria-label={t('Add another skill')}
-                  placeholder={t('Add another skill')}
-                  value={newSkill}
-                  onChange={(e) => setNewSkill(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addSkill();
-                    }
-                  }}
-                />
-                <button type="button" className={btnSecondary} onClick={addSkill}>
-                  {t('Add')}
-                </button>
-              </div>
-            )}
+          </div>
+        )}
+        {/* A skill can be added by hand on every vacancy, also when the AI found some and on a new
+            one (VN-11). */}
+        {!locked && (
+          <div className="flex gap-2">
+            <input
+              className={input}
+              aria-label={t('Add another skill')}
+              placeholder={t('Add another skill')}
+              maxLength={120}
+              value={newSkill}
+              onChange={(e) => setNewSkill(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addSkill();
+                }
+              }}
+            />
+            <button type="button" className={btnSecondary} onClick={addSkill}>
+              {t('Add')}
+            </button>
           </div>
         )}
 

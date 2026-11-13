@@ -314,7 +314,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           {data.counts.total === 1
             ? t('{n} CV in this scan', { n: data.counts.total })
             : t('{n} CVs in this scan', { n: data.counts.total })}
-          {data.counts.failed > 0 && ` · ${t('{n} failed (see Table)', { n: data.counts.failed })}`}
+          {data.counts.failed > 0 &&
+            ` · ${t('{n} failed (see the Candidates tab)', { n: data.counts.failed })}`}
         </p>
       </div>
 
@@ -347,7 +348,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-ink-2">
               {t(
-                '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.',
+                '{read} of {total} read. You can leave this page: the scan continues and is kept under Runs.',
                 { read, total: data.counts.total },
               )}
             </p>
@@ -705,7 +706,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                     </a>
                     {r.state === 'failed' && (
                       <button className="text-link hover:underline" onClick={onTable}>
-                        {t('Retry on the Table tab')}
+                        {t('Retry on the Candidates tab')}
                       </button>
                     )}
                   </span>

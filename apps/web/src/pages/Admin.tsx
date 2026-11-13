@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   api,
   type AdminUser,
@@ -43,13 +43,16 @@ export const inviteLink = (token: string) =>
 /** The one-time link an administrator sends to a user, who opens it and chooses a password. */
 function InviteLink({ created }: { created: Created }) {
   const [copied, setCopied] = useState<'yes' | 'no' | ''>('');
+  const field = useRef<HTMLInputElement>(null);
   const link = inviteLink(created.setupToken);
   async function copy() {
     try {
       await navigator.clipboard.writeText(link);
       setCopied('yes');
     } catch {
-      setCopied('no'); // clipboard blocked: the field below is pre-selected for a manual copy
+      setCopied('no'); // clipboard blocked: the field below is focused and selected for a manual copy
+      field.current?.focus();
+      field.current?.select();
     }
   }
   const who = created.user.email;
@@ -71,6 +74,7 @@ function InviteLink({ created }: { created: Created }) {
       <div className="flex flex-wrap gap-2">
         <input
           readOnly
+          ref={field}
           aria-label="Invitation link"
           className={`${input} min-w-0 flex-1 font-mono text-xs`}
           value={link}
@@ -96,6 +100,12 @@ export function Users({ meId }: { meId: string }) {
   const [created, setCreated] = useState<Created | null>(null);
   const [form, setForm] = useState({ email: '', displayName: '', role: 'TA_PARTNER' as Role });
   const [busy, setBusy] = useState(false);
+  // Actions that sign someone out or lock them out ask first, naming the person (SD-38).
+  const [ask, setAsk] = useState<{
+    text: string;
+    label: string;
+    go: () => Promise<unknown>;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -192,6 +202,30 @@ export function Users({ meId }: { meId: string }) {
       </Card>
 
       <Card title="Users">
+        {ask && (
+          <div
+            role="alertdialog"
+            aria-label={ask.label}
+            className="mb-3 space-y-2 rounded-xl border border-warn-line bg-warn p-3 text-sm text-warn-ink"
+          >
+            <p>{ask.text}</p>
+            <div className="flex flex-wrap gap-2">
+              <button className={btnSecondary} onClick={() => setAsk(null)} autoFocus>
+                Cancel
+              </button>
+              <button
+                className={btnDanger}
+                onClick={() => {
+                  const go = ask.go;
+                  setAsk(null);
+                  void act(go);
+                }}
+              >
+                {ask.label}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Users</caption>
@@ -233,10 +267,16 @@ export function Users({ meId }: { meId: string }) {
                           Copy invite link
                         </button>
                       )}
-                      {u.status === 'active' && (
+                      {u.status === 'active' && u.id !== meId && (
                         <button
                           className={btnSecondary}
-                          onClick={() => act(() => api.post(`/admin/users/${u.id}/reset-password`))}
+                          onClick={() =>
+                            setAsk({
+                              label: 'Reset password',
+                              text: `Reset the password of ${u.displayName ?? u.email}? They are signed out everywhere and get a temporary password by email.`,
+                              go: () => api.post(`/admin/users/${u.id}/reset-password`),
+                            })
+                          }
                         >
                           Reset password
                         </button>
@@ -245,7 +285,13 @@ export function Users({ meId }: { meId: string }) {
                         <button
                           className={btnSecondary}
                           title="For someone who lost their phone and recovery codes"
-                          onClick={() => act(() => api.post(`/admin/users/${u.id}/mfa-reset`))}
+                          onClick={() =>
+                            setAsk({
+                              label: 'Reset two-step',
+                              text: `Remove two-step sign-in for ${u.displayName ?? u.email}? They sign in with the password alone until they set it up again.`,
+                              go: () => api.post(`/admin/users/${u.id}/mfa-reset`),
+                            })
+                          }
                         >
                           Reset two-step
                         </button>
@@ -253,13 +299,18 @@ export function Users({ meId }: { meId: string }) {
                       {u.id !== meId && (
                         <button
                           className={u.status === 'active' ? btnDanger : btnSecondary}
-                          onClick={() =>
-                            act(() =>
+                          onClick={() => {
+                            const go = () =>
                               api.post(`/admin/users/${u.id}/status`, {
                                 status: u.status === 'active' ? 'disabled' : 'active',
-                              }),
-                            )
-                          }
+                              });
+                            if (u.status !== 'active') return void act(go);
+                            setAsk({
+                              label: 'Disable',
+                              text: `Disable ${u.displayName ?? u.email}? They are signed out and cannot sign in until the account is enabled again.`,
+                              go,
+                            });
+                          }}
                         >
                           {u.status === 'active' ? 'Disable' : 'Enable'}
                         </button>
@@ -694,9 +745,16 @@ function CompanyCard({
                     className={btnSecondary}
                     disabled={busy}
                     aria-label={`Remove ${m.modelId}`}
-                    onClick={() =>
-                      run(async () => void (await api.del(`/admin/ai/models/${m.id}`)))
-                    }
+                    onClick={() => {
+                      // Removing a model asks first; for the active one it says what follows (SD-38).
+                      const sure = window.confirm(
+                        m.isActive
+                          ? `Remove ${m.modelId}? It is the active model: no model will be active and new CVs will wait until you choose another.`
+                          : `Remove ${m.modelId}?`,
+                      );
+                      if (sure)
+                        void run(async () => void (await api.del(`/admin/ai/models/${m.id}`)));
+                    }}
                   >
                     Remove
                   </button>

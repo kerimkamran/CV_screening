@@ -23,26 +23,49 @@ export function RequirementsDrawer(props: {
 }) {
   const t = useT();
   const { data } = props;
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDialogElement>(null);
   const { onClose, focusId } = props;
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
+  /*
+   * A real modal (SD-35, RQ-01/04): shown with showModal(), so it sits in the top layer above the
+   * app header, the page behind is inert with a backdrop, Esc closes it, and focus goes back to
+   * the button that opened it. Opened once; the 4 s refreshes never move the focus.
+   */
+  useEffect(() => {
+    const d = ref.current;
+    const back = document.activeElement as HTMLElement | null;
+    if (d && typeof d.showModal === 'function' && !d.open) d.showModal();
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('keydown', key);
+      if (d?.open) d.close();
+      back?.focus?.();
+    };
+  }, []);
   useEffect(() => {
     const target = focusId ? document.getElementById(`req-row-${focusId}`) : null;
     if (target) {
       target.scrollIntoView?.({ block: 'center' });
       target.querySelector<HTMLInputElement>('input:checked')?.focus();
     } else ref.current?.focus();
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', key);
-    return () => document.removeEventListener('keydown', key);
-  }, [onClose, focusId]);
+  }, [focusId]);
 
   return (
-    <aside
+    <dialog
       ref={ref}
       tabIndex={-1}
-      role="dialog"
       aria-label={t('Requirements')}
-      className="fixed inset-y-0 right-0 z-30 w-full max-w-md overflow-y-auto border-l border-line bg-card p-5 shadow-xl focus:outline-none"
+      aria-modal="true"
+      onCancel={(e) => {
+        e.preventDefault();
+        closeRef.current();
+      }}
+      style={{ display: 'block' }}
+      className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-md overflow-y-auto border-0 border-l border-line bg-card p-5 text-ink shadow-xl backdrop:bg-black/30 focus:outline-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -143,6 +166,6 @@ export function RequirementsDrawer(props: {
           </ul>
         </section>
       )}
-    </aside>
+    </dialog>
   );
 }

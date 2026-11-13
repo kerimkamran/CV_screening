@@ -137,16 +137,18 @@ export function CriteriaTab({ id }: { id: string }) {
             {!frozen && (
               <button
                 className={btnSecondary}
-                disabled={
-                  !!busy ||
-                  (rows.length > 0 &&
-                    !window.confirm(t('Replace the current draft with new AI suggestions?')))
-                }
-                onClick={() =>
-                  run('extract', async () =>
-                    apply(await api.post<Criteria>(`/vacancies/${id}/criteria/extract`)),
+                disabled={!!busy}
+                onClick={() => {
+                  // Asked when pressed, never while the page draws (SD-25).
+                  if (
+                    rows.length > 0 &&
+                    !window.confirm(t('Replace the current draft with new AI suggestions?'))
                   )
-                }
+                    return;
+                  void run('extract', async () =>
+                    apply(await api.post<Criteria>(`/vacancies/${id}/criteria/extract`)),
+                  );
+                }}
               >
                 {busy === 'extract' ? t('Extracting…') : t('Extract with AI')}
               </button>

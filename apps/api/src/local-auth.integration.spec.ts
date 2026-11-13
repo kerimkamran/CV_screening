@@ -346,4 +346,11 @@ describeDb('Local accounts', () => {
       ).statusCode,
     ).toBe(401);
   });
+
+  it('signing out withdraws the token on the server at once (SD-51)', async () => {
+    expect((await get('/me', adminToken)).statusCode).toBe(200);
+    expect((await post('/auth/logout', {}, adminToken)).statusCode).toBe(204);
+    expect((await get('/me', adminToken)).statusCode).toBe(401);
+    expect((await post('/auth/logout', {}, adminToken)).statusCode).toBe(401);
+  });
 });

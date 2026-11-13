@@ -316,7 +316,7 @@ export const AZ_POOL: Record<string, string> = {
   'No must-haves in this vacancy.': 'Bu vakansiyada mütləq tələb yoxdur.',
   'Keys: S shortlist, M maybe, N not now. Press again to clear it.':
     'Düymələr: S qısa siyahı, M bəlkə, N indi yox. Qərarı silmək üçün yenidən basın.',
-  'Open the full report': 'Tam hesabata keçin',
+  'Open the CV review': 'CV baxışını açın',
   'Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the report.':
     'Düymələr: J və K keçid, S qısa siyahı, M bəlkə, N indi yox, Enter hesabatı açır.',
 

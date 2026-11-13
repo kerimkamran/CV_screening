@@ -103,6 +103,8 @@ export function ShareReport({
     }
   }
   async function revoke(id: string) {
+    // Revoking ends the link for everyone who has it, so it asks first (SD-37).
+    if (!window.confirm(t('Revoke this link? Everyone who has it loses access at once.'))) return;
     try {
       await api.post(`/shares/${id}/revoke`);
       await loadShares();

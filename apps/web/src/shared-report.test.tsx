@@ -251,6 +251,8 @@ describe('Share panel (spec 6.5)', () => {
   });
 
   it('lists what was shared, who opened it, and revokes a link', async () => {
+    // Revoking asks first (SD-37); the person confirms.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     let revoked = false;
     const calls = mockFetch((url, init) => {
       if (url.endsWith('/shares/SH1/revoke') && init?.method === 'POST') {

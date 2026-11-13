@@ -19,7 +19,10 @@ export function navDirection(dir: Dir) {
   pendingDir = dir;
 }
 
-type StartViewTransition = (cb: () => void) => { finished: Promise<void> };
+type StartViewTransition = (cb: () => void) => {
+  finished: Promise<void>;
+  ready: Promise<void>;
+};
 
 /**
  * Applies a screen change inside a View Transition when the browser has them and motion is allowed;
@@ -39,9 +42,14 @@ export function transition(apply: () => void) {
   else delete root.dataset.nav;
   try {
     const vt = start.call(document, () => flushSync(apply));
-    void vt.finished.finally(() => {
-      if (root.dataset.nav === dir) delete root.dataset.nav;
-    });
+    // A newer screen change skips this one: its promises then reject with "Transition was skipped",
+    // which is normal and must not surface as an error (SH-01).
+    void vt.ready?.catch(() => undefined);
+    void Promise.resolve(vt.finished)
+      .catch(() => undefined)
+      .finally(() => {
+        if (root.dataset.nav === dir) delete root.dataset.nav;
+      });
   } catch {
     apply();
   }

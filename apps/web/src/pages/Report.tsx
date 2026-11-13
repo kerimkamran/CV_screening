@@ -180,7 +180,12 @@ export function Report({
         })
       : null;
   })();
-  const today = new Date().toISOString().slice(0, 10);
+  // The date in the reader's language, not an ISO string (SD-79).
+  const today = new Date().toLocaleDateString(locale(), {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
   const shownRows = showAll ? scored : scored.slice(0, TOP);
   // "3–5 years" comes from the shared helper in English; shown in the viewer's language.
   const expText = (line: string | null) => {

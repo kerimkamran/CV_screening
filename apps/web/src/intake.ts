@@ -238,6 +238,16 @@ let wake: { release: () => Promise<void> } | null = null;
 export const runActive = (r: Run | null | undefined) =>
   !!r && r.items.some((i) => i.client === 'waiting' || i.client === 'sending');
 
+// Files still being sent live only in this tab: reloading or closing it now would lose them, so the
+// browser asks first (UP-05).
+if (typeof window !== 'undefined')
+  window.addEventListener('beforeunload', (e) => {
+    if ([...runs.values()].some(runActive)) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
 export function getRun(vacancyId: string): Run | null {
   return runs.get(vacancyId) ?? null;
 }

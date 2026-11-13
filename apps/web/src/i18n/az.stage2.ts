@@ -157,6 +157,17 @@ export const AZ_STAGE2: Record<string, string> = {
   Download: 'Yüklə',
   'Close full screen': 'Tam ekranı bağla',
   'Full screen': 'Tam ekran',
+  'Open in new tab': 'Yeni vərəqdə açın',
+  'This PDF is password-protected, so its pages cannot be shown.':
+    'Bu PDF parolla qorunur, ona görə səhifələri göstərilə bilmir.',
+  'This PDF could not be shown as pages.': 'Bu PDF səhifələr kimi göstərilə bilmədi.',
+  'The original file is no longer available.': 'Orijinal fayl artıq mövcud deyil.',
+  'The original cannot be shown as pages.': 'Orijinal səhifələr kimi göstərilə bilmir.',
+  'Scanned image without text.': 'Mətnsiz skan edilmiş şəkil.',
+  Fit: 'Sığdır',
+  'Fit one page to the height': 'Bir səhifəni hündürlüyə sığdırın',
+  'The browser blocked the new tab. Use Download instead.':
+    'Brauzer yeni vərəqi blokladı. Əvəzində “Yüklə” düyməsindən istifadə edin.',
   'CV view': 'CV görünüşü',
   'This CV is being analyzed.': 'Bu CV təhlil olunur.',
   'The result appears here by itself. You can read the CV meanwhile.':
@@ -164,7 +175,21 @@ export const AZ_STAGE2: Record<string, string> = {
   'The analysis of this CV did not finish.': 'Bu CV-nin təhlili başa çatmadı.',
   'Retrying…': 'Yenidən cəhd edilir…',
   'Retry the analysis': 'Təhlili yenidən cəhd et',
-  'Read the CV on the left and decide yourself.': 'CV-ni solda oxuyun və özünüz qərar verin.',
+  'Read the CV and decide yourself.': 'CV-ni oxuyun və özünüz qərar verin.',
+  'This vacancy is archived, so decisions are off.':
+    'Bu vakansiya arxivdədir, ona görə qərarlar bağlıdır.',
+  'Note saved.': 'Qeyd saxlanıldı.',
+  'Withdraw consent?': 'Razılıq geri götürülsün?',
+  'This deletes what was read from the pages. Withdraw consent?':
+    'Bu, səhifələrdən oxunanları silir. Razılığı geri götürürsünüz?',
+  'Withdraw consent': 'Razılığı geri götürün',
+  'Revoke this link? Everyone who has it loses access at once.':
+    'Bu link ləğv edilsin? Ona sahib olan hər kəs girişi dərhal itirir.',
+  'Sort the list': 'Siyahını sıralayın',
+  ', sorted ascending': ', artan sıra ilə',
+  ', sorted descending': ', azalan sıra ilə',
+  'Copying did not work. Select the text in the box and copy it.':
+    'Kopyalamaq alınmadı. Qutudakı mətni seçib kopyalayın.',
   'The analysis was stopped before this CV.': 'Təhlil bu CV-yə çatmamış dayandırılıb.',
   'Open the vacancy to continue': 'Davam etmək üçün vakansiyanı açın',
   'Hide in CV': 'CV-də gizlət',

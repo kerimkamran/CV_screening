@@ -49,15 +49,15 @@ export const AZ_RESULTS: Record<string, string> = {
   '({n} changed)': '({n} dəyişdirilib)',
   '{n} CV in this scan': 'Bu skanda {n} CV',
   '{n} CVs in this scan': 'Bu skanda {n} CV',
-  '{n} failed (see Table)': '{n} uğursuz oldu (Cədvələ baxın)',
+  '{n} failed (see the Candidates tab)': '{n} uğursuz oldu (Namizədlər bölməsinə baxın)',
   'The ranking uses your requirement changes ({n}).':
     'Sıralamada tələblərdə etdiyiniz dəyişikliklər nəzərə alınır ({n}).',
   'Back to original': 'İlkin vəziyyətə qayıdın',
   'Sending {sent} of {total} files. You can start looking now: the rest appear here as they are read.':
     'Fayllar göndərilir: {sent} / {total}. İndi baxmağa başlaya bilərsiniz: qalanları oxunduqca burada görünəcək.',
   'Some files could not be sent.': 'Bəzi faylları göndərmək mümkün olmadı.',
-  '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.':
-    'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Keçmiş skanlarda saxlanılır.',
+  '{read} of {total} read. You can leave this page: the scan continues and is kept under Runs.':
+    'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Təhlillər bölməsində saxlanılır.',
   'Stop the scan': 'Skanı dayandırın',
   'CVs read': 'Oxunmuş CV-lər',
   '{ready} ready, {pending} being read, {human} need a look':
@@ -118,7 +118,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'a knockout rule matched': 'kənarlaşdırma qaydası işlədi',
   'no readable text': 'oxunaqlı mətn yoxdur',
   Open: 'Açın',
-  'Retry on the Table tab': 'Cədvəl bölməsində yenidən cəhd edin',
+  'Retry on the Candidates tab': 'Namizədlər bölməsində yenidən cəhd edin',
 
   // Candidate card
   'My mark: {mark}': 'Mənim işarəm: {mark}',

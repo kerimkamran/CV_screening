@@ -62,8 +62,10 @@ function describe(c: HistoryRow['changes'][number]): string {
   return c.field ?? '';
 }
 
-function Runs({ id, rows }: { id: string; rows: Run[] | null }) {
+function Runs({ id, rows, error }: { id: string; rows: Run[] | null; error?: string }) {
   const t = useT();
+  // A failed load says so; it is never shown as "no runs" (SD-58).
+  if (error) return <Notice kind="error">{error}</Notice>;
   if (!rows) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
   if (rows.length === 0)
     return <p className="text-sm text-ink-2">{t('No analysis has been run yet.')}</p>;
@@ -97,6 +99,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [runs, setRuns] = useState<Run[] | null>(null);
+  const [runsError, setRunsError] = useState('');
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   // The role and resume cards fold away once there are results; null means "decide by itself".
@@ -115,8 +118,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
     if (creating) return;
     try {
       setRuns(await api.get<Run[]>(`/vacancies/${id}/runs`));
-    } catch {
-      setRuns([]);
+      setRunsError('');
+    } catch (e) {
+      setRunsError(errMsg(e));
     }
   }, [id, creating]);
   useEffect(() => void reload(), [reload]);
@@ -370,25 +374,47 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         />
       </div>
 
+      {/* ARIA tabs (VP-04): one tab stop, arrows move between the tabs, Enter or a click opens one. */}
       <div
         role="tablist"
         aria-label={t('Vacancy views')}
         className="flex gap-1 overflow-x-auto border-b"
+        onKeyDown={(e) => {
+          const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')];
+          const at = tabs.indexOf(document.activeElement as HTMLElement);
+          if (at < 0) return;
+          const to =
+            e.key === 'ArrowRight'
+              ? (at + 1) % tabs.length
+              : e.key === 'ArrowLeft'
+                ? (at - 1 + tabs.length) % tabs.length
+                : e.key === 'Home'
+                  ? 0
+                  : e.key === 'End'
+                    ? tabs.length - 1
+                    : -1;
+          if (to < 0) return;
+          e.preventDefault();
+          tabs[to]!.focus();
+        }}
       >
         {TABS.map((k) => (
           <button
             key={k}
+            id={`vtab-${k}`}
             role="tab"
             type="button"
             aria-selected={tab === k}
+            aria-controls="vacancy-tabpanel"
+            tabIndex={tab === k ? 0 : -1}
             onClick={() => go(`/vacancies/${v.id}/${k}`)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium pointer-coarse:min-h-11 focus-visible:rounded-t focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
             {t(TAB_LABEL[k])}
           </button>
         ))}
       </div>
-      <div role="tabpanel">
+      <div role="tabpanel" id="vacancy-tabpanel" aria-labelledby={`vtab-${tab}`}>
         {tab === 'candidates' ? (
           <CandidatePool vacancyId={v.id} vacancyTitle={v.title} canMark />
         ) : tab === 'results' ? (
@@ -396,7 +422,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         ) : tab === 'report' ? (
           <Report vacancyId={v.id} title={v.title} createdAt={v.createdAt} />
         ) : tab === 'runs' ? (
-          <Runs id={v.id} rows={runs} />
+          <Runs id={v.id} rows={runs} error={runsError} />
         ) : (
           <CriteriaTab id={v.id} />
         )}

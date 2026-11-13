@@ -69,6 +69,12 @@ export function Retention() {
     }
   }, []);
   useEffect(() => void load(), [load]);
+  // The armed confirmation does not linger: it ends by itself after 20 s (AD-18).
+  useEffect(() => {
+    if (!confirm) return;
+    const h = setTimeout(() => setConfirm(false), 20_000);
+    return () => clearTimeout(h);
+  }, [confirm]);
 
   async function act(fn: () => Promise<void>) {
     setBusy(true);
@@ -149,20 +155,43 @@ export function Retention() {
             <button className={btnSecondary} onClick={() => void run(true)} disabled={busy}>
               Preview what would be erased
             </button>
-            {confirm ? (
-              <button className={btnDanger} onClick={() => void run(false)} disabled={busy}>
-                Yes, erase now ({st.due} file{st.due === 1 ? '' : 's'}, cannot be undone)
-              </button>
-            ) : (
-              <button
-                className={btnDanger}
-                onClick={() => setConfirm(true)}
-                disabled={busy || st.due === 0}
-              >
-                Erase expired files now
-              </button>
-            )}
+            {/* The first click only asks; the confirmation opens below, away from this spot, so a
+                double-click can never erase (SD-39). */}
+            <button
+              className={btnDanger}
+              onClick={() => setConfirm(true)}
+              disabled={busy || st.due === 0 || confirm}
+              aria-expanded={confirm}
+            >
+              Erase expired files now
+            </button>
           </div>
+          {confirm && (
+            <div
+              role="alertdialog"
+              aria-label="Erase expired files"
+              className="space-y-2 rounded-xl border border-err-line bg-err p-3 text-sm text-err-ink"
+            >
+              <p>
+                Erase {st.due} file{st.due === 1 ? '' : 's'} now? This cannot be undone.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className={btnSecondary} onClick={() => setConfirm(false)} autoFocus>
+                  Cancel
+                </button>
+                <button
+                  className={btnDanger}
+                  onClick={() => {
+                    setConfirm(false);
+                    void run(false);
+                  }}
+                  disabled={busy}
+                >
+                  Yes, erase now
+                </button>
+              </div>
+            </div>
+          )}
           <p className="text-xs text-ink-3">
             Right now: {st.due} file(s) older than {st.days} days and not on hold; {st.heldBack}{' '}
             more on hold. The preview and the button use the saved period.
@@ -234,31 +263,33 @@ export function Retention() {
         {st.certificates.length === 0 ? (
           <p className="text-sm text-ink-3">No purge has run yet.</p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Deletion certificates</caption>
-            <thead className="border-b text-xs uppercase text-ink-3">
-              <tr>
-                <th className="py-2 pr-3">When</th>
-                <th className="pr-3">Run by</th>
-                <th className="pr-3">Period</th>
-                <th className="pr-3">Files erased</th>
-                <th className="pr-3">Kept (hold)</th>
-                <th>Certificate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {st.certificates.map((c) => (
-                <tr key={c.id} className="border-b border-line">
-                  <td className="py-2 pr-3">{when(c.runAt)}</td>
-                  <td className="pr-3">{c.trigger === 'schedule' ? 'Scheduled' : c.by}</td>
-                  <td className="pr-3">{c.days} days</td>
-                  <td className="pr-3">{c.documents}</td>
-                  <td className="pr-3">{c.heldBack}</td>
-                  <td className="font-mono text-xs">{c.id}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Deletion certificates</caption>
+              <thead className="border-b text-xs uppercase text-ink-3">
+                <tr>
+                  <th className="py-2 pr-3">When</th>
+                  <th className="pr-3">Run by</th>
+                  <th className="pr-3">Period</th>
+                  <th className="pr-3">Files erased</th>
+                  <th className="pr-3">Kept (hold)</th>
+                  <th>Certificate</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {st.certificates.map((c) => (
+                  <tr key={c.id} className="border-b border-line">
+                    <td className="py-2 pr-3">{when(c.runAt)}</td>
+                    <td className="pr-3">{c.trigger === 'schedule' ? 'Scheduled' : c.by}</td>
+                    <td className="pr-3">{c.days} days</td>
+                    <td className="pr-3">{c.documents}</td>
+                    <td className="pr-3">{c.heldBack}</td>
+                    <td className="font-mono text-xs">{c.id}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <p className="mt-2 text-xs text-ink-3">
           The certificate number matches an entry in the audit trail; every erased file also has its

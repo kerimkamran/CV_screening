@@ -236,6 +236,10 @@
 @layer base {
   html {
     background: var(--c-bg);
+    /* Scrolling to a control (focus, find, "scroll into view") keeps it clear of the sticky header
+       and of the bars fixed to the bottom on phones. */
+    scroll-padding-top: 64px;
+    scroll-padding-bottom: calc(var(--bottombar-h, 0px) + var(--reviewbar-h, 0px) + 8px);
   }
   body {
     background-color: var(--c-bg);
@@ -262,6 +266,28 @@
   ::placeholder {
     color: var(--c-ink-3);
     opacity: 1;
+  }
+  /*
+   * Touch screens: every control is at least 44 x 44 px (WCAG 2.5.5; UAT check TGT). In the base
+   * layer, so a component may still ask for more. Links inside a sentence are inline and keep their
+   * size (min-height does not apply to inline boxes). A control marked data-tgt="small" (the evidence
+   * map's dots, which sit in a 20 px strip and are also reachable from the analysis) is exempt.
+   */
+  @media (pointer: coarse) {
+    :is(
+      button,
+      summary,
+      select,
+      a[href],
+      [role='button'],
+      [role='tab'],
+      input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='range'])
+    ):not([data-tgt='small']) {
+      min-height: 44px;
+    }
+    :is(button, summary, [role='button']):not([data-tgt='small']) {
+      min-width: 44px;
+    }
   }
 }
 

@@ -28,7 +28,10 @@ const holdSchema = z.object({
   matter: z.string().trim().min(3).max(200).optional(),
 });
 
-/** DOC-09/10/11 for the people responsible for the data (ADMIN, GOVERNANCE). */
+/**
+ * DOC-09/10/11. GOVERNANCE is read-only (it may see the settings, the due files and the
+ * certificates); changing the setting, running an erasure and setting a hold are ADMIN only (SD-40).
+ */
 @Roles('ADMIN', 'GOVERNANCE')
 @Controller()
 export class RetentionController {
@@ -68,6 +71,7 @@ export class RetentionController {
   }
 
   @Put('admin/retention')
+  @Roles('ADMIN')
   async update(
     @Body() body: unknown,
     @CurrentPrincipal() p: Principal,
@@ -95,6 +99,7 @@ export class RetentionController {
   }
 
   @Post('admin/retention/run')
+  @Roles('ADMIN')
   @HttpCode(200)
   async run(@Body() body: unknown, @CurrentPrincipal() p: Principal) {
     const { dryRun } = parse(z.object({ dryRun: z.boolean().default(true) }), body ?? {});
@@ -102,6 +107,7 @@ export class RetentionController {
   }
 
   @Put('admin/vacancies/:id/legal-hold')
+  @Roles('ADMIN')
   async hold(
     @Param('id') id: string,
     @Body() body: unknown,

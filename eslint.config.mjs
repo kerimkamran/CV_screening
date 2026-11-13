@@ -41,6 +41,25 @@ export default tseslint.config(
   },
   { files: ['**/*.{mjs,cjs}', 'scripts/**'], languageOptions: { globals: globals.node } },
   {
+    // The UAT harness drives pages through Playwright and evaluates code inside the browser,
+    // where `any`, inline import() types and throw-away destructuring are normal. The product
+    // code above stays strict; only the test harness is relaxed.
+    files: ['e2e/**/*.{ts,mjs}'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/consistent-type-imports': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-unused-expressions': 'off',
+      'no-useless-assignment': 'off',
+      'no-constant-binary-expression': 'off',
+      'no-empty-pattern': 'off',
+    },
+  },
+  {
     files: ['**/*.spec.ts', '**/*.test.{ts,tsx}', '**/__tests__/**'],
     languageOptions: { globals: { ...globals.jest, ...globals.node } },
   },

@@ -740,11 +740,13 @@ describe('Candidate report', () => {
       .catch(() => null);
     const root = card ?? (await screen.findByText('Links the candidate gave')).closest('section')!;
     // No consent yet: the page button is off, the social network is never offered.
-    expect(within(root).getByRole('button', { name: 'Read example.org' })).toBeDisabled();
+    expect(
+      within(root).getByRole('button', { name: /Read this page\s*example\.org/ }),
+    ).toBeDisabled();
     expect(within(root).getByText('Social networks are never read')).toBeInTheDocument();
     await userEvent.type(within(root).getByLabelText(/Reference/), 'Form 77');
     await userEvent.click(within(root).getByRole('button', { name: /Record the candidate/ }));
-    const btn = await within(root).findByRole('button', { name: 'Read example.org' });
+    const btn = await within(root).findByRole('button', { name: /Read this page\s*example\.org/ });
     await waitFor(() => expect(btn).toBeEnabled());
     expect(calls.some((c) => c.url.endsWith('/links/review'))).toBe(false);
     await userEvent.click(btn);
@@ -965,8 +967,10 @@ describe('SenAI Ask bar', () => {
     await within(panel).findByRole('link', { name: 'Candidate 29' });
     // Regression: "sm:bottom-auto" dropped the bottom edge, so the panel grew past the screen and never scrolled.
     expect(panel.className).not.toMatch(/bottom-auto/);
-    expect(panel.className).toMatch(/sm:inset-y-0/);
-    expect(panel.className).toMatch(/sm:h-dvh/);
+    // Top and bottom edges both set: below the 57 px header (so the account menu stays reachable,
+    // SD-16) down to the bottom of the screen.
+    expect(panel.className).toMatch(/sm:top-\[57px\]/);
+    expect(panel.className).toMatch(/sm:bottom-0/);
     const list = within(panel).getByLabelText('Conversation');
     expect(list.className).toMatch(/overflow-y-auto/);
     expect(list.className).toMatch(/min-h-0/);
@@ -1566,7 +1570,7 @@ describe('Candidate preview and keys (Oct 2026)', () => {
       'aria-pressed',
       'true',
     );
-    await userEvent.click(within(panel).getByRole('button', { name: 'Open the full report' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Open the CV review' }));
     expect(window.location.hash).toMatch(new RegExp(`^#/cv/${DID}\\?l=`));
   });
 
