@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import {
-  setAssistantOpen,
+  closeAssistant,
   SLOGAN,
   takePendingQuestion,
   useAssistantOpen,
@@ -67,9 +67,16 @@ export interface PoolAnswer {
   language: 'en' | 'az' | 'ru';
 }
 
+type Without = { kind: 'skill' | 'band' | 'mark' | 'top'; text?: string };
 type Item =
   | { id: string; role: 'user'; text: string }
-  | { id: string; role: 'assistant'; answer: PoolAnswer };
+  /** `q`: the question that produced the answer, so its buttons re-run that question (SA-11). */
+  | {
+      id: string;
+      role: 'assistant';
+      answer: PoolAnswer;
+      q?: { message: string; without?: Without };
+    };
 interface Conversation {
   id: string;
   title: string;
@@ -95,6 +102,8 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
   const [text, setText] = useState('');
   const [announce, setAnnounce] = useState('');
   const [history, setHistory] = useState<Conversation[] | null>(null);
+  /** The chat whose Delete was pressed: removal waits for a second, explicit confirmation (SA-29). */
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const turn = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -106,7 +115,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
         pick?: string;
         showAll?: boolean;
         echo?: boolean;
-        without?: { kind: 'skill' | 'band' | 'mark' | 'top'; text?: string };
+        without?: Without;
       } = {},
     ) => {
       if (busy || !message.trim()) return;
@@ -131,10 +140,28 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
         );
         if (turn.current !== mine) return;
         setCid(r.conversationId);
-        setItems((i) => [...i, { id: r.messageId, role: 'assistant', answer: r.answer }]);
+        setItems((i) => [
+          ...i,
+          {
+            id: r.messageId,
+            role: 'assistant',
+            answer: r.answer,
+            q: { message, without: extra.without },
+          },
+        ]);
         setAnnounce(tr('{name} has answered.', { name: config.name }));
       } catch (e) {
-        if (turn.current === mine) setError(errMsg(e));
+        // A refused account and a server fault get a plain sentence in the screen language (SA-31).
+        if (turn.current === mine)
+          setError(
+            e instanceof ApiError && e.status === 403
+              ? tr('Your account cannot use {name}.', { name: config.name })
+              : e instanceof ApiError && e.status >= 500
+                ? tr('{name} could not answer right now. Try again in a moment.', {
+                    name: config.name,
+                  })
+                : errMsg(e),
+          );
       } finally {
         if (turn.current === mine) setBusy(false);
       }
@@ -191,11 +218,18 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
         }[];
       }>(`/assistant/conversations/${id}`);
       setItems(
-        c.messages.map((m) =>
-          m.role === 'user'
-            ? { id: m.id, role: 'user', text: m.content.text ?? '' }
-            : { id: m.id, role: 'assistant', answer: m.content as PoolAnswer },
-        ),
+        c.messages.map((m, k) => {
+          if (m.role === 'user') return { id: m.id, role: 'user', text: m.content.text ?? '' };
+          const prev = c.messages[k - 1];
+          const asked = prev?.role === 'user' ? prev.content.text : undefined;
+          return {
+            id: m.id,
+            role: 'assistant',
+            answer: m.content as PoolAnswer,
+            // A refinement ("− Strong") cannot be re-run from its text alone.
+            q: asked && !asked.startsWith('− ') ? { message: asked } : undefined,
+          };
+        }),
       );
       setCid(id);
       setHistory(null);
@@ -215,8 +249,6 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
 
   if (!open) return null;
   const lastAnswerId = [...items].reverse().find((i) => i.role === 'assistant')?.id;
-  const lastUser = [...items].reverse().find((i) => i.role === 'user') as
-    { text: string } | undefined;
 
   return (
     <aside
@@ -224,7 +256,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();
-          setAssistantOpen(false);
+          closeAssistant();
         }
       }}
       className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:top-[57px] sm:right-0 sm:bottom-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
@@ -251,7 +283,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
           >
             {t('History')}
           </button>
-          <button type="button" className={btnSecondary} onClick={() => setAssistantOpen(false)}>
+          <button type="button" className={btnSecondary} onClick={closeAssistant}>
             {t('Close')}
           </button>
         </div>
@@ -284,14 +316,42 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
                   <span className="block truncate">{c.title}</span>
                   <span className="text-xs text-ink-3">{ago(c.updatedAt)}</span>
                 </button>
-                <button
-                  type="button"
-                  className="shrink-0 text-xs text-link underline"
-                  aria-label={t('Delete chat: {title}', { title: c.title })}
-                  onClick={() => void remove(c.id)}
-                >
-                  {t('Delete')}
-                </button>
+                {confirmDel === c.id ? (
+                  <div
+                    role="alertdialog"
+                    aria-label={t('Delete chat: {title}', { title: c.title })}
+                    className="flex shrink-0 items-center gap-2 text-xs"
+                  >
+                    <span>{t('Delete this chat?')}</span>
+                    <button
+                      type="button"
+                      className="font-semibold text-err-ink underline pointer-coarse:min-h-11"
+                      autoFocus
+                      onClick={() => {
+                        setConfirmDel(null);
+                        void remove(c.id);
+                      }}
+                    >
+                      {t('Delete')}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-link underline pointer-coarse:min-h-11"
+                      onClick={() => setConfirmDel(null)}
+                    >
+                      {t('Cancel')}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs text-link underline pointer-coarse:min-h-11"
+                    aria-label={t('Delete chat: {title}', { title: c.title })}
+                    onClick={() => setConfirmDel(c.id)}
+                  >
+                    {t('Delete')}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -348,11 +408,16 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
                 key={it.id}
                 answer={it.answer}
                 busy={busy}
-                onPick={(id) => void send(lastUser?.text ?? '', { pick: id, echo: false })}
+                canRerun={!!it.q}
+                onPick={(id) =>
+                  it.q && void send(it.q.message, { pick: id, without: it.q.without, echo: false })
+                }
                 onAll={() =>
-                  void send(lastUser?.text ?? '', {
+                  it.q &&
+                  void send(it.q.message, {
                     pick: it.answer.vacancy?.id,
                     showAll: true,
+                    without: it.q.without,
                     echo: false,
                   })
                 }
@@ -426,6 +491,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
 function PoolAnswerView({
   answer: a,
   busy,
+  canRerun,
   onPick,
   onAll,
   onSuggest,
@@ -434,6 +500,7 @@ function PoolAnswerView({
 }: {
   answer: PoolAnswer;
   busy: boolean;
+  canRerun: boolean;
   onPick: (id: string) => void;
   onAll: () => void;
   onSuggest: (q: string) => void;
@@ -533,6 +600,7 @@ function PoolAnswerView({
                     /* without storage the person opens the vacancy and copies by hand */
                   }
                   window.location.hash = `#/vacancies/${c.toId}`;
+                  window.dispatchEvent(new Event('cv-copy-reqs'));
                 }}
               >
                 {t('Review the requirements of {title} to copy', { title: c.title })}
@@ -564,8 +632,8 @@ function PoolAnswerView({
             <li key={o.id}>
               <button
                 type="button"
-                disabled={busy}
-                className="w-full rounded-md border border-edge px-3 py-1.5 text-left hover:bg-page focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                disabled={busy || !canRerun}
+                className="w-full rounded-md border border-edge px-3 py-1.5 text-left hover:bg-page focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
                 onClick={() => onPick(o.id)}
               >
                 {o.title}
@@ -647,9 +715,17 @@ function PoolAnswerView({
         </ol>
       )}
       {a.more > 0 && (
-        <button type="button" className="text-link underline" disabled={busy} onClick={onAll}>
+        <button
+          type="button"
+          className="text-link underline disabled:opacity-60"
+          disabled={busy || !canRerun}
+          onClick={onAll}
+        >
           {t('Show all ({n} more)', { n: a.more })}
         </button>
+      )}
+      {!canRerun && (a.more > 0 || a.options.length > 0) && (
+        <p className="text-xs text-ink-3">{t('Ask the question again to use these buttons.')}</p>
       )}
       {a.suggestions.length > 0 && (
         <ul className="flex flex-wrap gap-2">
@@ -671,17 +747,74 @@ function PoolAnswerView({
         <details className="text-xs text-ink-3">
           <summary className="cursor-pointer">{t('How I got this')}</summary>
           <p className="mt-1">
-            {t('Read as')}: {a.receipt.read}
+            {t('Read as')}: {readableQuery(a.receipt.read, t)}
             {' · '}
             {a.receipt.by === 'model' ? t('A model read the question') : t('Read by rules')}
             {' · '}
-            {a.receipt.sources.join(', ')}
+            {a.receipt.sources.map((x) => t(SOURCE_NAME[x] ?? x)).join(', ')}
           </p>
         </details>
       )}
       <p className="text-xs text-ink-3">{t('As of {time}', { time: ago(a.asOf) })}</p>
     </div>
   );
+}
+
+/** What the server read ("find; skills: Excel; bands: strong"), in words of the screen language (SA-28). */
+const INTENT_NAME: Record<string, string> = {
+  find: 'Find candidates',
+  count: 'Count candidates',
+  shortlist: 'Show the Shortlist',
+  skills: 'Search the CVs for skills',
+  compare: 'Compare candidates',
+  doctor: 'Why so few Strong',
+  changes: 'What changed',
+  what_if: 'What if',
+  open: 'Open',
+  interview: 'Interview questions',
+  recall: 'Earlier conversations',
+  about: 'What I can see',
+  help: 'Help',
+  prefs: 'Preferences',
+  jd: 'Check the job description',
+  consistency: 'Check my decisions',
+  quality: 'Data quality',
+  similar: 'Similar vacancies',
+  rediscover: 'Candidates from other vacancies',
+  challenge: 'Check what the CV says',
+  unknown: 'Not clear',
+};
+const SOURCE_NAME: Record<string, string> = {
+  'pool analysis': 'Stored results',
+  'CV text': 'CV text',
+  'stored assessments': 'Stored assessments',
+};
+const BAND_KEY: Record<string, string> = {
+  strong: 'Strong',
+  good: 'Good',
+  partial: 'Partial',
+  limited: 'Limited',
+};
+function readableQuery(read: string, t: ReturnType<typeof useT>): string {
+  return read
+    .split('; ')
+    .map((part) => {
+      if (INTENT_NAME[part]) return t(INTENT_NAME[part]);
+      const [k, ...rest] = part.split(': ');
+      const v = rest.join(': ');
+      if (k === 'skills') return `${t('Skills')}: ${v}`;
+      if (k === 'bands')
+        return `${t('Bands')}: ${v
+          .split(', ')
+          .map((b) => t(BAND_KEY[b] ?? b))
+          .join(', ')}`;
+      if (k === 'marks') return `${t('Marks')}: ${v}`;
+      const top = /^top (\d+)$/.exec(part);
+      if (top) return t('Top {n}', { n: top[1]! });
+      if (part === 'all vacancies') return t('all vacancies');
+      return part;
+    })
+    .join(' · ');
 }
 
 /** A line of a resume with the word that matched in bold. Text is plain: no markup is ever rendered. */
@@ -702,22 +835,34 @@ function HighlightedPassage({ text, hit }: { text: string; hit?: string }) {
 /** Copies a table as tab-separated text, for pasting into a document or an e-mail. */
 function CopyTable({ table }: { table: NonNullable<PoolAnswer['table']> }) {
   const t = useT();
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<'' | 'ok' | 'failed'>('');
+  useEffect(() => {
+    if (done !== 'ok') return;
+    const id = setTimeout(() => setDone(''), 3000); // "Copied" goes back to "Copy" (SA-17)
+    return () => clearTimeout(id);
+  }, [done]);
   const copy = async () => {
     const text = [table.head, ...table.rows.map((r) => r.cells)]
       .map((r) => r.join('\t'))
       .join('\n');
     try {
       await navigator.clipboard.writeText(text);
-      setDone(true);
+      setDone('ok');
     } catch {
-      setDone(false);
+      setDone('failed');
     }
   };
   return (
-    <button type="button" className={btnSecondary} onClick={() => void copy()}>
-      {done ? t('Copied') : t('Copy')}
-    </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" className={btnSecondary} onClick={() => void copy()}>
+        {done === 'ok' ? t('Copied') : t('Copy')}
+      </button>
+      {done === 'failed' && (
+        <span role="alert" className="text-xs text-err-ink">
+          {t('Could not copy. Select the table and copy it by hand.')}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -766,7 +911,10 @@ function AnalyzeHere({
 }) {
   const t = useT();
   const [state, setState] = useState<Record<string, string>>({});
+  /** Nothing is copied before a second, explicit confirmation (SA-22, SD-24). */
+  const [asking, setAsking] = useState<string | null>(null);
   async function go(it: { matchId: string; vacancyId: string }) {
+    setAsking(null);
     setState((s) => ({ ...s, [it.matchId]: 'busy' }));
     try {
       await api.post('/assistant/rediscovery/analyze', {
@@ -791,12 +939,41 @@ function AnalyzeHere({
                   vacancy: vacancyTitle,
                 })}
               </span>
+            ) : asking === it.matchId ? (
+              <div
+                role="alertdialog"
+                aria-label={t('Analyze {name} for {vacancy}', {
+                  name: it.label,
+                  vacancy: vacancyTitle,
+                })}
+                className="space-y-1 rounded-md border border-edge p-2 text-xs"
+              >
+                <p>
+                  {t(
+                    'This adds the CV of {name} to {vacancy} and analyzes it against its requirements. Continue?',
+                    { name: it.label, vacancy: vacancyTitle },
+                  )}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={btnPrimary}
+                    autoFocus
+                    onClick={() => void go(it)}
+                  >
+                    {t('Add and analyze')}
+                  </button>
+                  <button type="button" className={btnSecondary} onClick={() => setAsking(null)}>
+                    {t('Cancel')}
+                  </button>
+                </div>
+              </div>
             ) : (
               <button
                 type="button"
                 className={btnSecondary}
                 disabled={st === 'busy'}
-                onClick={() => void go(it)}
+                onClick={() => setAsking(it.matchId)}
               >
                 {t('Analyze {name} for {vacancy}', { name: it.label, vacancy: vacancyTitle })}
               </button>

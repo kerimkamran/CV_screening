@@ -567,10 +567,14 @@ uat(
     await expect(dlg).toBeVisible();
     await page.keyboard.press('Escape');
     await expect.soft(dlg).toHaveCount(0);
-    await btn.click();
+    // The drawer is a modal: the page behind, the account menu with it, is out of reach while it
+    // is open. Each background is chosen with the drawer closed, then the drawer is checked on it.
     await onBackgrounds(page, meta.lang, async (bg) => {
-      if (!(await dlg.isVisible())) await btn.click();
+      await btn.click();
+      await expect(dlg).toBeVisible();
       await ux.check(`background ${bg}`, ['AXE'], { overlay: 'aside[role=dialog]' });
+      await page.keyboard.press('Escape');
+      await expect(dlg).toHaveCount(0);
     });
   },
 );

@@ -883,22 +883,97 @@ const LOG_LABEL: Record<string, string> = {
 };
 
 /** On or off, name, model, feature switches, data terms, limits, and who changed what. */
+type AssistantTurn = {
+  at: string;
+  user: string | null;
+  label: string | null;
+  flags: string[];
+  model: string | null;
+  kind: string | null;
+};
+
+function RecentAnswersCard({ turns }: { turns: AssistantTurn[] }) {
+  return (
+    <Card title="Recent answers (for review)">
+      {turns.length === 0 ? (
+        <p className="text-sm text-ink-3">No questions yet.</p>
+      ) : (
+        <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
+          {turns.slice(0, 50).map((t, i) => (
+            <li key={i}>
+              {when(t.at)} · {t.user ?? 'unknown'} · {t.label ?? ''} · {t.kind ?? ''}
+              {t.flags.length > 0 && ` · ${t.flags.join(', ')}`}
+              {t.model ? ` · ${t.model}` : ' · no model'}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function PayloadCard({ payloads }: { payloads: PayloadLog | null }) {
+  return (
+    <Card title="What was sent to the model">
+      <p className="mb-2 text-sm text-ink-2">
+        Only these fields may leave the system, and only as shown here: the field names, their type
+        and longest length, a size and a fingerprint. The text itself is never kept.
+      </p>
+      {!payloads?.calls || payloads.calls.length === 0 ? (
+        <p className="text-sm text-ink-3">No model call yet.</p>
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-ink-3">Allowed: {payloads.allowed.join(', ')}</p>
+          <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
+            {payloads.calls.slice(0, 50).map((c, i) => (
+              <li key={i}>
+                {when(c.at)} · {c.intent} · {c.model ?? ''} · {c.bytes} bytes ·{' '}
+                {Object.keys(c.fields).length} fields ·{' '}
+                {c.violations.length === 0
+                  ? 'all allowed'
+                  : `NOT ALLOWED: ${c.violations.join(', ')}`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Governance reads what the assistant answered and what left the system, and changes nothing. */
+export function AssistantReview() {
+  const [turns, setTurns] = useState<AssistantTurn[]>([]);
+  const [payloads, setPayloads] = useState<PayloadLog | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void (async () => {
+      try {
+        setTurns((await api.get<{ turns: AssistantTurn[] }>('/admin/assistant/audit')).turns);
+        setPayloads(await api.get<PayloadLog>('/admin/assistant/payloads'));
+      } catch (e) {
+        setError(errMsg(e));
+      }
+    })();
+  }, []);
+  return (
+    <div className="space-y-4">
+      {error && <Notice kind="error">{error}</Notice>}
+      <RecentAnswersCard turns={turns} />
+      <PayloadCard payloads={payloads} />
+    </div>
+  );
+}
+
 export function AssistantSettings() {
   const [data, setData] = useState<AssistantOverview | null>(null);
   const [form, setForm] = useState<AssistantSettingsData | null>(null);
   const [attest, setAttest] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
+  /** Which button the message answers: it is shown next to that button (SX-01, SX-12). */
+  const [msgAt, setMsgAt] = useState<'save' | 'test' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [turns, setTurns] = useState<
-    {
-      at: string;
-      user: string | null;
-      label: string | null;
-      flags: string[];
-      model: string | null;
-      kind: string | null;
-    }[]
-  >([]);
+  const [turns, setTurns] = useState<AssistantTurn[]>([]);
   const [catalog, setCatalog] = useState<AiCompany[]>([]);
   const [connections, setConnections] = useState<AiConnection[]>([]);
   const [payloads, setPayloads] = useState<PayloadLog | null>(null);
@@ -909,7 +984,7 @@ export function AssistantSettings() {
       setData(d);
       setForm(d.settings);
       setAttest(false);
-      setTurns((await api.get<{ turns: typeof turns }>('/admin/assistant/audit')).turns);
+      setTurns((await api.get<{ turns: AssistantTurn[] }>('/admin/assistant/audit')).turns);
     } catch (e) {
       setMsg({ kind: 'error', text: errMsg(e) });
       return;
@@ -958,12 +1033,14 @@ export function AssistantSettings() {
   async function test() {
     setBusy(true);
     setMsg(null);
+    setMsgAt('test');
     try {
       const r = await api.post<{ ok: boolean; detail: string }>('/admin/assistant/test', {
         modelRowId: form!.modelRowId,
       });
       setMsg({ kind: r.ok ? 'ok' : 'error', text: r.detail });
-      await load();
+      // Only the test stamp is refreshed: what was chosen above and not saved yet stays (SX-01).
+      setData(await api.get<AssistantOverview>('/admin/assistant'));
     } catch (e) {
       setMsg({ kind: 'error', text: errMsg(e) });
     } finally {
@@ -974,11 +1051,16 @@ export function AssistantSettings() {
     e.preventDefault();
     setBusy(true);
     setMsg(null);
+    setMsgAt('save');
     try {
       const { attestedByName: _a, attestedAt: _b, ...body } = form!;
       void _a;
       void _b;
-      const d = await api.put<AssistantOverview>('/admin/assistant', { ...body, attest });
+      const d = await api.put<AssistantOverview>('/admin/assistant', {
+        ...body,
+        warnPct: Number.isNaN(body.warnPct) ? 80 : body.warnPct,
+        attest,
+      });
       setData(d);
       setForm(d.settings);
       setAttest(false);
@@ -1003,7 +1085,7 @@ export function AssistantSettings() {
         {data.warn && (
           <Notice kind="warn">Usage has passed {data.settings.warnPct}% of a limit.</Notice>
         )}
-        {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+        {msg && !msgAt && <Notice kind={msg.kind}>{msg.text}</Notice>}
 
         <Card title="Assistant">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1074,6 +1156,11 @@ export function AssistantSettings() {
               <span className="text-sm text-ink-3">
                 {data.testFresh ? 'Passed within the last hour.' : 'Not tested in the last hour.'}
               </span>
+              {msg && msgAt === 'test' && (
+                <div className="w-full">
+                  <Notice kind={msg.kind}>{msg.text}</Notice>
+                </div>
+              )}
             </div>
             <Field label="Message when it is unavailable">
               <input
@@ -1183,10 +1270,12 @@ export function AssistantSettings() {
               <input
                 className={input}
                 inputMode="numeric"
-                value={form.warnPct}
-                onChange={(e) =>
-                  set('warnPct', Math.min(100, Math.max(1, num(e.target.value) ?? 80)))
-                }
+                value={Number.isNaN(form.warnPct) ? '' : form.warnPct}
+                onChange={(e) => {
+                  // The field may be empty while typing; 1-100 is applied to a number (SD-85).
+                  const n = num(e.target.value);
+                  set('warnPct', n === null ? NaN : Math.min(100, Math.max(1, n)));
+                }}
               />
             </Field>
           </div>
@@ -1196,10 +1285,11 @@ export function AssistantSettings() {
           </p>
         </Card>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button type="submit" className={btnPrimary} disabled={busy}>
             Save
           </button>
+          {msg && msgAt === 'save' && <Notice kind={msg.kind}>{msg.text}</Notice>}
         </div>
 
         <Card title="Changes">
@@ -1216,21 +1306,7 @@ export function AssistantSettings() {
           )}
         </Card>
 
-        <Card title="Recent answers (for review)">
-          {turns.length === 0 ? (
-            <p className="text-sm text-ink-3">No questions yet.</p>
-          ) : (
-            <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
-              {turns.slice(0, 50).map((t, i) => (
-                <li key={i}>
-                  {when(t.at)} · {t.user ?? 'unknown'} · {t.label ?? ''} · {t.kind ?? ''}
-                  {t.flags.length > 0 && ` · ${t.flags.join(', ')}`}
-                  {t.model ? ` · ${t.model}` : ' · no model'}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <RecentAnswersCard turns={turns} />
       </form>
 
       {catalog.length > 0 && (
@@ -1253,30 +1329,7 @@ export function AssistantSettings() {
       <MonitoringCard assistantName={data.settings.name} />
       <SkillsCard assistantName={data.settings.name} />
 
-      <Card title="What was sent to the model">
-        <p className="mb-2 text-sm text-ink-2">
-          Only these fields may leave the system, and only as shown here: the field names, their
-          type and longest length, a size and a fingerprint. The text itself is never kept.
-        </p>
-        {!payloads?.calls || payloads.calls.length === 0 ? (
-          <p className="text-sm text-ink-3">No model call yet.</p>
-        ) : (
-          <>
-            <p className="mb-2 text-xs text-ink-3">Allowed: {payloads.allowed.join(', ')}</p>
-            <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
-              {payloads.calls.slice(0, 50).map((c, i) => (
-                <li key={i}>
-                  {when(c.at)} · {c.intent} · {c.model ?? ''} · {c.bytes} bytes ·{' '}
-                  {Object.keys(c.fields).length} fields ·{' '}
-                  {c.violations.length === 0
-                    ? 'all allowed'
-                    : `NOT ALLOWED: ${c.violations.join(', ')}`}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </Card>
+      <PayloadCard payloads={payloads} />
     </div>
   );
 }

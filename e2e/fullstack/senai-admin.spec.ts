@@ -154,9 +154,8 @@ uat(
       await expect(saved).toBeVisible();
       await expect(saved, '"Saved." is visible without scrolling').toBeInViewport();
       await expect(page.getByText('SenAI is on for recruiters.', { exact: false })).toBeVisible();
-      await expect(
-        page.getByText(new RegExp(`Last confirmed by ${acc.admin.displayName}`)),
-      ).toBeVisible();
+      const adminName = (await api(await login(acc.admin)).get('/me')).body.displayName as string;
+      await expect(page.getByText(new RegExp(`Last confirmed by ${adminName}`))).toBeVisible();
       await ux.check('turned on', STD);
       await page.reload();
       await expect(page.getByLabel('Turn the assistant on')).toBeChecked();
@@ -372,7 +371,7 @@ uat(
       if (await menu.count()) {
         await menu.click();
         await expect(
-          p.getByText(/What SenAI remembers|SenAI nəyi xatırlayır/),
+          p.getByText(/What SenAI remembers|SenAI nəyi yadda saxlayır/),
           `${who.key}: no memory item`,
         ).toHaveCount(0);
       }
@@ -392,9 +391,7 @@ uat(
       .getByLabel(meta.lang === 'az' ? /Hesab menyusu|Account menu/ : 'Account menu')
       .click();
     await expect(
-      page.getByText(
-        meta.lang === 'az' ? /SenAI.*xatırla|What SenAI remembers/ : 'What SenAI remembers',
-      ),
+      page.getByText(meta.lang === 'az' ? 'SenAI nəyi yadda saxlayır' : 'What SenAI remembers'),
     ).toBeVisible();
     await ux.check('lead', [...STD, 'AZ']);
     // 4) the recruiter on the admin page.

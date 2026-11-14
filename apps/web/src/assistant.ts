@@ -174,6 +174,12 @@ export function setAssistantOpen(open: boolean): void {
   emit();
 }
 
+/** Close the panel and give the focus back to the Ask bar that opens it (SA-04, SC-11). */
+export function closeAssistant(): void {
+  setAssistantOpen(false);
+  setTimeout(() => document.querySelector<HTMLElement>('form[role="search"] input')?.focus(), 0);
+}
+
 export function useAssistantOpen(): boolean {
   return useSyncExternalStore(
     (l) => {

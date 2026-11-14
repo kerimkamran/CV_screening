@@ -368,6 +368,12 @@ describe('assistant panel', () => {
     );
     expect(await screen.findByText('Saved earlier answer.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete this chat' }));
+    // Deleting asks first (SC-10).
+    await userEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'Delete this chat' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
     await waitFor(() => expect(screen.queryByText('Saved earlier answer.')).toBeNull());
     expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(true);
   });

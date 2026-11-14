@@ -38,7 +38,39 @@ export function RequirementsDrawer(props: {
     const d = ref.current;
     const back = document.activeElement as HTMLElement | null;
     if (d && typeof d.showModal === 'function' && !d.open) d.showModal();
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return closeRef.current();
+      if (e.key !== 'Tab' || !d) return;
+      // Keep Tab inside the drawer: past the last control it would go to the browser's own bar.
+      const items = [
+        ...d.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => {
+        if (el.getClientRects().length === 0) return false;
+        // Of a group of radio buttons only one is a Tab stop: the chosen one, or the first.
+        if (el instanceof HTMLInputElement && el.type === 'radio' && el.name) {
+          const group = [
+            ...d.querySelectorAll<HTMLInputElement>(
+              `input[type=radio][name="${CSS.escape(el.name)}"]`,
+            ),
+          ];
+          return el === (group.find((r) => r.checked) ?? group[0]);
+        }
+        return true;
+      });
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const now = document.activeElement;
+      if (e.shiftKey && (now === first || now === d)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (now === last || now === d)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     document.addEventListener('keydown', key);
     return () => {
       document.removeEventListener('keydown', key);

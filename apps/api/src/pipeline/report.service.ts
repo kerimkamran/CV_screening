@@ -40,6 +40,30 @@ export function redact(text: string, name: string | null): string {
   return out;
 }
 
+/** Name parts compared without Azerbaijani letters, and with "ə" written as "e" or "a" (Məmmədova = Mammadova). */
+const nameKey = (w: string) =>
+  w
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/ə/g, 'a')
+    .replace(/ı/g, 'i')
+    .replace(/e/g, 'a');
+
+/**
+ * Replace every word that is part of a candidate's name (any of `names`, in any spelling with or
+ * without Azerbaijani letters) with "[name]": text typed by a recruiter can name other candidates
+ * too, and no name may reach the model (AISEC, SX-11).
+ */
+export function redactNames(text: string, names: (string | null)[]): string {
+  const keys = new Set<string>();
+  for (const n of names)
+    for (const part of (n ?? '').split(/[^\p{L}\p{N}'-]+/u))
+      if (part.length >= 3) keys.add(nameKey(part));
+  if (keys.size === 0) return text;
+  return text.replace(/[\p{L}\p{N}'-]+/gu, (w) => (keys.has(nameKey(w)) ? '[name]' : w));
+}
+
 /**
  * Builds the snapshot a share link shows (design spec 6.5). Everything comes from the same rows
  * and the same presentation rules (`@cv/shared`) as the live report, so the two cannot disagree.

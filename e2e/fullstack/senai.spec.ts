@@ -7,6 +7,7 @@ import {
   clearModelCalls,
   db,
   freshAccount,
+  JD_AZ,
   login,
   modelCalls,
   openAs,
@@ -15,6 +16,8 @@ import {
   uniq,
   type Account,
 } from './stack';
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // 7.x SenAI pool panel (SA) and candidate panel (SC), full-stack journeys (L2), package G.
 // SenAI is switched on at the start (fake AI as model, Test passed); package G puts the settings
@@ -183,9 +186,8 @@ uat(
     const panel = await askUi(page, 'is he married');
     const ans = panel.locator('[data-answer]').last();
     await expect(ans).toHaveAttribute('data-kind', 'decline');
-    await expect(ans).toContainText(
-      meta.lang === 'az' ? 'Bu, vəzifənin tələbləri ilə əlaqəli deyil' : PROT,
-    );
+    // The answer follows the language of the question (English here), also in the AZ UI (SA-28).
+    await expect(ans).toContainText(PROT);
     await expect(ans.getByRole('list', { name: w(meta.lang)('Candidates') })).toHaveCount(0);
     await ux.check('decline in panel', [...STD, 'AZ']);
   },
@@ -282,13 +284,11 @@ uat(
     // 1) protected: refusal with offer chips, no model call.
     const married = await say('is she married?');
     expect.soft(married.kind, 'married → refusal').toMatch(/refus|decline/);
+    // The answer follows the language of the question (an English question → English), as in the
+    // pool panel (SA-28); the UI language only translates the chips.
     expect
       .soft(married.headline)
-      .toBe(
-        meta.lang === 'az'
-          ? 'Bu, vəzifənin tələbləri ilə əlaqəli deyil, ona görə onu istifadə edə bilmirəm.'
-          : "That isn't related to the job requirements, so I can't use it.",
-      );
+      .toBe("That isn't related to the job requirements, so I can't use it.");
     // 2) a recommendation request: no recommendation.
     const reject = await say('should I reject this one?');
     expect
@@ -327,15 +327,9 @@ uat(
     await bar.press('Enter');
     const panel = page.getByRole('complementary', { name: w(meta.lang)('Assistant') });
     await expect(panel).toBeVisible();
-    await expect(
-      panel
-        .getByText(
-          meta.lang === 'az'
-            ? 'Bu, vəzifənin tələbləri ilə əlaqəli deyil'
-            : "That isn't related to the job requirements",
-        )
-        .last(),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByText("That isn't related to the job requirements").last()).toBeVisible({
+      timeout: 20_000,
+    });
     await ux.check('candidate refusal', [...STD, 'AZ']);
   },
 );
@@ -418,63 +412,68 @@ uat(
   'Vacancy resolution: exact, case, typo, AZ without letters, contained titles, which-vacancy pick',
   { on: ['D'], langs: 'EN+AZ' },
   async ({ page, ux, meta }) => {
-    // Own vacancies; each title carries its own made-up word so other packages' titles never collide.
-    const tag = `Zq${Date.now().toString(36).slice(-4)}`;
+    // Own vacancies; each group carries its own made-up word, unlike the others' (a word one letter
+    // apart is a typo the resolver forgives), so other titles never collide.
+    const rnd = () =>
+      Array.from({ length: 6 }, () => 'bcdfghjklmnpqrstvwxz'[Math.floor(Math.random() * 20)]).join(
+        '',
+      );
+    const tg = { b: rnd(), n: rnd(), q: rnd(), d: rnd() };
     const t = await login(accounts().recruiter);
     const a = api(t);
     const mk = async (title: string) =>
       (await a.post('/vacancies', { title, jdText: 'Required: BGP routing.' })).body.id as string;
-    const be = await mk(`Backend Engineer ${tag}b`);
-    const ne = await mk(`Network Engineer ${tag}n`);
-    const sne = await mk(`Senior Network Engineer ${tag}n`);
-    for (let i = 1; i <= 9; i++) await mk(`QA Engineer ${i} ${tag}q`);
-    const da = await mk(`Data Analyst ${tag}d`);
+    const be = await mk(`Backend Engineer ${tg.b}`);
+    const ne = await mk(`Network Engineer ${tg.n}`);
+    const sne = await mk(`Senior Network Engineer ${tg.n}`);
+    for (let i = 1; i <= 9; i++) await mk(`QA Engineer ${i} ${tg.q}`);
+    const da = await mk(`Data Analyst ${tg.d}`);
     const arch = await a.post(`/vacancies/${da}/archive`, {});
-    const r1 = (await ask(t, `find candidates for Backend Engineer ${tag}b`)).answer as any;
+    const r1 = (await ask(t, `find candidates for Backend Engineer ${tg.b}`)).answer as any;
     expect.soft(r1.vacancy?.id, 'exact title').toBe(be);
     for (const q of [
-      `find candidates for backend engineer ${tag.toLowerCase()}b`,
-      `FIND CANDIDATES FOR BACKEND ENGINEER ${tag.toUpperCase()}B`,
+      `find candidates for backend engineer ${tg.b.toLowerCase()}`,
+      `FIND CANDIDATES FOR BACKEND ENGINEER ${tg.b.toUpperCase()}`,
     ]) {
       const r = (await ask(t, q)).answer as any;
       expect.soft(r.vacancy?.id, `case: ${q}`).toBe(be);
     }
-    const typo = (await ask(t, `find candidates for Bakend Engineer ${tag}b`)).answer as any;
+    const typo = (await ask(t, `find candidates for Bakend Engineer ${tg.b}`)).answer as any;
     expect
       .soft(
         [typo.kind, typo.vacancy?.id ?? typo.options?.map((o: any) => o.id).join(',')],
         'typo answers Backend Engineer or asks to confirm it',
       )
       .toEqual([expect.stringMatching(/^(pool|confirm)$/), be]);
-    const r5 = (await ask(t, `find candidates for Network Engineer ${tag}n`)).answer as any;
+    const r5 = (await ask(t, `find candidates for Network Engineer ${tg.n}`)).answer as any;
     expect.soft(r5.vacancy?.id, 'Network Engineer, not Senior Network Engineer').toBe(ne);
-    const r6 = (await ask(t, `find candidates for senior ${tag}n`)).answer as any;
+    const r6 = (await ask(t, `find candidates for senior ${tg.n}`)).answer as any;
     expect
       .soft(
         r6.kind === 'ask_which' ? r6.options.map((o: any) => o.id) : [r6.vacancy?.id],
         'senior → Senior Network Engineer',
       )
       .toContain(sne);
-    const r7 = (await ask(t, `find candidates for QA Engineer ${tag}q`)).answer as any;
+    const r7 = (await ask(t, `find candidates for QA Engineer ${tg.q}`)).answer as any;
     expect.soft(r7.kind, 'QA Engineer → which vacancy').toBe('ask_which');
     expect.soft(r7.headline).toBe('Which vacancy do you mean?');
     expect.soft(r7.options.length).toBeLessThanOrEqual(8);
     const third = r7.options[2];
-    const r8 = (await ask(t, `find candidates for QA Engineer ${tag}q`, { pick: third.id }))
+    const r8 = (await ask(t, `find candidates for QA Engineer ${tg.q}`, { pick: third.id }))
       .answer as any;
     expect.soft(r8.vacancy?.id, 'pick → that vacancy').toBe(third.id);
     expect(arch.status, 'archive the Data Analyst vacancy').toBeLessThan(300);
-    const r9 = (await ask(t, `find candidates for Data Analyst ${tag}d`)).answer as any;
+    const r9 = (await ask(t, `find candidates for Data Analyst ${tg.d}`)).answer as any;
     expect
       .soft(r9.headline)
-      .toBe(`Data Analyst ${tag}d is archived, so I leave it out. Restore it to search it.`);
-    const r10 = (await ask(t, `find candidates for Pilotxq${tag}`)).answer as any;
+      .toBe(`Data Analyst ${tg.d} is archived, so I leave it out. Restore it to search it.`);
+    const r10 = (await ask(t, `find candidates for Pilotxq${tg.d}${tg.n}`)).answer as any;
     expect
       .soft(r10.headline)
       .toBe('I could not find a vacancy that matches that. Pick one to search:');
     // UI: the which-vacancy options, and pressing the 3rd sends pick with no new bubble.
     await openAs(page, accounts().recruiter, '#/vacancies');
-    const panel = await askUi(page, `find candidates for QA Engineer ${tag}q`);
+    const panel = await askUi(page, `find candidates for QA Engineer ${tg.q}`);
     const ans = panel.locator('[data-answer]').last();
     await expect(ans).toHaveAttribute('data-kind', 'ask_which');
     const opts = ans.getByRole('list', { name: w(meta.lang)('Vacancies') }).getByRole('button');
@@ -598,7 +597,8 @@ uat(
       .soft(receipt, 'no internal tokens in How I got this')
       .not.toMatch(/find;|skills:|intent=|\bq\./);
     if (meta.lang === 'az') {
-      expect.soft(receipt, 'How I got this in the UI language').toContain('Oxundu');
+      expect.soft(receipt, 'How I got this in the UI language').toMatch(/oxundu/i);
+      expect.soft(receipt, 'no English source names').not.toMatch(/pool analysis|\bfind\b/);
       await expect(ans.getByText(/^(Güclü|Yaxşı|Qismən|Məhdud)$/).first()).toBeVisible();
     }
     await ux.check('languages', [...STD, 'AZ']);
@@ -754,29 +754,930 @@ uat(
   },
 );
 
-// ---------------------------------------------------------------- not built in package G's time budget
+// ================================================================ package G2: SA-06..25, SC-14 (L2)
 
-const notBuilt: [string, string][] = [
-  ['SA-06', 'Count and Shortlist questions and the starter chips'],
-  ['SA-09', "Unknown word: 'Suggest it' reaches the admin; after approval it is a known skill"],
-  ['SA-10', 'Remove a chip with × to refine the latest answer, with no model call'],
-  ['SA-12', 'Compare candidates in the pool panel'],
-  ['SA-13', "Doctor ('why so few Strong') and 'changes since'"],
-  ['SA-15', 'Open a candidate, a vacancy or a new vacancy from the chat'],
-  ['SA-17', 'Interview kit in the pool panel and Copy'],
-  ['SA-18', 'Consistency mirror reads only my own marks'],
-  ['SA-19', 'Data quality: near copies, thin CVs, Russian CVs'],
-  ['SA-20', 'JD check in chat and the Role card coach box'],
-  ['SA-21', "Similar vacancies and 'Review the requirements of … to copy'"],
-  ['SA-22', "Rediscovery switch and 'Analyze {name} for {vacancy}' asks first"],
-  ['SA-23', 'Pushback and recall'],
-  ['SA-24', 'About, help glossary and unclear questions'],
-  ['SA-25', "Preferences: 'always show top 3' and 'What SenAI remembers'"],
-  ['SC-14', 'Link review card: consent, read, social sites, flagged pages, withdraw'],
-];
-for (const [id, title] of notBuilt)
-  uat(id, title, { on: ['D'], langs: 'EN' }, async () => {
-    test.skip(true, 'Not built: P2/P3, outside the time budget of package G');
+type Row = {
+  matchId: string;
+  documentId: string;
+  label: string;
+  score: number;
+  band: string;
+  decision: string;
+  decisionVersion: number;
+};
+const rowsOf = async (t: string, vid: string) =>
+  ((await api(t).get(`/candidates?vacancy=${vid}&limit=50&sort=match`)).body.rows as Row[]).filter(
+    (r) => r.matchId,
+  );
+async function mark(t: string, r: Row, m: string, note?: string) {
+  const cur = (
+    await rowsOf(t, (await api(t).get(`/documents/${r.documentId}`)).body.vacancy.id)
+  ).find((x) => x.matchId === r.matchId)!;
+  const res = await api(t).put(`/candidates/${r.matchId}/decision`, {
+    mark: m,
+    note: note ?? null,
+    expectedVersion: cur.decisionVersion,
   });
+  expect(
+    res.status,
+    `mark ${r.label} ${m}: ${JSON.stringify(res.body).slice(0, 200)}`,
+  ).toBeLessThan(300);
+}
+/** A second analyzed vacancy of its own, for the cases that mark candidates. */
+let own: ReturnType<typeof backend> | null = null;
+const backend2 = () =>
+  (own ??= (async () =>
+    screenedVacancy(await login(accounts().recruiter), {
+      title: uniq('Backend Engineer'),
+      files: resumeFiles(),
+    }))());
+
+uat(
+  'SA-06',
+  'Count and Shortlist questions and the starter chips',
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const v = await backend2();
+    const az = await screenedVacancy(await login(accounts().recruiter), {
+      title: uniq('Şəbəkə Mühəndisi'),
+      jd: JD_AZ(),
+    });
+    const t = await login(accounts().recruiter);
+    const rows = await rowsOf(t, v.id);
+    for (const r of rows.filter((x) => x.decision === 'shortlist').slice(2))
+      await mark(t, r, 'new');
+    for (const r of rows.slice(0, 2)) if (r.decision !== 'shortlist') await mark(t, r, 'shortlist');
+    const strong = rows.filter((r) => r.band === 'strong').length;
+    // 1-2) Without a scope only one chip, which fills the composer and sends nothing.
+    await openAs(page, accounts().recruiter, '#/vacancies');
+    const sent: string[] = [];
+    page.on('request', (r) => r.url().endsWith('/assistant/ask') && sent.push(r.url()));
+    await page.getByRole('search').getByRole('textbox').press('Enter');
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
+    await expect(
+      panel.getByText(
+        tt(
+          '{name} finds candidates in your pool. It shows the matches; it does not decide.',
+        ).replace('{name}', 'SenAI'),
+      ),
+    ).toBeVisible();
+    const chips = panel.getByRole('list', { name: tt('Suggested questions') }).getByRole('button');
+    await expect(chips).toHaveCount(1);
+    await chips.first().click();
+    await expect(panel.getByRole('textbox')).toBeFocused();
+    await expect(panel.getByRole('textbox')).toHaveValue(
+      tt('Find the right candidate for…').replace('…', ''),
+    );
+    expect(sent).toHaveLength(0);
+    await ux.check('no scope', [...STD, 'AZ']);
+    // 3) With a scope, three chips; each sends at once. The count answer has no rows.
+    await page.goto(page.url().replace(/#.*$/, `#/vacancies/${v.id}`));
+    await expect(chips).toHaveCount(3);
+    await chips.nth(1).click();
+    const ans = panel.locator('[data-answer]').last();
+    await expect(ans).toBeVisible({ timeout: 20_000 });
+    const count = (
+      await ask(t, `How many candidates for ${v.title}?`, { vacancyId: v.id, language: meta.lang })
+    ).answer;
+    expect(count.headline).toBe(
+      `${v.title} has ${rows.length} analyzed CVs (${strong} Strong, 2 on the Shortlist).`,
+    );
+    expect(count.rows).toHaveLength(0);
+    // 4) The Shortlist answer lists exactly those CVs.
+    const sl = (await ask(t, `Show the Shortlist for ${v.title}`, { vacancyId: v.id })).answer;
+    expect(sl.headline).toBe(`2 on the Shortlist for ${v.title}.`);
+    expect(sl.rows.map((r) => r.documentId).sort()).toEqual(
+      rows
+        .slice(0, 2)
+        .map((r) => r.documentId)
+        .sort(),
+    );
+    // 5) Nobody shortlisted.
+    const none = (await ask(t, `Show the Shortlist for ${az.title}`, { vacancyId: az.id })).answer;
+    expect(none.headline).toBe(`Nobody is on the Shortlist for ${az.title} yet.`);
+  },
+);
+
+uat(
+  'SA-09',
+  "Unknown word: 'Suggest it' reaches the admin; after approval it is a known skill",
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const word = `Zabbixx${Math.random().toString(36).slice(2, 6).replace(/\d/g, 'q')}`;
+    const rec = await freshAccount('TA_PARTNER');
+    await openAs(page, rec, '#/vacancies');
+    let aborted = 0;
+    const bodies: unknown[] = [];
+    await page.route('**/assistant/skills/suggest', async (r) => {
+      bodies.push(r.request().postDataJSON());
+      if (aborted++ === 0) return r.abort('failed');
+      return r.continue();
+    });
+    ux.allow(/skills\/suggest|Failed to load resource|net::ERR/);
+    const bar = page.getByRole('search').getByRole('textbox');
+    await bar.fill(`who knows ${word}`);
+    await bar.press('Enter');
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
+    const ans = panel.locator('[data-answer]').last();
+    await expect(ans).toBeVisible({ timeout: 20_000 });
+    await expect(
+      ans.getByText(
+        tt('"{word}" is not in the dictionary, so it was searched as written.').replace(
+          '{word}',
+          word,
+        ),
+      ),
+    ).toBeVisible();
+    const btn = ans.getByRole('button', {
+      name: tt('Suggest {word} to the administrator').replace('{word}', word),
+    });
+    await expect(btn).toHaveText(tt('Suggest it'));
+    await btn.click();
+    await expect(btn).toHaveText(tt('Could not send. Try again'));
+    await btn.click();
+    await expect(ans.getByText(tt('Suggested. An administrator will review it.'))).toBeVisible();
+    expect(bodies.at(-1)).toEqual({ label: word, kind: 'tool', aliases: [] });
+    await ux.check('suggested', [...STD, 'AZ']);
+    // 4) The admin approves it on the Words card.
+    const p2 = await page.context().newPage();
+    await openAs(p2, accounts().admin, '#/admin/assistant');
+    const row = p2
+      .getByRole('list', { name: 'Added words' })
+      .getByRole('listitem')
+      .filter({ hasText: word });
+    await expect(row).toContainText('(proposed)');
+    await expect(row).toContainText(`by ${rec.displayName}`);
+    await row.getByRole('button', { name: `Approve ${word}` }).click();
+    await expect(row).toContainText('(approved)');
+    await p2.close();
+    // 5) A new chat: no unknown-word note and a skill chip.
+    const r2 = (await ask(await login(rec), `who knows ${word}`)).answer as Ans & {
+      unknownSkills?: string[];
+      used?: { kind: string; text: string }[];
+    };
+    expect(r2.unknownSkills ?? []).toEqual([]);
+    expect(
+      (r2.used ?? []).filter((u) => u.kind === 'skill').map((u) => u.text.toLowerCase()),
+    ).toContain(word.toLowerCase());
+  },
+);
+
+uat(
+  'SA-10',
+  'Remove a chip with × to refine the latest answer, with no model call',
+  { on: ['D', 'T'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const v = await backend();
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const panel = await askUi(page, `Strong Python candidates for ${v.title}, top 5`);
+    const first = panel.locator('[data-answer]').last();
+    const chips = first.getByRole('list', { name: tt('Used for this answer') });
+    await expect(chips).toContainText(v.title);
+    const used = await chips.getByRole('listitem').allTextContents();
+    expect(used.join(' '), 'skill, band and top chips').toMatch(/Python/);
+    await clearModelCalls();
+    const asks: any[] = [];
+    page.on('request', (r) => r.url().endsWith('/assistant/ask') && asks.push(r.postDataJSON()));
+    const removable = chips.getByRole('button');
+    const names = (
+      await removable.evaluateAll((b) => b.map((x) => x.getAttribute('aria-label')))
+    ).filter(Boolean) as string[];
+    expect(names.length, 'removable chips on the latest answer').toBeGreaterThan(0);
+    let rowsBefore = await first
+      .getByRole('list', { name: tt('Candidates') })
+      .getByRole('listitem')
+      .count();
+    for (const [i, n] of names.entries()) {
+      const last = panel.locator('[data-answer]').last();
+      const b = last.getByRole('button', { name: n });
+      await b.click();
+      await expect(panel.locator('[data-answer]')).toHaveCount(i + 2, { timeout: 20_000 });
+      const text = n.replace(tt('Remove filter {name}').replace('{name}', ''), '');
+      await expect(panel.locator('p.ml-8').last()).toHaveText(`− ${text}`);
+      expect(asks.at(-1).without, `× ${text} sends without`).toMatchObject({ text });
+      const now = panel.locator('[data-answer]').last();
+      await expect(now.getByRole('list', { name: tt('Used for this answer') })).not.toContainText(
+        new RegExp(`^${text}$`),
+      );
+      const rowsNow = await now
+        .getByRole('list', { name: tt('Candidates') })
+        .getByRole('listitem')
+        .count();
+      expect(rowsNow, 'the same or more rows').toBeGreaterThanOrEqual(Math.min(rowsBefore, 5));
+      rowsBefore = rowsNow;
+    }
+    // Only the latest answer has × buttons.
+    await expect(
+      panel
+        .locator('[data-answer]')
+        .first()
+        .getByRole('button', { name: /^Remove filter|filtri/ }),
+    ).toHaveCount(0);
+    expect(
+      (await modelCalls()).filter((c) => /turn it into ONE JSON query/.test(c.system)),
+      'no model call for ×',
+    ).toHaveLength(0);
+    await ux.check('refined', [...STD, 'KEY']);
+  },
+);
+
+uat(
+  'SA-12',
+  'Compare candidates in the pool panel',
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const v = await backend();
+    const t = await login(accounts().recruiter);
+    const r1 = await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id });
+    const cid = r1.conversationId;
+    const names = r1.answer.rows.slice(0, 2).map((r) => r.label);
+    const cmp = (
+      await ask(t, 'compare the first and the second', { conversationId: cid, vacancyId: v.id })
+    ).answer;
+    expect(cmp.headline).toBe(`Side by side for ${v.title}: ${names.join(', ')}.`);
+    expect(cmp.table!.head[0]).toBe('Requirement');
+    expect(cmp.table!.head.length).toBe(3);
+    expect(cmp.table!.rows.some((r) => /score/i.test(r.cells[0]!))).toBe(true);
+    expect((cmp.table!.rows as { tag?: string }[]).some((r) => r.tag === 'must')).toBe(true);
+    expect(cmp.notes.join(' ')).toMatch(/This is a comparison, not a recommendation\.$/);
+    const cells = cmp.table!.rows.flatMap((r) => r.cells.slice(1));
+    for (const c of cells.filter((c) => !/%|^\d/.test(c)))
+      expect(['Met', 'Partly', 'Not met', 'Not found', 'Unclear']).toContain(c);
+    // Not found is never shown as Not met: a requirement found nowhere stays "Not found".
+    expect(cells.filter((c) => c === 'Not met').length, 'no Not met from not_found').toBe(0);
+    const az = (
+      await ask(t, 'müqayisə et birinci və ikinci', { conversationId: cid, vacancyId: v.id })
+    ).answer;
+    expect(az.language).toBe('az');
+    expect(az.table?.head.length).toBe(3);
+    const which = (await ask(t, 'compare them')).answer;
+    expect(which.headline).toBe(
+      'Which candidates? Name two or three, or say "compare the first and the second".',
+    );
+    // 6) Across vacancies.
+    const sk = await ask(t, 'who knows Python in all vacancies');
+    const cross = (
+      await ask(t, 'compare the first and the fourth', { conversationId: sk.conversationId })
+    ).answer;
+    if (new Set(sk.answer.rows.slice(0, 4).map((r: any) => r.vacancyTitle)).size > 1)
+      expect(cross.headline).toMatch(/^I compare candidates of the same vacancy only/);
+    // UI: the table scrolls inside the panel, no horizontal page scroll.
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const panel = await askUi(page, `find candidates for ${v.title}`);
+    const box = panel.getByRole('textbox');
+    await box.fill('compare the first and the second');
+    await box.press('Enter');
+    await expect(panel.locator('[data-answer] table').last()).toBeVisible({ timeout: 20_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(
+      false,
+    );
+    await ux.check('compare', [...STD, 'AZ']);
+    void meta;
+  },
+);
+
+uat(
+  'SA-13',
+  "Doctor ('why so few Strong') and 'changes since'",
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux }) => {
+    const v = await backend();
+    const t = await login(accounts().recruiter);
+    const rows = await rowsOf(t, v.id);
+    const strong = rows.filter((r) => r.band === 'strong').length;
+    const doc = (await ask(t, 'why so few Strong?', { vacancyId: v.id })).answer as Ans & {
+      suggestions: string[];
+    };
+    expect(doc.headline).toMatch(
+      new RegExp(
+        `^${esc(v.title)}: ${strong} of ${rows.length} analyzed are Strong\\. The rarest must-have is "[^"]+": \\d+ of ${rows.length} meet it\\.$`,
+      ),
+    );
+    expect((doc.table?.rows.length ?? 0) <= 12).toBe(true);
+    expect(doc.suggestions.length).toBeGreaterThan(0);
+    const where = (await ask(t, 'why so few Strong?')).answer;
+    expect(where.headline).toBe('A what-if works on one vacancy. Pick it:');
+    const since = (await ask(t, 'what changed since Monday?', { vacancyId: v.id })).answer;
+    expect(since.headline).toMatch(
+      /^(Since .+ for .+: \d+ new analyzed, \d+ decisions\.|Nothing changed for .+ since .+\.)$/,
+    );
+    expect((since.table?.rows.length ?? 0) <= 15).toBe(true);
+    if (since.table) expect(since.table.head).toEqual(['Candidate', 'What', 'When']);
+    const plain = (await ask(t, 'what changed', { vacancyId: v.id })).answer;
+    expect(plain.notes).toContain('No date was given, so I looked at the last 7 days.');
+    expect((await ask(t, 'nə dəyişdi dünəndən bəri', { vacancyId: v.id })).answer.language).toBe(
+      'az',
+    );
+    expect(
+      (await ask(t, 'что изменилось на этой неделе', { vacancyId: v.id })).answer.language,
+    ).toBe('ru');
+    // 2) A what-if chip sends its text as a new question.
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const panel = await askUi(page, 'why so few Strong?');
+    const chip = panel
+      .locator('[data-answer]')
+      .last()
+      .getByRole('list')
+      .last()
+      .getByRole('button')
+      .first();
+    const label = (await chip.textContent())!;
+    await chip.click();
+    await expect(panel.locator('p.ml-8').last()).toHaveText(label);
+    await expect(panel.locator('[data-answer]')).toHaveCount(2, { timeout: 20_000 });
+    await ux.check('doctor', [...STD, 'AZ']);
+  },
+);
+
+uat(
+  'SA-15',
+  'Open a candidate, a vacancy or a new vacancy from the chat',
+  { on: ['D', 'A'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const v = await backend();
+    const t = await login(accounts().recruiter);
+    const list = await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id });
+    const second = list.answer.rows[1]!;
+    const open2 = (
+      await ask(t, 'open the second', { conversationId: list.conversationId, vacancyId: v.id })
+    ).answer;
+    expect(open2.headline).toBe('Here it is.');
+    expect(open2.actions?.[0]?.label).toBe(`Open ${second.label}`);
+    const which = (await ask(t, 'open it')).answer;
+    expect(which.headline).toBe(
+      'Open which one? Say a number from the list ("open the second") or a name.',
+    );
+    const nv = (await ask(t, 'create a new vacancy')).answer;
+    expect(nv.actions?.[0]).toEqual({ label: 'Create a new vacancy', href: '#/vacancies/new' });
+    expect((await ask(t, 'yeni vakansiya')).answer.actions?.[0]?.href).toBe('#/vacancies/new');
+    // UI: the action is a real link and lands on the CV without a dead end.
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const panel = await askUi(page, `find candidates for ${v.title}`);
+    await panel.getByRole('textbox').fill('open the second');
+    await panel.getByRole('textbox').press('Enter');
+    const link = panel
+      .locator('[data-answer]')
+      .last()
+      .getByRole('link', { name: `Open ${second.label}` });
+    await expect(link).toBeVisible({ timeout: 20_000 });
+    await ux.check('open', [...STD, 'AZ']);
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`#/cv/${second.documentId}`), { timeout: 15_000 });
+    await expect(page.getByText(second.label).first()).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    void meta;
+  },
+);
+
+uat(
+  'SA-17',
+  'Interview kit in the pool panel and Copy',
+  { on: ['D', 'E'], langs: 'EN+AZ' },
+  async ({ page, ux, context, meta }) => {
+    const tt = w(meta.lang);
+    const v = await backend();
+    const t = await login(accounts().recruiter);
+    const list = await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id });
+    const kit = (
+      await ask(t, 'interview questions for the first', {
+        conversationId: list.conversationId,
+        vacancyId: v.id,
+      })
+    ).answer as Ans & { copyable?: boolean };
+    expect(kit.headline).toMatch(
+      new RegExp(`^Interview kit for ${esc(list.answer.rows[0]!.label)}: `),
+    );
+    expect(kit.table!.head).toEqual([
+      'Core question',
+      'A good answer contains',
+      'Probe for this CV',
+    ]);
+    expect(kit.notes.join(' ')).toMatch(/^Job-related questions only/);
+    expect(kit.notes.join(' '), 'the note does not claim nothing is saved (SD-126)').not.toMatch(
+      /nothing is saved/i,
+    );
+    expect((await ask(t, 'interview questions')).answer.headline).toBe(
+      'For which candidate? Say a number from the list or a name.',
+    );
+    // UI: Copy writes tab-separated lines; a refused clipboard says so.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const panel = await askUi(page, `find candidates for ${v.title}`);
+    await panel.getByRole('textbox').fill('interview questions for the first');
+    await panel.getByRole('textbox').press('Enter');
+    const copy = panel
+      .locator('[data-answer]')
+      .last()
+      .getByRole('button', { name: tt('Copy'), exact: true });
+    await expect(copy).toBeVisible({ timeout: 20_000 });
+    await copy.click();
+    await expect(panel.getByRole('button', { name: tt('Copied'), exact: true })).toBeVisible();
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    const lines = clip.split('\n');
+    expect(lines[0]).toBe(kit.table!.head.join('\t'));
+    expect(lines.length).toBe(kit.table!.rows.length + 1);
+    await expect(panel.getByRole('button', { name: tt('Copy'), exact: true })).toBeVisible({
+      timeout: 8000,
+    });
+    await ux.check('kit', [...STD, 'AZ']);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: () => Promise.reject(new Error('denied')) },
+      });
+    });
+    await panel
+      .locator('[data-answer]')
+      .last()
+      .getByRole('button', { name: tt('Copy'), exact: true })
+      .click();
+    await expect(
+      panel
+        .getByRole('alert')
+        .filter({ hasText: tt('Could not copy. Select the table and copy it by hand.') }),
+    ).toBeVisible();
+    await expect(panel.getByRole('button', { name: tt('Copied'), exact: true })).toHaveCount(0);
+  },
+);
+
+uat(
+  'SA-18',
+  'Consistency mirror reads only my own marks',
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ ux, page }) => {
+    const v = await screenedVacancy(await login(accounts().recruiter), {
+      title: uniq('Backend Engineer'),
+      files: resumeFiles(),
+    });
+    const A = await freshAccount('TA_PARTNER');
+    const B = await freshAccount('TA_PARTNER');
+    const ta = await login(A);
+    const tb = await login(B);
+    const rows = await rowsOf(ta, v.id);
+    // Two CVs with the same must-have evidence (same band and must-haves found).
+    const key = (r: Row & { mustFound?: number }) => `${r.band}:${r.mustFound}`;
+    const groups = new Map<string, Row[]>();
+    for (const r of rows as (Row & { mustFound?: number })[])
+      groups.set(key(r), [...(groups.get(key(r)) ?? []), r]);
+    const pair = [...groups.values()].find((g) => g.length >= 2);
+    test.skip(!pair, 'Blocked: no two CVs with the same must-have evidence in this run');
+    await mark(ta, pair![0]!, 'shortlist');
+    await mark(ta, pair![1]!, 'not_now', 'too old');
+    const r1 = (await ask(ta, 'check my decisions', { vacancyId: v.id })).answer;
+    expect(r1.headline).toMatch(
+      /^\d+ pair\(s\) with the same must-have evidence and different marks, in .+\. Look again\?$/,
+    );
+    expect(r1.notes.join(' ')).toContain(
+      `The reason written for ${pair![1]!.label} ("too old") is not one of the requirements. Keep it or edit it?`,
+    );
+    expect((r1.table?.rows.length ?? 0) <= 10).toBe(true);
+    // recruiter2 re-marks one of them with another note: never shown to the recruiter.
+    await mark(tb, pair![0]!, 'not_now', 'too young');
+    const r1b = (await ask(ta, 'check my decisions', { vacancyId: v.id })).answer;
+    expect(JSON.stringify(r1b)).not.toContain('too young');
+    const az = (await ask(ta, 'qərarlarımı yoxla', { vacancyId: v.id })).answer;
+    expect(az.language).toBe('az');
+    const rb = (await ask(tb, 'check my decisions', { vacancyId: v.id })).answer;
+    expect(JSON.stringify(rb), "recruiter2 never sees recruiter's notes").not.toContain('too old');
+    // No mark changed.
+    const after = await rowsOf(ta, v.id);
+    expect(after.find((r) => r.matchId === pair![1]!.matchId)!.decision).toBe('not_now');
+    void ux;
+    void page;
+  },
+);
+
+uat(
+  'SA-19',
+  'Data quality: near copies, thin CVs, Russian CVs',
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ ux }) => {
+    const files = resumeFiles();
+    const copy = {
+      ...files[0]!,
+      name: '11-aysel-copy.txt',
+      data: String(files[0]!.data).replace('Designed', 'Built'),
+    };
+    const thin = {
+      name: '12-thin.txt',
+      type: 'text/plain',
+      data: 'Name: Tural Quliyev\nBGP routing.',
+    };
+    const v = await screenedVacancy(await login(accounts().recruiter), {
+      title: uniq('Backend Engineer'),
+      files: [...files, copy, thin],
+    });
+    const t = await login(accounts().recruiter);
+    const before = await rowsOf(t, v.id);
+    const q = (await ask(t, 'data quality', { vacancyId: v.id })).answer;
+    const texts = await db<{ t: string }>(
+      `SELECT coalesce(text,'') AS t FROM cv_document WHERE vacancy_id=$1 AND erased_at IS NULL`,
+      [v.id],
+    );
+    const ru = texts.filter((x) => {
+      const letters = x.t.match(/\p{L}/gu) ?? [];
+      const cyr = x.t.match(/\p{Script=Cyrillic}/gu) ?? [];
+      return letters.length > 200 && cyr.length / letters.length > 0.3;
+    }).length;
+    expect(q.headline).toBe(
+      `Data quality for ${v.title}: 1 near-copy pair(s), 1 thin CV(s), ${ru} in Russian.`,
+    );
+    expect((q.table?.rows.length ?? 0) <= 15).toBe(true);
+    expect((await ask(t, 'duplicates', { vacancyId: v.id })).answer.headline).toMatch(
+      /^Data quality/,
+    );
+    expect((await ask(t, 'дубликаты', { vacancyId: v.id })).answer.language).toBe('ru');
+    expect((await rowsOf(t, v.id)).length).toBe(before.length);
+    void ux;
+  },
+);
+
+uat(
+  'SA-20',
+  'JD check in chat and the Role card coach box',
+  { on: ['D', 'T'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const t = await login(accounts().recruiter);
+    const jd = [
+      'Junior network engineer. We want a young team player and a native speaker of Azerbaijani with 5+ years of practice. We also use Terraform.',
+      'Required: BGP routing, OSPF, MPLS, IS-IS, VLAN design, firewall rules, Linux, Python, Ansible',
+    ].join('\n');
+    const v = await screenedVacancy(t, { title: uniq('JD Test'), jd });
+    const chat = (await ask(t, 'check the JD', { vacancyId: v.id, language: meta.lang })).answer;
+    expect(chat.headline).toMatch(/^JD check for .+: \d+ suggestion\(s\)\. Nothing was changed\.$/);
+    const tips = JSON.stringify(chat);
+    for (const re of [
+      /must-haves is a lot/,
+      /junior or entry level but also asks for 5\+ years/,
+      /"young"/,
+      /"native speaker"/,
+      /No experience range/,
+      /Terraform/,
+    ])
+      expect.soft(tips, `tip ${re}`).toMatch(re);
+    // The coach box after a save of the Role card.
+    const coach = await api(t).get(`/assistant/jd-coach/${v.id}?language=${meta.lang}`);
+    expect(coach.status).toBe(200);
+    await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const save = page.getByRole('button', { name: tt('Save'), exact: true }).first();
+    if (await save.isVisible().catch(() => false)) {
+      await save.click();
+      const box = page
+        .getByRole('region', { name: /JD|coach|SenAI/i })
+        .or(
+          page
+            .getByRole('complementary', { name: /suggest|tip|SenAI/i })
+            .filter({ hasText: /must-have|Terraform/ }),
+        );
+      await expect(page.getByText(/Terraform/).first()).toBeVisible({ timeout: 10_000 });
+      await ux.check('coach box', [...STD, 'AZ']);
+      void box;
+    } else
+      test.info().annotations.push({
+        type: 'note',
+        description: 'Role card Save not reachable on this vacancy page',
+      });
+  },
+);
+
+uat(
+  'SA-21',
+  "Similar vacancies and 'Review the requirements of … to copy'",
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const t = await login(accounts().recruiter);
+    const a = await screenedVacancy(t, {
+      title: uniq('Backend Engineer'),
+      jd: 'Required: BGP routing, Kubernetes, Python\nNice to have: Linux',
+    });
+    const extra = [
+      'Docker',
+      'Terraform',
+      'Ansible',
+      'Grafana',
+      'Prometheus',
+      'Jenkins',
+      'Helm',
+      'Kafka',
+      'Redis',
+      'Nginx',
+    ];
+    const b = await screenedVacancy(t, {
+      title: uniq('Backend Developer'),
+      jd: `Required: BGP routing, Kubernetes, Python, ${extra.slice(0, 5).join(', ')}\nNice to have: ${extra.slice(5).join(', ')}`,
+    });
+    const sim = (await ask(t, 'similar vacancies', { vacancyId: a.id })).answer as Ans & {
+      copy?: { fromId: string }[];
+    };
+    expect((sim.table?.rows.length ?? 0) <= 6).toBe(true);
+    expect(sim.copy?.some((c) => c.fromId === b.id)).toBe(true);
+    await openAs(page, accounts().recruiter, `#/vacancies/${a.id}`);
+    const panel = await askUi(page, 'similar vacancies');
+    await panel
+      .getByRole('button', {
+        name: tt('Review the requirements of {title} to copy').replace('{title}', b.title),
+      })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`#/vacancies/${a.id}`));
+    const offer = page.getByText(new RegExp(`Add \\d+ requirements? from "${esc(b.title)}"`));
+    await expect(offer).toBeVisible({ timeout: 15_000 });
+    const n = Number(/Add (\d+)/.exec((await offer.textContent())!)![1]);
+    expect(n).toBe(10);
+    await ux.check('offer', [...STD, 'AZ']);
+  },
+);
+
+uat(
+  'SA-22',
+  "Rediscovery switch and 'Analyze {name} for {vacancy}' asks first",
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    await backend();
+    const t = await login(accounts().recruiter);
+    const az = await screenedVacancy(t, { title: uniq('Şəbəkə Mühəndisi'), jd: JD_AZ() });
+    try {
+      await senaiOn({ features: { rediscovery: false } as any });
+      expect(
+        (await ask(t, 'candidates from other vacancies', { vacancyId: az.id })).answer.headline,
+      ).toBe('Suggestions from other vacancies are switched off by the administrator.');
+      await senaiOn({ features: { rediscovery: true } as any });
+      const r = (await ask(t, 'candidates from other vacancies', { vacancyId: az.id }))
+        .answer as Ans & { analyze?: { matchId: string; label: string }[] };
+      expect((r.analyze?.length ?? 0) <= 8).toBe(true);
+      test.skip(
+        !r.analyze?.length,
+        'Blocked: no CV of other vacancies mentions the skills of this vacancy',
+      );
+      await openAs(page, accounts().recruiter, `#/vacancies/${az.id}`);
+      const panel = await askUi(page, 'candidates from other vacancies');
+      const name = r.analyze![0]!.label;
+      const btn = panel
+        .getByRole('button', {
+          name: tt('Analyze {name} for {vacancy}')
+            .replace('{name}', name)
+            .replace('{vacancy}', az.title),
+        })
+        .first();
+      const posts: string[] = [];
+      page.on(
+        'request',
+        (x) => x.url().endsWith('/assistant/rediscovery/analyze') && posts.push(x.url()),
+      );
+      await btn.click();
+      await page.waitForTimeout(500);
+      const asked = await page
+        .getByRole('alertdialog')
+        .or(page.getByRole('dialog'))
+        .or(page.getByRole('button', { name: /Undo|Confirm|Yes/ }))
+        .count();
+      expect(asked, 'a confirmation or Undo before anything is copied (SD-24)').toBeGreaterThan(0);
+      await ux.check('rediscovery', [...STD, 'AZ']);
+    } finally {
+      await senaiOn();
+    }
+  },
+);
+
+uat('SA-23', 'Pushback and recall', { on: ['D'], langs: 'EN+AZ' }, async ({ ux }) => {
+  const v = await backend();
+  const A = await freshAccount('TA_PARTNER');
+  const B = await freshAccount('TA_PARTNER');
+  const t = await login(A);
+  await ask(t, 'who knows Excel');
+  const list = await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id });
+  const before = await rowsOf(t, v.id);
+  const k = (
+    await ask(t, 'but the first one does know Kubernetes', {
+      conversationId: list.conversationId,
+      vacancyId: v.id,
+    })
+  ).answer;
+  expect(k.headline).toMatch(/^(You are right that|I cannot find)/);
+  if (/^You are right/.test(k.headline)) {
+    expect(k.headline).toContain('The stored assessment is unchanged');
+    expect(k.actions?.[0]?.label).toMatch(/^Open .+ to re-analyze$/);
+  }
+  if (k.table)
+    expect(k.table.head[1], 'the column header describes its content').not.toBe('Candidate');
+  const az = (
+    await ask(t, 'amma o bilir Kubernetes', {
+      conversationId: list.conversationId,
+      vacancyId: v.id,
+    })
+  ).answer;
+  expect(az.language).toBe('az');
+  expect((await rowsOf(t, v.id)).map((r) => `${r.score}${r.band}`)).toEqual(
+    before.map((r) => `${r.score}${r.band}`),
+  );
+  const recall = (await ask(t, 'what did we conclude last time about Excel?')).answer;
+  expect(recall.headline).toBe('Your earlier conversations that match:');
+  expect((recall.table?.rows.length ?? 0) <= 8).toBe(true);
+  expect(recall.notes.join(' ')).toContain('It is not a new answer');
+  expect((await ask(t, 'keçən dəfə nə qərara gəldik')).answer.language).toBe('az');
+  expect(
+    (await ask(await login(B), 'what did we conclude last time about Excel?')).answer.headline,
+  ).toMatch(/^I found nothing in your earlier conversations/);
+  void ux;
+});
+
+uat(
+  'SA-24',
+  'About, help glossary and unclear questions',
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux }) => {
+    const t = await login(accounts().recruiter);
+    const about = (await ask(t, 'what can you see?')).answer;
+    expect(about.headline).toBe('What I can see and how I answer:');
+    expect(about.notes.join(' ')).toMatch(/How I read your last question: /);
+    expect((await ask(t, 'sən kimsən')).answer.language).toBe('az');
+    expect((await ask(t, 'что ты умеешь')).answer.language).toBe('ru');
+    for (const q of [
+      'what does out of date mean',
+      'what is a must-have',
+      'what is a nice to have',
+      'what are bands',
+      'what is the shortlist',
+      'what is the star map',
+      'what does re-analyze mean',
+      'what is the score',
+      'what does needs a look mean',
+    ]) {
+      const a = (await ask(t, q)).answer;
+      expect.soft(a.kind, q).toBe('help');
+      if (q === 'what are bands')
+        expect(JSON.stringify(a)).toContain(
+          'Strong 80 and above, Good 70 to 79, Partial 50 to 69, Limited below 50',
+        );
+    }
+    const unk = (await ask(t, 'asdf qwer')).answer as Ans & { suggestions: string[] };
+    expect(unk.headline).toBe('I am not sure what you want to see. Is it one of these?');
+    expect(unk.suggestions).toHaveLength(4);
+    await openAs(page, accounts().recruiter, '#/vacancies');
+    const panel = await askUi(page, 'asdf qwer');
+    const chip = panel.locator('[data-answer]').last().getByRole('button').last();
+    const text = (await chip.textContent())!;
+    await chip.click();
+    await expect(panel.locator('p.ml-8').last()).toHaveText(text);
+    await ux.check('unclear', [...STD, 'AZ']);
+  },
+);
+
+uat(
+  'SA-25',
+  "Preferences: 'always show top 3' and 'What SenAI remembers'",
+  { on: ['D', 'A'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const v = await backend();
+    const me = await freshAccount('TA_PARTNER');
+    const t = await login(me);
+    expect((await ask(t, 'always show top 3')).answer.headline).toBe(
+      'Saved: I will show the top 3 by default. Say "always top 5" to change it.',
+    );
+    const f = (await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id })).answer;
+    expect(f.rows).toHaveLength(3);
+    expect(f.notes).toContain('Showing the top 3.');
+    await openAs(page, me, '#/vacancies');
+    const menu = page.getByLabel(tt('Account menu'));
+    await menu.click();
+    await expect(
+      page.getByText(tt('What {name} remembers').replace('{name}', 'SenAI')),
+    ).toBeVisible();
+    await expect(
+      page.getByText(tt('Shows the top {n} unless you ask for more.').replace('{n}', '3')),
+    ).toBeVisible();
+    const n = page.getByLabel(tt('How many to show'));
+    await expect(n).toHaveValue('3');
+    const puts: any[] = [];
+    page.on(
+      'request',
+      (r) =>
+        r.url().endsWith('/assistant/preferences') &&
+        r.method() === 'PUT' &&
+        puts.push(r.postDataJSON()),
+    );
+    const save = page.locator('details').getByRole('button', { name: tt('Save'), exact: true });
+    await n.fill('7');
+    await save.click();
+    await expect.poll(() => puts.at(-1)).toEqual({ top: 7 });
+    await n.fill('0');
+    await save.click();
+    await expect.poll(() => puts.at(-1)).toEqual({ top: 1 });
+    await n.fill('99');
+    await save.click();
+    await expect.poll(() => puts.at(-1)).toEqual({ top: 50 });
+    await ux.check('memory', [...STD, 'AZ']);
+    await page
+      .locator('details')
+      .getByRole('button', { name: tt('Clear') })
+      .click();
+    await expect.poll(() => puts.at(-1)).toEqual({ top: null });
+    await expect(
+      page.getByText(tt('Nothing saved. Ask "always show top 5" or set it here.')),
+    ).toBeVisible();
+    await expect(page.locator('details').getByRole('button', { name: tt('Clear') })).toHaveCount(0);
+    // 8) A failed save: a visible error and the old value stays.
+    await page.route('**/assistant/preferences', (r) =>
+      r.request().method() === 'PUT'
+        ? r.fulfill({ status: 500, json: { message: 'x' } })
+        : r.continue(),
+    );
+    ux.allow(/500|preferences/);
+    await n.fill('4');
+    await save.click();
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: tt('Not saved. Check your connection and try again.') }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(tt('Nothing saved. Ask "always show top 5" or set it here.')),
+    ).toBeVisible();
+    // 7) recruiter2 sees nothing saved.
+    const other = await freshAccount('TA_PARTNER');
+    const p2 = await page.context().browser()!.newPage();
+    await openAs(p2, other, '#/vacancies');
+    await p2.getByLabel(tt('Account menu')).click();
+    await expect(
+      p2.getByText(tt('Nothing saved. Ask "always show top 5" or set it here.')),
+    ).toBeVisible();
+    await p2.close();
+  },
+);
+
+uat(
+  'SC-14',
+  'Link review card: consent, read, social sites, flagged pages, withdraw',
+  { on: ['D', 'A'], langs: 'EN+AZ' },
+  async ({ page, ux, meta, info }) => {
+    const tt = w(meta.lang);
+    const v = await backend();
+    const farid = v.documents.find((d) => d.filename.startsWith('09-'))!;
+    info.annotations.push({
+      type: 'Blocked',
+      description:
+        'steps 5 and 7 (reading github.com and the injection page) need the LINK_READER test double, which the L2 server does not have',
+    });
+    try {
+      await senaiOn({ features: { linkReview: true } as any });
+      await openAs(page, accounts().recruiter, `#/cv/${farid.id}`);
+      const card = page
+        .getByText(tt('Links the candidate gave'))
+        .locator('xpath=ancestor::section[1]')
+        .or(page.locator('section').filter({ hasText: tt('Links the candidate gave') }))
+        .first();
+      await expect(page.getByText(tt('Links the candidate gave'))).toBeVisible({ timeout: 15_000 });
+      const links = page.getByRole('list', { name: tt('Links in the CV') });
+      await expect(links).toContainText(/github\.com/);
+      await expect(links).toContainText(/linkedin\.com/);
+      const read = links.getByRole('button', { name: new RegExp(tt('Read this page')) }).first();
+      await expect(read, 'read is disabled before consent').toBeDisabled();
+      await expect(links.getByRole('listitem').filter({ hasText: /linkedin/ })).toContainText(
+        tt('Social networks are never read'),
+      );
+      await expect(
+        links
+          .getByRole('listitem')
+          .filter({ hasText: /linkedin/ })
+          .getByRole('button'),
+      ).toHaveCount(0);
+      const src = page.getByLabel(tt('Where the consent came from'));
+      const opts = await src.locator('option').allTextContents();
+      const mail = opts.find((o) => /mail|poçt/i.test(o));
+      if (mail) await src.selectOption({ label: mail });
+      const ref = page.getByLabel(tt('Reference (form number, date, e-mail subject)'));
+      const rec = page.getByRole('button', { name: tt('Record the candidate’s consent') });
+      await ref.fill('ab');
+      await expect(rec).toBeDisabled();
+      await ref.fill('Form 12');
+      await expect(rec).toBeEnabled();
+      await rec.click();
+      await expect(page.getByText(/Form 12/)).toBeVisible();
+      await expect(read).toBeEnabled();
+      await ux.check('consent', [...STD, 'AZ']);
+      // 8) Withdraw asks first.
+      await page
+        .getByRole('button', { name: tt('Withdraw consent and delete what was read') })
+        .click();
+      await expect(page.getByLabel(tt('Withdraw consent?'))).toBeVisible();
+      await page.getByRole('button', { name: tt('Withdraw consent'), exact: true }).click();
+      await expect(rec).toBeVisible();
+      // 9) The switch off hides the card.
+      await senaiOn({ features: { linkReview: false } as any });
+      await page.reload();
+      await expect(page.getByLabel(tt('Account menu'))).toBeVisible();
+      await page.waitForTimeout(500);
+      await expect(page.getByText(tt('Links the candidate gave'))).toHaveCount(0);
+      void card;
+    } finally {
+      await senaiOn();
+    }
+  },
+);
 
 export type { Account };

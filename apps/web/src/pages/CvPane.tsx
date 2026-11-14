@@ -250,11 +250,45 @@ export function CvPane({
   // Each view keeps its own scroll position in the shared box.
   const scrollOf = useRef<Record<Tab, number>>({ original: 0, text: 0 });
   const lastShowing = useRef<Tab>(showing);
+  /** Reads the place in the view being left, before the switch changes the box under it. */
+  const keepPlace = () => {
+    if (bodyEl) scrollOf.current = { ...scrollOf.current, [lastShowing.current]: bodyEl.scrollTop };
+  };
+  // The position is recorded as the person scrolls: by the time the view has changed, the box has
+  // already been shortened or emptied by the other view and its scrollTop is no longer theirs.
+  useEffect(() => {
+    if (!bodyEl) return;
+    const rec = () => {
+      scrollOf.current = { ...scrollOf.current, [lastShowing.current]: bodyEl.scrollTop };
+    };
+    bodyEl.addEventListener('scroll', rec, { passive: true });
+    return () => bodyEl.removeEventListener('scroll', rec);
+  }, [bodyEl]);
   useLayoutEffect(() => {
     if (!bodyEl || lastShowing.current === showing) return;
-    scrollOf.current = { ...scrollOf.current, [lastShowing.current]: bodyEl.scrollTop };
     lastShowing.current = showing;
-    bodyEl.scrollTo?.({ top: scrollOf.current[showing], behavior: 'instant' });
+    const want = scrollOf.current[showing];
+    bodyEl.scrollTo?.({ top: want, behavior: 'instant' });
+    if (!want) return;
+    // The pages measure their box again after they are shown, so at first they are shorter than
+    // they were and the place cannot be reached yet: it is set again until it holds (FS-20), and
+    // never against the person's own scrolling.
+    let tries = 0;
+    let timer = 0;
+    const stop = () => window.clearTimeout(timer);
+    const again = () => {
+      if (Math.abs(bodyEl.scrollTop - want) <= 1 || tries++ >= 12) return;
+      bodyEl.scrollTo?.({ top: want, behavior: 'instant' });
+      timer = window.setTimeout(again, 50);
+    };
+    timer = window.setTimeout(again, 50);
+    bodyEl.addEventListener('wheel', stop, { once: true, passive: true });
+    bodyEl.addEventListener('touchstart', stop, { once: true, passive: true });
+    return () => {
+      stop();
+      bodyEl.removeEventListener('wheel', stop);
+      bodyEl.removeEventListener('touchstart', stop);
+    };
   }, [showing, bodyEl]);
 
   const body = (() => {
@@ -422,7 +456,10 @@ export function CvPane({
             label={t('CV view')}
             className="w-fit"
             value={showing}
-            onChange={setTab}
+            onChange={(next) => {
+              keepPlace();
+              setTab(next);
+            }}
             items={tabs.map((x) => ({ key: x.id, label: x.label }))}
           />
         )}

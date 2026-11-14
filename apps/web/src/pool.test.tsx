@@ -1117,6 +1117,9 @@ describe('SenAI Ask bar', () => {
     });
     expect(calls.some((c) => c.url.endsWith('/assistant/rediscovery/analyze'))).toBe(false);
     await userEvent.click(btn);
+    // The click asks first: it adds a CV to the vacancy (SA-21).
+    expect(calls.some((c) => c.url.endsWith('/assistant/rediscovery/analyze'))).toBe(false);
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Add and analyze' }));
     expect(await within(panel).findByText(/was added to Network Engineer/)).toBeInTheDocument();
     const sent = calls.filter((c) => c.url.endsWith('/assistant/rediscovery/analyze'));
     expect(sent).toHaveLength(1);

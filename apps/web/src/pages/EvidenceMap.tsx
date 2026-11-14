@@ -62,10 +62,21 @@ export function EvidenceMap({
     read();
     scroller.addEventListener('scroll', read, { passive: true });
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
-    ro?.observe(scroller);
+    // The box also has to follow the content: zooming or a page that finishes drawing changes
+    // scrollHeight without the scroller itself changing size (EM-03).
+    const watch = () => {
+      ro?.disconnect();
+      ro?.observe(scroller);
+      for (const c of Array.from(scroller.children)) ro?.observe(c);
+      read();
+    };
+    watch();
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => watch());
+    mo?.observe(scroller, { childList: true });
     return () => {
       scroller.removeEventListener('scroll', read);
       ro?.disconnect();
+      mo?.disconnect();
     };
   }, [scroller]);
 

@@ -113,7 +113,19 @@ export const OUTCOME: Record<string, [string, string]> = {
 };
 
 export function when(iso: string | null | undefined) {
-  return iso ? new Date(iso).toLocaleString(locale()) : '';
+  if (!iso) return '';
+  const d = new Date(iso);
+  // Azerbaijani gets the month in words: the browser's own short form is year-month-day with
+  // digits only, which reads like an ISO stamp (RP-01).
+  return locale() === 'az-AZ'
+    ? d.toLocaleString(locale(), {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : d.toLocaleString(locale());
 }
 
 /** Server messages are English; the common ones have an Azerbaijani entry, the rest show as sent. */

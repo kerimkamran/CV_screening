@@ -584,18 +584,30 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               {t('Use the arrow keys to move between stars and Enter to select one.')}
             </p>
             <p className="mt-2 text-sm text-ink-3">
-              {scored.length > mapRows.length ? (
+              {scored.length > mapRows.length && (
                 <>
-                  {t('Showing top {n} of {total}.', { n: mapRows.length, total: scored.length })}{' '}
+                  {t('Showing top {n} of {total}.', {
+                    n: mapRows.length,
+                    total: scored.length,
+                  })}{' '}
+                </>
+              )}
+              {/* 'Show all' only while there is more to show; once it was pressed (the map caps
+                  at MAP_MAX) the way back is offered instead of a button that does nothing. */}
+              {!mapAll && scored.length > mapRows.length && (
+                <>
                   <button className="text-link hover:underline" onClick={() => setMapAll(true)}>
                     {t('Show all')}
                   </button>{' '}
                 </>
-              ) : mapAll && scored.length > MAP_TOP ? (
-                <button className="text-link hover:underline" onClick={() => setMapAll(false)}>
-                  {t('Show top {n} only', { n: MAP_TOP })}
-                </button>
-              ) : null}
+              )}
+              {mapAll && scored.length > MAP_TOP && (
+                <>
+                  <button className="text-link hover:underline" onClick={() => setMapAll(false)}>
+                    {t('Show top {n} only', { n: MAP_TOP })}
+                  </button>{' '}
+                </>
+              )}
               {t("A star's place on the map has no meaning beyond its rank.")}
             </p>
           </div>

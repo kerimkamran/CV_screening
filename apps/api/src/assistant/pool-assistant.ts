@@ -122,7 +122,17 @@ function same(q: string, t: string): boolean {
   if (q.length >= 4 && t.length >= 4 && (q.startsWith(t) || t.startsWith(q))) return true;
   // The title word with an Azerbaijani suffix cut (şəbəkə → sebeke, sebekeler, sebekesi)
   if (t.length >= 5 && q.length >= 5 && q.slice(0, 5) === t.slice(0, 5)) return true;
+  // One letter missing, added or changed in a long word is a typo ("Bakend" = "Backend"), SA-07.
+  if (t.length >= 5 && q.length >= 5 && oneEditApart(q, t)) return true;
   return false;
+}
+
+function oneEditApart(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
 }
 
 export type Tier = 'exact' | 'close' | 'partial';

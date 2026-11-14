@@ -30,6 +30,7 @@ export const AZ_ASSISTANT: Record<string, string> = {
   'No other scored candidates.': 'Qiymətləndirilmiş başqa namizəd yoxdur.',
   Compare: 'Müqayisə et',
   Cancel: 'Ləğv et',
+  '{n} of {total} with this name': 'bu adla {total} nəfərdən {n}-ci',
 
   // Challenge
   'Your own read (optional)': 'Öz qənaətiniz (istəyə görə)',
@@ -37,6 +38,10 @@ export const AZ_ASSISTANT: Record<string, string> = {
 
   // Starter chips (English constants in assistant.ts)
   'Suggested questions': 'Təklif olunan suallar',
+  'Explain more': 'Ətraflı izah et',
+  'Deeper evaluation': 'Daha dərin qiymətləndirmə',
+  'Weakest point': 'Ən zəif cəhət',
+  'Interview questions': 'Müsahibə sualları',
   'Why this band?': 'Niyə bu səviyyə?',
   'What is the weakest point?': 'Ən zəif cəhət nədir?',
   'What would change the band?': 'Səviyyəni nə dəyişə bilər?',

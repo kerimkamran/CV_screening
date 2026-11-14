@@ -49,9 +49,9 @@ const W = {
     ru: 'В резюме не найдено (это не значит, что нет). Спросите о смежном опыте и как бы быстро вошёл в тему.',
   },
   kitNote: {
-    en: 'Job-related questions only, generated from the requirements. Copy it and use it as you like; nothing is saved or sent. Do not ask about age, family, health, origin, religion or looks.',
-    az: 'Yalnız işlə bağlı suallar, tələblərdən hazırlanıb. Köçürüb istədiyiniz kimi istifadə edin; heç nə saxlanmır və ya göndərilmir. Yaş, ailə, sağlamlıq, mənşə, din və görünüş barədə soruşmayın.',
-    ru: 'Только вопросы по работе, составлены по требованиям. Скопируйте и используйте; ничего не сохраняется и не отправляется. Не спрашивайте о возрасте, семье, здоровье, происхождении, религии и внешности.',
+    en: 'Job-related questions only, generated from the requirements. Copy it and use it as you like; it is kept only in your own chat history and sent to nobody. Do not ask about age, family, health, origin, religion or looks.',
+    az: 'Yalnız işlə bağlı suallar, tələblərdən hazırlanıb. Köçürüb istədiyiniz kimi istifadə edin; yalnız sizin söhbət tarixçənizdə qalır və heç kimə göndərilmir. Yaş, ailə, sağlamlıq, mənşə, din və görünüş barədə soruşmayın.',
+    ru: 'Только вопросы по работе, составлены по требованиям. Скопируйте и используйте; это хранится только в вашей истории чатов и никому не отправляется. Не спрашивайте о возрасте, семье, здоровье, происхождении, религии и внешности.',
   },
   hQuestion2: { en: 'Core question', az: 'Əsas sual', ru: 'Основной вопрос' },
   hRubric: {
@@ -275,19 +275,29 @@ const fold = (s: string) =>
 const uw = (alts: string) =>
   new RegExp(`(?<![\\p{L}\\p{N}])(?:${alts.replace(/\*/g, '\\p{L}*')})(?![\\p{L}\\p{N}])`, 'iu');
 
-const LOOKUP = [
-  uw(
-    'linkedin|facebook|instagram|telegram|tiktok|twitter|google (him|her|them|this)|search the web|web search|look (him|her|them) up|social media|sosial|соцсет*|гугл*',
-  ),
-];
+/** Looking a person up is refused; a skill named after a site ("Facebook Ads", "Telegram bot API") is not (SA-27, SD-22). */
+const LOOKUP_DIRECT = uw(
+  'google (him|her|them|this)|search the web|web search|look (him|her|them) up|гугл*',
+);
+const LOOKUP_SITE = uw(
+  'linkedin|facebook|instagram|telegram|tiktok|twitter|social media|sosial|соцсет*',
+);
+const LOOKUP_PERSON = uw(
+  '(find|search|check|look|see) (him|her|them|this person|this candidate|the candidate)|(his|her|their|its) (profile|page|account)|profile|onu|onun|его|её|ее',
+);
+const SITE_SKILL = uw(
+  'ads|advertising|marketing|recruiter|bot|bots|api|campaign*|experience|smm|business manager|reklam*|təcrüb*|tecrub*|опыт*|реклам*',
+);
+const lookup = (q: string) =>
+  LOOKUP_DIRECT.test(q) || (LOOKUP_SITE.test(q) && (LOOKUP_PERSON.test(q) || !SITE_SKILL.test(q)));
 const PERSONALITY = [
   uw(
-    'personality|culture fit|cultural fit|honest|honesty|flight risk|will (he|she|they) leave|trustworthy|lying|loyal*|temperament|sadiq*|dürüst|durust|şəxsiyyət|sexsiyyet|личност*|честн*|надежн*|надёжн*|уйд[её]т|лояльн*',
+    'personality|culture fit|cultural fit|honest|honesty|flight risk|will (he|she|they) leave|trustworthy|lying|loyal*(?! (program*|card*|scheme*|marketing))|temperament|sadiq*|dürüst|durust|şəxsiyyət|sexsiyyet|личност*|честн*|надежн*|надёжн*|уйд[её]т|лояльн*',
   ),
 ];
 const SALARY = [
   uw(
-    'salary|salaries|how much (does|do|would) (he|she|they)|pay expectation|maaş*|maas*|əmək haqq*|emek haqq*|зарплат*|оклад*',
+    'salary|salaries|how much (does|do|would) (he|she|they)|pay expectation|maaş*(?! (hesabla*|uçot*|cədvəl*))|maas*(?! (hesabla*|ucot*|cedvel*))|əmək haqq*|emek haqq*|зарплат*|оклад*',
   ),
 ];
 const GAPS = [
@@ -298,7 +308,7 @@ const any = (res: RegExp[], q: string) => res.some((r) => r.test(q) || r.test(fo
 
 /** A request the plan says SenAI never fulfils (section 5.5), with the wording that explains why. */
 export function declineFor(q: string): { key: DKey; flag: string } | null {
-  if (any(LOOKUP, q)) return { key: 'declineLookup', flag: 'refused:web_lookup' };
+  if (lookup(q) || lookup(fold(q))) return { key: 'declineLookup', flag: 'refused:web_lookup' };
   if (any(PERSONALITY, q)) return { key: 'declinePersonality', flag: 'refused:personality' };
   if (any(SALARY, q)) return { key: 'declineSalary', flag: 'refused:salary' };
   if (any(GAPS, q)) return { key: 'declineGaps', flag: 'refused:career_gap' };

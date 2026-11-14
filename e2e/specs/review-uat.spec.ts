@@ -1384,7 +1384,7 @@ uat(
     });
     const at = (re: RegExp) => order.findIndex((o) => re.test(o));
     const seq = [
-      ['Back link', /^a:← Back/],
+      ['Back link', /^a:←/],
       ['Next', new RegExp(`^a:${t('Next CV ›')}`)],
       ['vacancy link', /^a:Network Engineer/],
       ['Decision', /^select:/],

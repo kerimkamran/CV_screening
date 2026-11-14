@@ -74,6 +74,15 @@ const PATTERNS: [RegExp, (m: RegExpExecArray) => string][] = [
     (m) => `${m[1]}: ${state(m[2]!)}. CV-ni özünüz oxuyun.`,
   ],
   [/^That passage is in the CV: (".*)$/s, (m) => `Bu hissə CV-dədir: ${m[1]}`],
+  // The limits (SX-05): the assistant's name stays as the administrator wrote it.
+  [
+    /^(.+) has reached today's limit\. The results and the evidence are still here\.$/s,
+    (m) => `${m[1]} bugünkü limitinə çatdı. Nəticələr və sübutlar burada qalır.`,
+  ],
+  [
+    /^(.+) has reached this month's limit\. The results and the evidence are still here\.$/s,
+    (m) => `${m[1]} bu ayın limitinə çatdı. Nəticələr və sübutlar burada qalır.`,
+  ],
 ];
 
 function facts(line: string): string {
@@ -97,8 +106,26 @@ export function azText(s: string): string {
   return s;
 }
 
+/** Russian wording for the refusals the server writes itself (a Russian question, SC-09). */
+const RU: Record<string, string> = {
+  'This CV needs a human look, so I have nothing to explain.':
+    'Это резюме требует проверки человеком, поэтому мне нечего объяснить.',
+  "That isn't related to the job requirements, so I can't use it.":
+    'Это не связано с требованиями к должности, поэтому я не могу это использовать.',
+  "I can't change how I work, but I can explain this candidate's stored match from the evidence.":
+    'Я не могу изменить то, как я работаю, но могу объяснить сохранённое соответствие этого кандидата по доказательствам.',
+  "I can't recommend rejecting, ranking out or hiring anyone; that decision is yours. Here are the checks to do before deciding.":
+    'Я не могу рекомендовать отклонить, исключить или нанять кого-либо; это решение за вами. Вот что стоит проверить перед решением.',
+  'I only see the stored match and short passages, not the whole CV.':
+    'Я вижу только сохранённое соответствие и короткие отрывки, а не всё резюме.',
+  'Some passages were left out of what I can see, so the evidence may be incomplete.':
+    'Некоторые отрывки мне не видны, поэтому доказательства могут быть неполными.',
+};
+const ruText = (s: string) => RU[s] ?? s;
+
 /** The answer with the server-written sentences in Azerbaijani; everything else unchanged. */
 export function localiseAnswer(a: Answer, lang: 'en' | 'az' | 'ru' | undefined): Answer {
+  if (lang === 'ru') return { ...a, headline: ruText(a.headline), cantSee: ruText(a.cantSee) };
   if (lang !== 'az') return a;
   return {
     ...a,

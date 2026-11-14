@@ -12,7 +12,7 @@ import {
 } from './api';
 import { LanguageSwitch } from './Appearance';
 import { applyLang, tr, useT, type Lang } from './i18n';
-import { AiSettings, AssistantSettings, Users } from './pages/Admin';
+import { AiSettings, AssistantReview, AssistantSettings, Users } from './pages/Admin';
 import { rememberUser } from './assistant';
 import { CandidatePool } from './pages/CandidatePool';
 import { CvReview } from './pages/CvReview';
@@ -235,6 +235,13 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       </div>
     ) : (
       <Monitoring canRun={false} />
+    );
+  else if (route === '/admin/assistant' && isGov && !isAdmin)
+    body = (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold">{t('Administration')}</h1>
+        <AssistantReview />
+      </div>
     );
   else if (route.startsWith('/admin')) {
     body = isAdmin ? (

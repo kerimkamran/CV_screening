@@ -104,12 +104,15 @@ export function RoleCard({
   onSaved,
   onReload,
   onDirty,
+  onOffer,
 }: {
   /** null: a vacancy that does not exist yet. */
   vacancy: VacancyView | null;
   onSaved: (v: VacancyView) => void;
   onReload: () => Promise<void>;
   onDirty?: (dirty: boolean) => void;
+  /** SenAI offers requirements to copy: the page shows the setup section so the offer is seen. */
+  onOffer?: () => void;
 }) {
   const t = useT();
   const id = vacancy?.id ?? null;
@@ -185,23 +188,37 @@ export function RoleCard({
   }, [vacancy?.version, vacancy?.requirementsVersion]);
 
   // SenAI's similar-vacancy answer sends the person here; nothing is copied until they press the button.
+  // Also when the person is already on this vacancy (the address does not change), SA-21.
+  const offerRef = useRef(onOffer);
+  useEffect(() => {
+    offerRef.current = onOffer;
+  });
   useEffect(() => {
     if (!id) return;
-    let from: string | null = null;
-    try {
-      from = sessionStorage.getItem(`cv-copy-reqs:${id}`);
-      if (from) sessionStorage.removeItem(`cv-copy-reqs:${id}`);
-    } catch {
-      /* the offer is a convenience only */
-    }
-    if (!from) return;
     let live = true;
-    api.get<VacancyView>(`/vacancies/${from}`).then(
-      (o) => live && setCopyOffer({ title: o.title, reqs: o.requirements }),
-      () => undefined,
-    );
+    const check = () => {
+      let from: string | null = null;
+      try {
+        from = sessionStorage.getItem(`cv-copy-reqs:${id}`);
+        if (from) sessionStorage.removeItem(`cv-copy-reqs:${id}`);
+      } catch {
+        /* the offer is a convenience only */
+      }
+      if (!from) return;
+      api.get<VacancyView>(`/vacancies/${from}`).then(
+        (o) => {
+          if (!live) return;
+          setCopyOffer({ title: o.title, reqs: o.requirements });
+          offerRef.current?.();
+        },
+        () => undefined,
+      );
+    };
+    check();
+    window.addEventListener('cv-copy-reqs', check);
     return () => {
       live = false;
+      window.removeEventListener('cv-copy-reqs', check);
     };
   }, [id]);
   const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim();

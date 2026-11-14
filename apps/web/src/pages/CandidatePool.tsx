@@ -315,6 +315,9 @@ export function CandidatePool({
         : { sort: k, order: k === 'match' || k === 'updated' ? 'desc' : 'asc' },
     );
 
+  const ariaSort = (k: SortKey): 'ascending' | 'descending' | 'none' =>
+    s.sort !== k ? 'none' : s.order === 'asc' ? 'ascending' : 'descending';
+
   // ---------------------------------------------------------------- marks
   const setRow = (documentId: string, f: (r: PoolRow) => PoolRow) =>
     setRows((cur) => cur.map((r) => (isRanked(r) && r.documentId === documentId ? f(r) : r)));
@@ -973,60 +976,70 @@ export function CandidatePool({
           <div className="min-w-0 rounded-2xl border border-line bg-card">
             {/* Column labels and sort buttons. The rows below are a list, not a table, so this is a
                 labelled group; each sort button says its state in words (SD-63). */}
-            <div
-              role="group"
-              aria-label={t('Sort the list')}
-              className="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
-            >
-              <span>
-                {canMark && (
-                  <input
-                    type="checkbox"
-                    aria-label={t('Select all shown')}
-                    checked={allSelected}
-                    onChange={(e) =>
-                      setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
-                    }
-                  />
-                )}
-              </span>
-              {(
-                [
-                  ['candidate', 'Candidate'],
-                  ['vacancy', 'Vacancy'],
-                  ['match', 'Match'],
-                ] as [SortKey, string][]
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => sortBy(k)}
-                  aria-pressed={s.sort === k}
-                  className="text-left uppercase hover:text-ink"
+            <div role="table" aria-label={t('Sort the list')} className="hidden lg:block">
+              <div role="rowgroup">
+                <div
+                  role="row"
+                  className="grid grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3"
                 >
-                  {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
-                  {s.sort === k && <span className="sr-only">{sortSaid(s.order)}</span>}
-                </button>
-              ))}
-              <span>{t('Must-haves')}</span>
-              <button
-                type="button"
-                onClick={() => sortBy('decision')}
-                aria-pressed={s.sort === 'decision'}
-                className="text-left uppercase hover:text-ink"
-              >
-                {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-                {s.sort === 'decision' && <span className="sr-only">{sortSaid(s.order)}</span>}
-              </button>
-              <button
-                type="button"
-                onClick={() => sortBy('updated')}
-                aria-pressed={s.sort === 'updated'}
-                className="text-left uppercase hover:text-ink"
-              >
-                {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-                {s.sort === 'updated' && <span className="sr-only">{sortSaid(s.order)}</span>}
-              </button>
+                  <span role="columnheader" aria-hidden={canMark ? undefined : true}>
+                    {canMark && (
+                      <input
+                        type="checkbox"
+                        aria-label={t('Select all shown')}
+                        checked={allSelected}
+                        onChange={(e) =>
+                          setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
+                        }
+                      />
+                    )}
+                  </span>
+                  {(
+                    [
+                      ['candidate', 'Candidate'],
+                      ['vacancy', 'Vacancy'],
+                      ['match', 'Match'],
+                    ] as [SortKey, string][]
+                  ).map(([k, label]) => (
+                    <span key={k} role="columnheader" aria-sort={ariaSort(k)}>
+                      <button
+                        type="button"
+                        onClick={() => sortBy(k)}
+                        aria-pressed={s.sort === k}
+                        className="text-left uppercase hover:text-ink"
+                      >
+                        {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                        {s.sort === k && <span className="sr-only">{sortSaid(s.order)}</span>}
+                      </button>
+                    </span>
+                  ))}
+                  <span role="columnheader">{t('Must-haves')}</span>
+                  <span role="columnheader" aria-sort={ariaSort('decision')}>
+                    <button
+                      type="button"
+                      onClick={() => sortBy('decision')}
+                      aria-pressed={s.sort === 'decision'}
+                      className="text-left uppercase hover:text-ink"
+                    >
+                      {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                      {s.sort === 'decision' && (
+                        <span className="sr-only">{sortSaid(s.order)}</span>
+                      )}
+                    </button>
+                  </span>
+                  <span role="columnheader" aria-sort={ariaSort('updated')}>
+                    <button
+                      type="button"
+                      onClick={() => sortBy('updated')}
+                      aria-pressed={s.sort === 'updated'}
+                      className="text-left uppercase hover:text-ink"
+                    >
+                      {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                      {s.sort === 'updated' && <span className="sr-only">{sortSaid(s.order)}</span>}
+                    </button>
+                  </span>
+                </div>
+              </div>
             </div>
             {canMark && (
               <label className="flex min-h-11 items-center gap-3 border-b border-line px-4 text-sm lg:hidden">
@@ -1049,6 +1062,7 @@ export function CandidatePool({
                     key={r.documentId}
                     id={`cand-${r.documentId}`}
                     data-active={on ? 'true' : undefined}
+                    tabIndex={-1}
                     aria-current={on ? 'true' : undefined}
                     style={{ '--i': Math.min(i % 50, 12) } as CSSProperties}
                     className={`${on ? 'bg-sel ' : ''}m-rise grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}

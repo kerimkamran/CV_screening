@@ -264,6 +264,13 @@ export function senaiRoutes(
   };
 }
 
+/** senaiRoutes as `answers` of resultsApi (package D): every method, falls through when not SenAI. */
+export function senaiAnswers(log: AskLog, opts: Parameters<typeof senaiRoutes>[1] = {}) {
+  const r = senaiRoutes(log, opts);
+  const f = async (route: Route, url: URL) => ((await r(route, url)) ? true : undefined);
+  return { 'GET /*': f, 'POST /*': f, 'DELETE /*': f };
+}
+
 /** A candidate-panel answer (the server's verified shape). */
 export function candAnswer(over: Record<string, unknown> = {}) {
   return {

@@ -65,6 +65,18 @@ function problemOf(e: unknown): PdfProblem {
   return 'broken';
 }
 
+/** The box that scrolls these pages: the nearest ancestor that scrolls, else the parent (EM-03). */
+function scrollParent(el: HTMLElement | null | undefined): HTMLElement | null {
+  let n = el?.parentElement ?? null;
+  const first = n;
+  while (n && n !== document.body) {
+    const o = getComputedStyle(n).overflowY;
+    if (o === 'auto' || o === 'scroll') return n;
+    n = n.parentElement;
+  }
+  return first;
+}
+
 function Page({
   doc,
   n,
@@ -122,9 +134,20 @@ function Page({
   }, [doc, n, near, quoteKey]);
 
   // Asked for and marked: bring the first mark to the middle of the view.
+  const aimedAt = useRef(0);
+  useEffect(() => {
+    if (aim > 0) aimedAt.current = Date.now();
+  }, [aim]);
   useEffect(() => {
     if (aim > 0 && marks.length > 0) scrollInside(firstMark.current, 'center');
   }, [aim, marks]);
+  // When the CV was hidden (the other tab on a narrow screen) the pages are measured only after it
+  // shows, and grow below the mark that was just centred: it is centred again, but only for a
+  // moment after it was asked for, so that zooming later never pulls the view back (CV-07).
+  useEffect(() => {
+    if (aim > 0 && marks.length > 0 && Date.now() - aimedAt.current < 1500)
+      scrollInside(firstMark.current, 'center');
+  }, [width]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = box.current;
@@ -325,7 +348,7 @@ export default function PdfPages({
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const scroller = el.parentElement;
+    const scroller = scrollParent(el);
     const read = () =>
       setBox({ w: Math.max(0, Math.floor(el.clientWidth - 8)), h: scroller?.clientHeight ?? 0 });
     read();
@@ -358,7 +381,7 @@ export default function PdfPages({
   // Zooming keeps the reading position: the point in the middle of the view stays in the middle.
   const view = useRef({ top: 0, left: 0, h: 0, w: 0 });
   useEffect(() => {
-    const sc = wrap.current?.parentElement;
+    const sc = scrollParent(wrap.current);
     if (!sc) return;
     const read = () => {
       view.current = {
@@ -376,7 +399,7 @@ export default function PdfPages({
   useLayoutEffect(() => {
     const old = lastWidth.current;
     lastWidth.current = width;
-    const sc = wrap.current?.parentElement;
+    const sc = scrollParent(wrap.current);
     if (!sc || !old || !width || old === width || !doc) return;
     const k = width / old;
     const v = view.current;

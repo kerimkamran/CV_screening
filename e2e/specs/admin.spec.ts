@@ -576,12 +576,15 @@ uat(
             }
           : aiOverview('fake-1'),
     });
+    let deletes = 0;
     await page.route(`**/admin/ai/models/${M1}`, async (r) => {
+      // This route answers the DELETE itself, so the shared request log does not see it.
+      if (r.request().method() === 'DELETE') deletes++;
       removed = true;
       await r.fulfill({ json: { ok: true } });
     });
     await page.goto('/#/admin/ai');
-    const del = () => calls(seen, 'DELETE', new RegExp(`^/admin/ai/models/${M1}$`)).length;
+    const del = () => deletes;
     // 1)-2) Press 'Remove fake-1', Cancel.
     accept = false;
     await page.getByRole('button', { name: 'Remove fake-1' }).click();

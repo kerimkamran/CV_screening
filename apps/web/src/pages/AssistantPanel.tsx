@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import {
+  closeAssistant,
   setAssistantOpen,
   SKILL_MARK,
   startersFor,
@@ -36,6 +37,17 @@ const toItems = (messages: ThreadMessage[]): Item[] =>
 
 const ASK_LIMIT = 1000;
 
+/** Offer chips under an answer are sent as their own intent, so the admin switches apply (SC-04, SC-09). */
+const OFFER_INTENT: Record<string, Exclude<Intent, 'ask' | 'compare' | 'challenge'>> = {
+  'Why this band?': 'why',
+  'What is the weakest point?': 'weakest',
+  'What would change the band?': 'change',
+  'What should I ask in the interview?': 'interview',
+  'What could I be missing?': 'missing',
+  'What is the strongest case for this one?': 'strongest',
+  'What should I check by hand?': 'check',
+};
+
 /**
  * The assistant panel (design spec 6.6.1): closed by default as a slim rail; docked on wide screens,
  * an overlay on tablets and a bottom sheet on phones. One conversation per candidate, kept for the
@@ -63,6 +75,7 @@ export function AssistantPanel(props: {
   const [picked, setPicked] = useState<string[]>([]);
   const [challenging, setChallenging] = useState(false);
   const [read, setRead] = useState('');
+  const [confirmDel, setConfirmDel] = useState(false);
   const turn = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -76,6 +89,7 @@ export function AssistantPanel(props: {
     setBusy(false);
     setPicking(false);
     setChallenging(false);
+    setConfirmDel(false);
     setAnnounce('');
     if (!open || !sid) return;
     let alive = true;
@@ -163,6 +177,9 @@ export function AssistantPanel(props: {
 
   async function clearChat() {
     if (!sid) return;
+    // An answer still on its way is dropped: it belongs to the deleted chat (SC-10).
+    turn.current++;
+    setBusy(false);
     try {
       await api.del(`/screenings/${sid}/assistant`);
       setItems([]);
@@ -204,7 +221,10 @@ export function AssistantPanel(props: {
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();
-          setAssistantOpen(false);
+          // The first Escape closes only an open sub-form (the typed read is kept), SC-11.
+          if (picking) return setPicking(false);
+          if (challenging) return setChallenging(false);
+          closeAssistant();
         }
       }}
       className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:top-[57px] sm:bottom-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
@@ -223,7 +243,7 @@ export function AssistantPanel(props: {
             <p className="mt-1 text-sm text-ink-3">{t('Select a candidate to talk about.')}</p>
           )}
         </div>
-        <button type="button" className={btnSecondary} onClick={() => setAssistantOpen(false)}>
+        <button type="button" className={btnSecondary} onClick={closeAssistant}>
           {t('Close')}
         </button>
       </header>
@@ -234,7 +254,9 @@ export function AssistantPanel(props: {
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
+        tabIndex={0}
+        role="region"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         aria-label={t('Conversation')}
       >
         {items.length === 0 && !busy && target && (
@@ -255,7 +277,10 @@ export function AssistantPanel(props: {
               key={it.id}
               answer={it.answer}
               onEdit={props.onEditRequirement}
+              canOffer={(o) => OFFER_INTENT[o] !== 'interview' || config.features.interview}
               onAsk={(q) => {
+                const intent = OFFER_INTENT[q];
+                if (intent) return void send(intent, q);
                 const s = starters.find((x) => x.label === q || t(x.label) === q);
                 void (s ? send(s.intent, s.label) : send('ask', q));
               }}
@@ -294,23 +319,34 @@ export function AssistantPanel(props: {
               {props.others.length === 0 && (
                 <p className="text-ink-3">{t('No other scored candidates.')}</p>
               )}
-              {props.others.slice(0, 30).map((o) => (
-                <label key={o.screeningId} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(o.screeningId)}
-                    disabled={!picked.includes(o.screeningId) && picked.length >= 2}
-                    onChange={(e) =>
-                      setPicked((p) =>
-                        e.target.checked
-                          ? [...p, o.screeningId]
-                          : p.filter((x) => x !== o.screeningId),
-                      )
-                    }
-                  />
-                  {o.label}
-                </label>
-              ))}
+              <div className="max-h-48 space-y-1 overflow-y-auto overscroll-contain">
+                {props.others.map((o, i) => (
+                  <label
+                    key={o.screeningId}
+                    className="flex items-center gap-2 pointer-coarse:min-h-11"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked.includes(o.screeningId)}
+                      disabled={!picked.includes(o.screeningId) && picked.length >= 2}
+                      onChange={(e) =>
+                        setPicked((p) =>
+                          e.target.checked
+                            ? [...p, o.screeningId]
+                            : p.filter((x) => x !== o.screeningId),
+                        )
+                      }
+                    />
+                    {o.label}
+                    {sameName(props.others, i) && (
+                      <span className="text-xs text-ink-3">
+                        {' '}
+                        ({t('{n} of {total} with this name', sameName(props.others, i)!)})
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
@@ -433,19 +469,56 @@ export function AssistantPanel(props: {
               {t('Send')}
             </button>
           </form>
-          {items.length > 0 && (
-            <button
-              type="button"
-              className="text-xs text-link underline"
-              onClick={() => void clearChat()}
-            >
-              {t('Delete this chat')}
-            </button>
-          )}
+          {items.length > 0 &&
+            (confirmDel ? (
+              <div
+                role="alertdialog"
+                aria-label={t('Delete this chat')}
+                className="flex flex-wrap items-center gap-2 text-xs"
+              >
+                <span>{t('Delete this chat?')}</span>
+                <button
+                  type="button"
+                  className="font-semibold text-err-ink underline pointer-coarse:min-h-11"
+                  autoFocus
+                  onClick={() => {
+                    setConfirmDel(false);
+                    void clearChat();
+                  }}
+                >
+                  {t('Delete')}
+                </button>
+                <button
+                  type="button"
+                  className="text-link underline pointer-coarse:min-h-11"
+                  onClick={() => setConfirmDel(false)}
+                >
+                  {t('Cancel')}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="text-xs text-link underline pointer-coarse:min-h-11"
+                onClick={() => setConfirmDel(true)}
+              >
+                {t('Delete this chat')}
+              </button>
+            ))}
         </div>
       )}
     </aside>
   );
+}
+
+/** Two candidates with the same name are told apart in the Compare list (SC-05). */
+function sameName(others: { label: string }[], i: number) {
+  const same = others.filter((o) => o.label === others[i]!.label);
+  if (same.length < 2) return null;
+  return {
+    n: others.slice(0, i + 1).filter((o) => o.label === others[i]!.label).length,
+    total: same.length,
+  };
 }
 
 const startersLabel = (intent: Intent, fallback: string) =>
@@ -463,13 +536,16 @@ function AnswerView({
   answer: a,
   onEdit,
   onAsk,
+  canOffer,
 }: {
   answer: Answer;
   onEdit: (requirementId: string, text: string) => void;
   onAsk: (q: string) => void;
+  canOffer: (offer: string) => boolean;
 }) {
   const t = useT();
   const [more, setMore] = useState(false);
+  const [whoWrote, setWhoWrote] = useState(false);
   const stateName = {
     Found: t('Found'),
     'Partly found': t('Partly found'),
@@ -488,13 +564,22 @@ function AnswerView({
   return (
     <div className={`mr-4 space-y-2 rounded-2xl border p-3 text-sm ${tone}`}>
       <p>
-        <span
-          className="mr-2 rounded border border-edge px-1 text-xs font-semibold text-ink-2"
+        {/* The badge says who wrote the answer; a button so keyboard and touch can read it (SC-03). */}
+        <button
+          type="button"
+          className="mr-2 rounded border border-edge px-1 text-xs font-semibold text-ink-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           title={t('Written by an AI from the stored match')}
+          aria-expanded={whoWrote}
+          onClick={() => setWhoWrote((x) => !x)}
         >
           {t('AI')}
-        </span>
+        </button>
         <span className="font-medium">{a.headline}</span>
+        {whoWrote && (
+          <span className="block text-xs text-ink-3">
+            {t('Written by an AI from the stored match')}
+          </span>
+        )}
       </p>
       {a.outcome && a.kind === 'answer' && (
         <p className="text-ink-2">
@@ -586,9 +671,9 @@ function AnswerView({
           ))}
         </div>
       )}
-      {a.offer && a.offer.length > 0 && (
+      {a.offer && a.offer.some(canOffer) && (
         <div className="flex flex-wrap gap-2">
-          {a.offer.map((o) => (
+          {a.offer.filter(canOffer).map((o) => (
             <button
               key={o}
               type="button"

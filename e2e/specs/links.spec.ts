@@ -228,10 +228,10 @@ uat(
     const c = card(page, w);
     const items = c.getByRole('list', { name: w('Links in the CV') }).getByRole('listitem');
     const gh = items.nth(0).getByRole('button');
-    await expect(gh).toHaveText(w('Read this page'));
+    await expect(gh).toContainText(w('Read this page')); // the host follows, so the name is distinct
     const name = await gh.evaluate((e) => e.getAttribute('aria-label') ?? e.textContent);
     await gh.click();
-    await expect(gh).toHaveText(w('Reading…'));
+    await expect(gh).toContainText(w('Reading…'));
     await expect(items.nth(2).getByRole('button')).toBeDisabled();
     const busyName = await gh.evaluate((e) => e.getAttribute('aria-label') ?? e.textContent);
     await expect(c.locator('figure')).toHaveCount(1, { timeout: 5000 });
@@ -302,7 +302,7 @@ uat(
       await expect(c.locator('figure')).toHaveCount(1);
       page.once('dialog', (d) => d.accept());
       await c.getByRole('button', { name: w('Withdraw consent and delete what was read') }).click();
-      const ok = page.getByRole('button', { name: /Withdraw|Confirm|Yes|Geri|Təsdiq/ }).last();
+      const ok = page.getByRole('alertdialog').getByRole('button').first();
       if (await ok.isVisible().catch(() => false)) await ok.click();
     }
     await expect.poll(dels).toBe(1);

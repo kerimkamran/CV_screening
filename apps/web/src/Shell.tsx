@@ -79,8 +79,16 @@ function AskBar() {
       const el = e.target as HTMLElement | null;
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (document.documentElement.dataset.cvFull) return; // the CV is open full screen
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable)
+      )
         return;
+      // A modal (drawer, full-screen viewer) keeps the focus (SA-02).
+      if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       ref.current?.focus();
     };
@@ -148,7 +156,12 @@ function SenaiPrefs({ name }: { name: string }) {
       },
       () => setFailed(true), // the saved value stays as it was, and the person is told (AC-12)
     );
-  const n = Math.min(50, Math.max(1, Number(draft) || 5));
+  // 0 is kept as 1 and 99 as 50; only an empty or unreadable field falls back to 5 (SA-25).
+  const typed = Number(draft);
+  const n =
+    draft.trim() !== '' && Number.isFinite(typed)
+      ? Math.min(50, Math.max(1, Math.round(typed)))
+      : 5;
   return (
     <div className="border-t border-line px-2 py-2 text-xs text-ink-2">
       <p className="font-medium text-ink">{t('What {name} remembers', { name })}</p>
@@ -347,7 +360,8 @@ export function Shell({
         className="sticky top-0 z-40 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
         style={{ viewTransitionName: 'app-header' }}
       >
-        {/* 57 px tall: the rail and the SenAI panel start right below it (SD-16). */}
+        {/* 57 px tall: the rail and the SenAI panel start right below it (SD-16). From 640 px the
+            open panel sits beside the page, which is padded so no control lies under it (SA-30). */}
         <div className="flex h-[57px] items-center gap-3 px-4">
           <a
             href={isTa ? '#/vacancies' : '#/'}
@@ -394,7 +408,7 @@ export function Shell({
           </nav>
         )}
         <div
-          className={`min-w-0 flex-1 ${isTa && open && cfg ? 'min-[1280px]:pr-96' : ''} ${rail ? 'pb-[var(--bottombar-h,0px)] sm:pb-0' : ''}`}
+          className={`min-w-0 flex-1 ${isTa && open && cfg ? 'sm:pr-96' : ''} ${rail ? 'pb-[var(--bottombar-h,0px)] sm:pb-0' : ''}`}
         >
           <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
           <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>

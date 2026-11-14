@@ -242,7 +242,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
               {v.counts.outOfDate > 0 && ` · ${t('{n} out of date', { n: v.counts.outOfDate })}`}
             </>
           ) : (
-            t('Last run') + ': ' + t('none yet')
+            // While the list loads, or when it could not be loaded, "none yet" would be a wrong
+            // statement (RN-01); it is said only once the list has come back empty.
+            t('Last run') + ': ' + (runs ? t('none yet') : '–')
           )}
           {' · '}
           <button
@@ -360,7 +362,13 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
       )}
 
       <div id="vacancy-setup" hidden={!setupOpen} className="grid items-start gap-4 xl:grid-cols-2">
-        <RoleCard vacancy={v} onSaved={setV} onReload={reload} onDirty={setDirty} />
+        <RoleCard
+          vacancy={v}
+          onSaved={setV}
+          onReload={reload}
+          onDirty={setDirty}
+          onOffer={() => setSetupChoice(true)}
+        />
         <ResumesCard
           vacancy={v}
           roleDirty={dirty}

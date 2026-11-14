@@ -130,6 +130,15 @@ export function CvReview({
   // A decision that changes washes the header in its colour for a moment (motion.css, m-wash).
   const [wash, setWash] = useState(0);
   const seenVersion = useRef<number | null>(null);
+  // On a narrow screen only one of the two panes is shown. "Show in CV" switches to the CV; the
+  // page is then brought to it, so the quote's page is on screen and not above or below it (CV-07).
+  useEffect(() => {
+    if (!nudge) return;
+    const pane = document.getElementById('review-cv');
+    const other = document.getElementById('review-analysis');
+    if (!pane || !other || window.getComputedStyle(other).display !== 'none') return;
+    pane.scrollIntoView?.({ block: 'start', behavior: 'instant' });
+  }, [nudge]);
   useEffect(() => {
     const v = d?.decision.version ?? null;
     if (seenVersion.current !== null && v !== null && v > seenVersion.current)
@@ -841,6 +850,8 @@ export function CvReview({
           className={`${view === 'cv' ? '' : 'hidden'} min-w-0 @min-[60rem]:block`}
           style={{ flexBasis: `${split}%`, flexGrow: 0, flexShrink: 0 }}
           id="review-cv"
+          role="tabpanel"
+          aria-label={t('CV')}
           data-testid="cv-pane"
         >
           <div className="@min-[60rem]:sticky @min-[60rem]:top-28 @min-[60rem]:pr-3">
@@ -878,6 +889,8 @@ export function CvReview({
         />
         <div
           id="review-analysis"
+          role="tabpanel"
+          aria-label={t('Analysis')}
           className={`${view === 'analysis' ? '' : 'hidden'} min-w-0 flex-1 @min-[60rem]:block @min-[60rem]:pl-3`}
         >
           {analysisPane}

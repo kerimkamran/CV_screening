@@ -1138,7 +1138,7 @@ uat(
       .filter({ has: page.getByRole('heading', { name: 'Shortlist: Network Engineer' }) })
       .last();
     const said = await card
-      .getByText(/could not|failed|not copied|denied|alınmadı|olmadı/i)
+      .getByText(/could not|did not work|failed|not copied|denied|alınmadı|olmadı/i)
       .count();
     expect(said, 'a visible message says copying failed').toBeGreaterThan(0);
     // PLAN step 7 (the vacancy Candidates tab) is covered by CP-25, which is not built in this run.

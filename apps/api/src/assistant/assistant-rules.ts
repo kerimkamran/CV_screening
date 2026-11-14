@@ -82,13 +82,17 @@ const PROTECTED_ASKED: RegExp[] = [
   uw(
     'married|marital|divorced|spouse|wife|husband|pregnan*|maternity|children|kids|family status|has a family',
   ),
-  uw('nationalit*|citizen*|ethnic*|race|racial|foreigner|foreign|origin|accent|surname|last name'),
+  uw(
+    'nationalit*|citizen*|ethnic*|race|racial|foreigner|foreign(?! (language*|trade|exchange|market*|affairs|polic*|invest*|currenc*|partner*|client*|compan*))|origin|accent|surname|last name',
+  ),
   uw('religio*|muslim|christian|jewish|orthodox|atheist|church|mosque'),
   uw('disab*|handicap*|health condition|illness|sick|wheelchair'),
-  uw('appearance|photo|picture of|attractive|beautiful|looks like|good looking'),
+  uw(
+    'appearance|photo(?! (edit*|retouch*|process*|studio*|shoot*))|picture of|attractive|beautiful|looks like|good looking',
+  ),
   // Azerbaijani, folded to ASCII
   uw(
-    'yasi|yasina|yasli|cinsi|cins|kisi|qadin|xanim|evlidir|evli|subay|usaq*|ailesi|milliyyet*|dini|vetendas*|gorunus*',
+    'yasi|yasina|yasli|cinsi|cins|kisi|qadin|xanim|evlidir|evli|subay|usaq*(?! (hekim*|bagca*|evi|psixoloq*|ortoped*|nevroloq*))|ailesi|milliyyet*|dini|vetendas*|gorunus*',
   ),
   // Russian, folded
   uw(
@@ -101,9 +105,12 @@ export const asksProtected = (q: string): boolean => {
 };
 
 const DECISION_ASKED: RegExp[] = [
-  /\b(should i|shall i|do you (think|recommend|suggest) i should|can i|may i|let me)\b.{0,40}\b(reject|hire|shortlist|pass on|drop|eliminate|disqualify|fire|decline|turn down|cut)\b/,
-  /\b(reject|eliminate|disqualify|discard|drop|cut|exclude|filter out)\b.{0,20}\b(her|him|them|this one|this candidate|candidate)\b/,
-  /\b(make me|help me|tell me to|just)\b.{0,20}\b(reject|hire|rank|pick|choose|decide)\b/,
+  /\b(should i|shall i|do you (think|recommend|suggest) i should)\b.{0,40}\b(reject|hire|shortlist|pass on|drop|eliminate|disqualify|fire|decline|turn down|cut)\b/,
+  // "Can I see the shortlist" is a request to look, not to decide (SA-27, SD-22).
+  /\b(can i|may i|let me)\b.{0,40}\b(reject|hire|pass on|eliminate|disqualify|fire|turn down)\b/,
+  /\b(reject|eliminate|disqualify|discard|drop|cut|exclude|filter out)\b.{0,20}\b(her|him|them|this one|this candidate|candidate|the (first|second|third|fourth|fifth|last|other|top|bottom)( one)?)\b/,
+  // "Help me pick interview questions" asks for interview help (SA-27).
+  /\b(make me|help me|tell me to|just)\b.{0,20}\b(reject|hire|rank|pick|choose|decide)\b(?!.{0,20}\b(questions?|interview)\b)/,
   /\brank\b.{0,20}\b(first|last|top|bottom|higher|lower|above|below|#?1)\b/,
   /\b(who should (i )?(hire|pick|choose|reject)|best candidate to hire|hire or not|recommend (hiring|rejecting))\b/,
   /(нанять|отклонить|принять на работу|не брать|ret et|ise gotur)/i,

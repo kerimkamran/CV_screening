@@ -1221,8 +1221,12 @@ uat(
       .toBeLessThanOrEqual(0.5);
     expect
       .soft(
-        shifts.reduce((s, x) => s + x.value, 0),
-        'summed layout-shift value',
+        // Shifts within 500 ms of the person's own key or click (hadRecentInput) are the page
+        // answering that input: the CV box moving into and out of the top layer. They are not
+        // counted, as the browser does not count them in its own layout-shift score either.
+        // The positions above (h1, 'Full screen', page width) are what must stay the same.
+        shifts.filter((x) => !x.recent).reduce((s, x) => s + x.value, 0),
+        'summed layout-shift value (not caused by an input)',
       )
       .toBe(0);
     await ux.check('after open and close', STD);
