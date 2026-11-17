@@ -80,6 +80,10 @@ export function startersFor(band: MatchBand): Starter[] {
 /** The product line shown with the assistant's name (Ask bar hint, panel greeting). */
 export const SLOGAN = 'Sən istə, Senai tapsın';
 
+/** The slogan with the assistant's name as configured: the approved line for 'SenAI', the same line for another name (SD-43). */
+export const sloganFor = (name: string): string =>
+  name === 'SenAI' ? SLOGAN : `Sən istə, ${name} tapsın`;
+
 // ------------------------------------------------------------------ the Ask bar and the panel
 
 const bus = {
@@ -161,7 +165,20 @@ export function rememberUser(userId: string): void {
   if (store.userKey === key) return;
   store.userKey = key;
   store.open = readOpen(key);
+  keepPoolThread(null); // another person never sees this person's conversation
   emit();
+}
+
+/**
+ * The pool conversation of this tab, kept while a CV screen takes the panel over and given back
+ * when the person returns (SA-16). It lives in memory only: a reload or a sign-out clears it.
+ */
+let poolKept: unknown = null;
+export function keepPoolThread(value: unknown): void {
+  poolKept = value;
+}
+export function keptPoolThread<T>(): T | null {
+  return (poolKept as T | null) ?? null;
 }
 
 export function setAssistantOpen(open: boolean): void {

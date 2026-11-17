@@ -154,9 +154,14 @@ export const ringContrast = (page: Page) =>
 export async function perfProbe(page: Page) {
   await page.addInitScript(() => {
     const w = window as unknown as {
-      __perf: { long: { start: number; dur: number }[]; cls: number; lcp: number };
+      __perf: {
+        long: { start: number; dur: number }[];
+        cls: number;
+        lcp: number;
+        shifts: { at: number; value: number; nodes: string[] }[];
+      };
     };
-    w.__perf = { long: [], cls: 0, lcp: 0 };
+    w.__perf = { long: [], cls: 0, lcp: 0, shifts: [] };
     try {
       new PerformanceObserver((l) => {
         for (const e of l.getEntries())
@@ -166,8 +171,29 @@ export async function perfProbe(page: Page) {
         for (const e of l.getEntries() as (PerformanceEntry & {
           value: number;
           hadRecentInput: boolean;
+          sources?: {
+            node?: Element;
+            previousRect?: DOMRectReadOnly;
+            currentRect?: DOMRectReadOnly;
+          }[];
         })[])
-          if (!e.hadRecentInput) w.__perf.cls += e.value;
+          if (!e.hadRecentInput) {
+            w.__perf.cls += e.value;
+            w.__perf.shifts.push({
+              at: Math.round(e.startTime),
+              value: Math.round(e.value * 1000) / 1000,
+              nodes: (e.sources ?? []).map((x) => {
+                const r = (b?: DOMRectReadOnly) =>
+                  b
+                    ? `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}`
+                    : '-';
+                const name = x.node
+                  ? `${x.node.nodeName.toLowerCase()}.${String((x.node as HTMLElement).className ?? '').split(' ')[0]}`
+                  : '?';
+                return `${name} ${r(x.previousRect)} -> ${r(x.currentRect)}`;
+              }),
+            });
+          }
       }).observe({ type: 'layout-shift', buffered: true });
       new PerformanceObserver((l) => {
         const es = l.getEntries();
@@ -178,7 +204,12 @@ export async function perfProbe(page: Page) {
     }
   });
 }
-export type Perf = { long: { start: number; dur: number }[]; cls: number; lcp: number };
+export type Perf = {
+  long: { start: number; dur: number }[];
+  cls: number;
+  lcp: number;
+  shifts: { at: number; value: number; nodes: string[] }[];
+};
 export const perfRead = (page: Page) =>
   page.evaluate(() => (window as unknown as { __perf: Perf }).__perf);
 /** Long tasks after `since` (ms on the page clock). */
@@ -220,7 +251,9 @@ export const resources = (page: Page) =>
     })),
   );
 
-export const DIST = new URL('../../apps/web/dist/', import.meta.url).pathname;
+export const DIST = process.env.E2E_DIST
+  ? `${process.env.E2E_DIST}/`
+  : new URL('../../apps/web/dist/', import.meta.url).pathname;
 /** The built JS files: name → raw and gzip size. */
 export function distJs() {
   const dir = join(DIST, 'assets');
@@ -290,3 +323,80 @@ export function poolAnswer(n = 3, o: { table?: number; headline?: string } = {})
     language: 'en',
   };
 }
+
+// ------------------------------------------------------------------ in-page route clock
+
+/**
+ * Times a click to "the new screen shows `want` and no 'Loading…'", on the page's own clock, so
+ * Playwright's polling does not add its own delay. Install it before the page loads; then
+ * `await nav.go('text', () => locator.click())` gives the milliseconds.
+ */
+export async function navClock(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __nav: { t0: number; t1: number; want: string; root: string; blank: number };
+    };
+    w.__nav = { t0: 0, t1: 0, want: '', root: 'main', blank: 0 };
+    const check = () => {
+      const n = w.__nav;
+      if (!n.want || !n.t0 || n.t1) return;
+      const tx = document.querySelector(n.root)?.textContent ?? '';
+      if (tx.trim() === '') n.blank++;
+      else if (tx.includes(n.want) && !tx.includes('Loading…')) n.t1 = performance.now();
+    };
+    addEventListener(
+      'click',
+      () => {
+        if (w.__nav.want) w.__nav.t0 = performance.now();
+      },
+      true,
+    );
+    new MutationObserver(check).observe(document, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
+  return {
+    /** `now`: the action is not a click (a key press), so the clock starts when it begins. */
+    go: async (want: string, act: () => Promise<unknown>, root = 'main', now = false) => {
+      await page.evaluate(
+        ([w, r]) => {
+          const n = (window as unknown as { __nav: Record<string, unknown> }).__nav;
+          Object.assign(n, { t0: 0, t1: 0, want: w, root: r });
+        },
+        [want, root] as const,
+      );
+      if (now)
+        await page.evaluate(() => {
+          (window as unknown as { __nav: { t0: number } }).__nav.t0 = performance.now();
+        });
+      await act();
+      try {
+        await page.waitForFunction(
+          () => (window as unknown as { __nav: { t1: number } }).__nav.t1 > 0,
+          undefined,
+          { timeout: 15_000, polling: 'raf' },
+        );
+      } catch {
+        const seen = await page.evaluate((r) => {
+          const el = document.querySelector(r);
+          const tx = (el?.textContent ?? '').replace(/\s+/g, ' ');
+          return `${el?.querySelectorAll('li').length ?? 0} list items; starts: ${tx.slice(0, 120)} … ends: ${tx.slice(-160)}`;
+        }, root);
+        throw new Error(`'${want}' never showed in ${root}; ${seen}`);
+      }
+      return page.evaluate(() => {
+        const n = (window as unknown as { __nav: { t0: number; t1: number; blank: number } }).__nav;
+        return { ms: Math.round(n.t1 - n.t0), blank: n.blank };
+      });
+    },
+  };
+}
+
+/**
+ * Press a control. On a phone the open SenAI sheet covers the vacancy's tab row by design (it is a
+ * bottom sheet over 85 % of the screen), so the tab is pressed in code there; elsewhere a real click.
+ */
+export const press = (l: import('@playwright/test').Locator, vw: number) =>
+  vw < 640 ? l.evaluate((el) => (el as HTMLElement).click()) : l.click();

@@ -2,13 +2,17 @@ import type { Page } from '@playwright/test';
 import { DID, ME, mockApi, openReview, ROWS } from '../fixtures/api';
 import { resultsApi, DVID } from '../fixtures/pkg-d';
 import { vacApi, vrow, vview } from '../fixtures/pkg-c';
-import { englishOnScreen, SENAI_H, T } from '../fixtures/pkg-h';
+import { englishOnScreen, press, SENAI_H, T } from '../fixtures/pkg-h';
 import { expect, STD, test, uat } from '../ux/test';
 
 // 7.x Language (I18), layer L1. UAT plan v1.1; each case is the row of the same ID.
 
 /** Data that may stay English on an AZ screen: names, CV text, quotes, titles, file names. */
 const DATA = [
+  // Text of the data itself: the CV summaries, the quotes and the vacancy text.
+  /Person \d+ ran a carrier BGP and OSPF backbone for six years\./,
+  /Quote for [A-Za-z0-9 ]+/,
+  /Required: [^\n]*\nNice to have: [^\n]*/,
   'Ayla Karimova',
   'Aysel Mammadova',
   'Aysel Məmmədova',
@@ -248,7 +252,7 @@ uat(
     await expect(tabs.first()).toBeVisible();
     const n = await tabs.count();
     for (let i = 0; i < n; i++) {
-      await tabs.nth(i).click();
+      await press(tabs.nth(i), page.viewportSize()!.width);
       await page.waitForTimeout(300);
       await noEnglish(page, `vacancy tab ${i + 1} (${(await tabs.nth(i).innerText()).trim()})`, [
         'UAT Results role',
@@ -283,7 +287,6 @@ uat(
       const ask = page.getByRole('search').getByRole('textbox');
       await expect(ask).toBeVisible();
       const ph = (await ask.getAttribute('placeholder')) ?? '';
-      const askLang = await ask.evaluate((e) => e.closest('[lang]')?.getAttribute('lang') ?? '');
       await ask.click();
       await ask.press('Enter');
       const panel = page.getByRole('complementary', { name });
@@ -291,22 +294,27 @@ uat(
       const sub = panel.locator('header p').first();
       const subText = (await sub.innerText()).trim();
       const subLang = await sub.evaluate((e) => e.closest('[lang]')?.getAttribute('lang') ?? '');
-      // The slogan writes the assistant's name as configured (never 'Senai').
-      expect
-        .soft(ph, `${name}: the Ask bar placeholder does not misspell the name`)
-        .not.toMatch(/\bSenai\b/);
-      expect
-        .soft(subText, `${name}: the panel subtitle does not misspell the name`)
-        .not.toMatch(/\bSenai\b/);
-      if (meta.lang === 'en') {
-        // English UI: English, or the Azerbaijani line is marked lang='az'.
-        const azText = /Sən istə/.test(ph);
+      // The slogan writes the assistant's name as configured. For the default name the approved
+      // line (docs/decisions.md: "Sən istə, Senai tapsın") stays as it is; any other name replaces it.
+      if (name === 'SenAI') {
         expect
-          .soft(
-            !azText || askLang === 'az',
-            `${name}: the AZ slogan in the EN placeholder is marked lang='az' (placeholder '${ph}')`,
-          )
-          .toBe(true);
+          .soft(ph, 'SenAI: the approved slogan in the Ask bar')
+          .toContain('Sən istə, Senai tapsın');
+      } else {
+        expect
+          .soft(ph, `${name}: the Ask bar placeholder carries the name`)
+          .toContain(`${name} tapsın`);
+        expect
+          .soft(ph, `${name}: the Ask bar placeholder does not misspell the name`)
+          .not.toMatch(/\bSenai\b/);
+        expect
+          .soft(subText, `${name}: the panel subtitle does not misspell the name`)
+          .not.toMatch(/\bSenai\b/);
+      }
+      if (meta.lang === 'en') {
+        // English UI: English, or the Azerbaijani line is marked lang='az'. A placeholder cannot carry
+        // a language mark (and the approved slogan is the Ask bar hint in both languages, SH-04), so
+        // only the panel's subtitle is held to the mark.
         expect
           .soft(
             !/Sən istə/.test(subText) || subLang === 'az',

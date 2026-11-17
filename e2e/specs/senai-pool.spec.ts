@@ -3,6 +3,7 @@ import { DID, DID2, ME, mockApi, openReview, showAnalysis, VID } from '../fixtur
 import { vacApi, vview } from '../fixtures/pkg-c';
 import { DVID, resultsApi } from '../fixtures/pkg-d';
 import { CFG, poolAnswer, senaiAnswers, senaiRoutes, type AskLog } from '../fixtures/pkg-g';
+import { press } from '../fixtures/pkg-h';
 import { AZ } from '../../apps/web/src/i18n/az';
 import { expect, STD, uat } from '../ux/test';
 
@@ -101,7 +102,9 @@ uat(
       (await kept.count()) + (await back.count()),
       'the pool answer stays reachable on the CV page (SD-20)',
     ).toBeGreaterThan(0);
-    await ux.check('cv from answer', STD);
+    await ux.check('cv from answer', STD, {
+      overlay: (page.viewportSize()?.width ?? 1280) < 640 ? 'aside' : undefined,
+    });
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`#/vacancies/${VID}`));
     await expect(
@@ -517,6 +520,21 @@ uat(
         await panel.getByRole('textbox').press('Enter');
         await expect(panel.locator('[data-answer]').first()).toBeVisible();
       }
+      // A screen change in progress puts its own layer over the page (hit tests land on <html>).
+      await page
+        .waitForFunction(
+          () =>
+            !document
+              .getAnimations()
+              .some((a) =>
+                ((a.effect as KeyframeEffect | null)?.pseudoElement ?? '').startsWith(
+                  '::view-transition',
+                ),
+              ),
+          null,
+          { timeout: 3000 },
+        )
+        .catch(() => undefined);
       const r = await page.evaluate(() => {
         const aside = document.querySelector('aside')!.getBoundingClientRect();
         const covered: string[] = [];
@@ -541,6 +559,9 @@ uat(
           aside: { left: aside.left, top: aside.top, bottom: aside.bottom, width: aside.width },
           covered,
           avatarHit: !!avHit && av.contains(avHit),
+          avatarCover: avHit
+            ? `${avHit.tagName}.${String(avHit.className).slice(0, 60)} ${(avHit.textContent ?? '').slice(0, 30)}`
+            : 'none',
           scrollX: document.documentElement.scrollWidth > innerWidth + 1,
           ih: innerHeight,
         };
@@ -556,7 +577,9 @@ uat(
       } else {
         expect.soft(Math.round(r.aside.left), `${where}: bottom sheet`).toBe(0);
       }
-      expect.soft(r.avatarHit, `${where}: the avatar is clickable`).toBe(true);
+      expect
+        .soft(r.avatarHit, `${where}: the avatar is clickable (covered by ${r.avatarCover})`)
+        .toBe(true);
       expect.soft(r.scrollX, `${where}: no horizontal page scroll`).toBe(false);
     };
     for (const route of ['/#/vacancies', `/#/vacancies/${VID}`, '/#/candidates', '/#/reports']) {
@@ -567,7 +590,7 @@ uat(
         const tabs = page.getByRole('main').getByRole('tab');
         const n = Math.min(await tabs.count(), 6);
         for (let i = 1; i < n; i++) {
-          await tabs.nth(i).click();
+          await press(tabs.nth(i), vw);
           await probe(`${route} tab ${i + 1}`);
         }
       }

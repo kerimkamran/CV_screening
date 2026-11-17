@@ -163,3 +163,80 @@ export function nextStar(key: string, index: number, count: number): number | nu
       return null;
   }
 }
+
+// ------------------------------------------------------------------ star-map name labels
+
+const LABEL_H = 16;
+/** Half the size of what a star takes on the map, glow included. */
+const STAR_R = 16;
+
+interface Box {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+const hits = (a: Box, b: Box) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+const grow = (a: Box, n: number): Box => ({ l: a.l - n, r: a.r + n, t: a.t - n, b: a.b + n });
+
+/**
+ * Where each name label goes on the star map, in pixels. A label is tried under its star, then
+ * above, then beside it, then one line further out; the first place that stays inside the map and
+ * touches no other label and no other star wins. Labels are placed in the order given, so the first
+ * ones never move when a later one (a hovered or selected star) is added.
+ */
+export function placeLabels(
+  stars: { x: number; y: number }[],
+  want: { i: number; w: number }[],
+  box: { w: number; h: number },
+): Map<number, { left: number; top: number; w: number }> {
+  const out = new Map<number, { left: number; top: number; w: number }>();
+  const placed: Box[] = [];
+  const starBox = (k: number): Box => ({
+    l: stars[k]!.x - STAR_R,
+    r: stars[k]!.x + STAR_R,
+    t: stars[k]!.y - STAR_R,
+    b: stars[k]!.y + STAR_R,
+  });
+  for (const { i, w } of want) {
+    const s = stars[i];
+    if (!s) continue;
+    const full = Math.min(w, Math.max(40, box.w - 4));
+    let chosen: { box: Box; w: number } | null = null;
+    // The whole name first; if it fits nowhere, a shorter one (cut with an ellipsis).
+    for (const width of [full, 112, 88, 64].filter((x, k) => k === 0 || x < full)) {
+      const mk = (l: number, t: number): Box => ({ l, r: l + width, t, b: t + LABEL_H });
+      const centred = Math.max(2, Math.min(box.w - width - 2, s.x - width / 2));
+      const cands = [
+        mk(centred, s.y + STAR_R + 2),
+        mk(centred, s.y - STAR_R - 2 - LABEL_H),
+        mk(s.x + STAR_R + 4, s.y - LABEL_H / 2),
+        mk(s.x - STAR_R - 4 - width, s.y - LABEL_H / 2),
+        mk(centred, s.y + STAR_R + 2 + LABEL_H + 2),
+        mk(centred, s.y - STAR_R - 2 - 2 * LABEL_H - 2),
+      ];
+      const fits = (c: Box) =>
+        c.l >= 2 &&
+        c.r <= box.w - 2 &&
+        c.t >= 2 &&
+        c.b <= box.h - 2 &&
+        placed.every((p) => !hits(c, grow(p, 2))) &&
+        stars.every((_, k) => k === i || !hits(c, starBox(k)));
+      const pick = cands.find(fits);
+      if (pick) {
+        chosen = { box: pick, w: width };
+        break;
+      }
+    }
+    if (!chosen) {
+      const centred = Math.max(2, Math.min(box.w - 64 - 2, s.x - 32));
+      chosen = {
+        box: { l: centred, r: centred + 64, t: s.y + STAR_R + 2, b: s.y + STAR_R + 2 + LABEL_H },
+        w: 64,
+      };
+    }
+    placed.push(chosen.box);
+    out.set(i, { left: chosen.box.l, top: chosen.box.t, w: chosen.w });
+  }
+  return out;
+}

@@ -467,13 +467,17 @@ export function CvPane({
         <div className={full ? 'flex min-h-0 flex-1 gap-2' : 'flex gap-2'}>
           <div
             ref={setBodyEl}
+            // The scrolling page view is a tab stop, so the arrow and Page keys scroll the CV (A11-01).
+            {...(showing === 'original'
+              ? { tabIndex: 0, role: 'group', 'aria-label': t('CV pages') }
+              : {})}
             className={
               full
                 ? showing === 'original'
                   ? 'min-h-0 min-w-0 flex-1 overflow-auto'
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
                 : showing === 'original'
-                  ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto rounded-md bg-neutral/40 p-2'
+                  ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto rounded-md bg-neutral/40 p-2 @min-[60rem]:pointer-coarse:max-h-[calc(100vh-20rem)]'
                   : 'min-w-0 flex-1'
             }
             data-testid="cv-body"

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { SharedReportSnapshot, SnapshotCandidate } from '@cv/shared';
-import { BAND_LABEL, STAR_COLOUR, type MatchBand } from '../results-logic';
+import { BAND_LABEL, KIND_NAME, STAR_COLOUR, type MatchBand } from '../results-logic';
 import { api, ApiError } from '../api';
 import { BRAND_BY, BRAND_NAME, Mark } from '../brand';
-import { useT } from '../i18n';
+import { locale, useT } from '../i18n';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
 
 /**
@@ -29,8 +29,31 @@ const KIND_LABEL = { found: 'Found', partly: 'Partly found', missing: 'Not found
 const KIND_MARK = { found: '✓', partly: '~', missing: '✗' } as const;
 const BANDS: MatchBand[] = ['strong', 'good', 'partial', 'limited', 'human'];
 
+const KIND_OF_WORDS = {
+  'must-have': 'mandatory',
+  'nice-to-have': 'preferred',
+  ignore: 'ignore',
+} as const;
+const CHANGE_LINE = /^(.*): (must-have|nice-to-have|ignore) to (must-have|nice-to-have|ignore)$/;
+
 export function SharedReport({ id }: { id: string }) {
   const t = useT();
+  /**
+   * A change line is written by the server in English when the link is made. It is shown in the
+   * viewer's language here, so the snapshots that already exist read right too (RP-13).
+   */
+  const changeText = (text: string) => {
+    if (text === 'Requirements set back to the original') return t(text);
+    const m = CHANGE_LINE.exec(text);
+    if (!m) return text;
+    const low = (w: string) =>
+      t(KIND_NAME[KIND_OF_WORDS[w as keyof typeof KIND_OF_WORDS]]).toLocaleLowerCase(locale());
+    return t('{requirement}: {from} to {to}', {
+      requirement: m[1]!,
+      from: low(m[2]!),
+      to: low(m[3]!),
+    });
+  };
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [tries, setTries] = useState(0);
   const [showAll, setShowAll] = useState(false);
@@ -105,6 +128,7 @@ export function SharedReport({ id }: { id: string }) {
         style={{ background: 'linear-gradient(160deg,#0C1A3D,#0F2459)' }}
       >
         <p
+          role="img"
           className="mb-3 flex items-center gap-2 text-white"
           aria-label={`${BRAND_NAME} ${BRAND_BY}`}
         >
@@ -305,7 +329,11 @@ export function SharedReport({ id }: { id: string }) {
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
             {r.changes.map((c, i) => (
               <li key={i}>
-                {t('{text}, by {by} on {date}.', { text: c.text, by: c.by, date: when(c.at) })}
+                {t('{text}, by {by} on {date}.', {
+                  text: changeText(c.text),
+                  by: c.by,
+                  date: when(c.at),
+                })}
               </li>
             ))}
             {r.changes.length > 0 && (

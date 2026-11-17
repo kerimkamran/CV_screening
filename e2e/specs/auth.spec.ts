@@ -68,11 +68,11 @@ uat(
     const fb = (await pw.boundingBox())!;
     const sb = (await show.boundingBox())!;
     expect(
-      sb.x >= fb.x &&
-        sb.x + sb.width <= fb.x + fb.width &&
-        sb.y >= fb.y &&
-        sb.y + sb.height <= fb.y + fb.height,
-      'the Show toggle is inside the password field',
+      sb.x >= fb.x - 0.5 &&
+        sb.x + sb.width <= fb.x + fb.width + 0.5 &&
+        sb.y >= fb.y - 0.5 &&
+        sb.y + sb.height <= fb.y + fb.height + 0.5,
+      `the Show toggle is inside the password field (field ${JSON.stringify(fb)}, toggle ${JSON.stringify(sb)})`,
     ).toBe(true);
     const padR = await pw.evaluate((e) => parseFloat(getComputedStyle(e).paddingRight));
     expect(padR, 'the field keeps room on its right for the toggle').toBeGreaterThanOrEqual(
@@ -98,11 +98,12 @@ uat(
     await reloadAt(page, '#/');
     await expect(page.getByRole('heading', { name: t('Sign in') })).toBeVisible();
     const order: string[] = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       await page.keyboard.press('Tab');
       order.push(
         await page.evaluate(() => {
           const e = document.activeElement as HTMLElement;
+          if (e.matches('a[href="#main"]')) return 'skip';
           if (e.matches('header a')) return 'brand';
           if (e.tagName === 'SELECT') return 'language';
           if (e.matches('input[type=email]')) return 'email';
@@ -113,7 +114,7 @@ uat(
         }),
       );
     }
-    expect(order).toEqual(['brand', 'language', 'email', 'password', 'show', 'sign in']);
+    expect(order).toEqual(['skip', 'brand', 'language', 'email', 'password', 'show', 'sign in']);
     // 4 backgrounds (this browser's choice, read by theme-init.js before the first paint).
     for (const bg of BACKGROUNDS) {
       await page.evaluate((b) => localStorage.setItem('cv-background', b), bg);

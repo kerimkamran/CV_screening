@@ -1,11 +1,12 @@
 import { AZ } from '../../apps/web/src/i18n/az';
-import { senaiOn } from '../fixtures/pkg-g';
+import { senaiOn, senaiPut } from '../fixtures/pkg-g';
 import { expect, test, uat, STD } from '../ux/test';
 import {
   accounts,
   api,
   clearModelCalls,
   db,
+  drain,
   freshAccount,
   JD_AZ,
   login,
@@ -325,7 +326,7 @@ uat(
     const bar = page.getByRole('search').getByRole('textbox');
     await bar.fill('is she married?');
     await bar.press('Enter');
-    const panel = page.getByRole('complementary', { name: w(meta.lang)('Assistant') });
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
     await expect(panel).toBeVisible();
     await expect(panel.getByText("That isn't related to the job requirements").last()).toBeVisible({
       timeout: 20_000,
@@ -799,9 +800,12 @@ uat(
   async ({ page, ux, meta }) => {
     const tt = w(meta.lang);
     const v = await backend2();
+    // The row's data: the AZ vacancy also holds analyzed CVs (none on its Shortlist). Without any CV
+    // the answer would be 'has no CVs yet', which is a different case.
     const az = await screenedVacancy(await login(accounts().recruiter), {
       title: uniq('Şəbəkə Mühəndisi'),
       jd: JD_AZ(),
+      files: resumeFiles().slice(0, 3),
     });
     const t = await login(accounts().recruiter);
     const rows = await rowsOf(t, v.id);
@@ -834,9 +838,14 @@ uat(
     // 3) With a scope, three chips; each sends at once. The count answer has no rows.
     await page.goto(page.url().replace(/#.*$/, `#/vacancies/${v.id}`));
     await expect(chips).toHaveCount(3);
-    await chips.nth(1).click();
+    await chips
+      .filter({ hasText: tt('How many candidates for {vacancy}?').replace('{vacancy}', v.title) })
+      .click();
     const ans = panel.locator('[data-answer]').last();
     await expect(ans).toBeVisible({ timeout: 20_000 });
+    await expect(ans).toHaveAttribute('data-kind', 'pool');
+    await expect(ans.getByRole('list', { name: tt('Candidates') })).toHaveCount(0);
+    await ux.check('count answer', [...STD, 'AZ']);
     const count = (
       await ask(t, `How many candidates for ${v.title}?`, { vacancyId: v.id, language: meta.lang })
     ).answer;
@@ -844,7 +853,23 @@ uat(
       `${v.title} has ${rows.length} analyzed CVs (${strong} Strong, 2 on the Shortlist).`,
     );
     expect(count.rows).toHaveLength(0);
-    // 4) The Shortlist answer lists exactly those CVs.
+    // 4) History, 'New chat', then the Shortlist chip: exactly those CVs.
+    await panel.getByRole('button', { name: tt('History') }).click();
+    await panel.getByRole('button', { name: tt('New chat') }).click();
+    await expect(chips).toHaveCount(3);
+    await chips
+      .filter({ hasText: tt('Show the Shortlist for {vacancy}').replace('{vacancy}', v.title) })
+      .click();
+    const slUi = panel.locator('[data-answer]').last();
+    await expect(slUi).toContainText(
+      meta.lang === 'az'
+        ? `${v.title} üçün qısa siyahıda 2 namizəd var.`
+        : `2 on the Shortlist for ${v.title}.`,
+      { timeout: 20_000 },
+    );
+    await expect(
+      slUi.getByRole('list', { name: tt('Candidates') }).getByRole('listitem'),
+    ).toHaveCount(2);
     const sl = (await ask(t, `Show the Shortlist for ${v.title}`, { vacancyId: v.id })).answer;
     expect(sl.headline).toBe(`2 on the Shortlist for ${v.title}.`);
     expect(sl.rows.map((r) => r.documentId).sort()).toEqual(
@@ -853,9 +878,22 @@ uat(
         .map((r) => r.documentId)
         .sort(),
     );
-    // 5) Nobody shortlisted.
+    // 5) Nobody shortlisted on the AZ vacancy, asked with its own chip.
+    await page.goto(page.url().replace(/#.*$/, `#/vacancies/${az.id}`));
+    await panel.getByRole('button', { name: tt('History') }).click();
+    await panel.getByRole('button', { name: tt('New chat') }).click();
+    await chips
+      .filter({ hasText: tt('Show the Shortlist for {vacancy}').replace('{vacancy}', az.title) })
+      .click();
+    await expect(panel.locator('[data-answer]').last()).toContainText(
+      meta.lang === 'az'
+        ? `${az.title} üçün qısa siyahıda hələ heç kim yoxdur.`
+        : `Nobody is on the Shortlist for ${az.title} yet.`,
+      { timeout: 20_000 },
+    );
     const none = (await ask(t, `Show the Shortlist for ${az.title}`, { vacancyId: az.id })).answer;
     expect(none.headline).toBe(`Nobody is on the Shortlist for ${az.title} yet.`);
+    await ux.check('shortlist answers', [...STD, 'AZ']);
   },
 );
 
@@ -1272,19 +1310,30 @@ uat(
     const t = await login(accounts().recruiter);
     const before = await rowsOf(t, v.id);
     const q = (await ask(t, 'data quality', { vacancyId: v.id })).answer;
-    const texts = await db<{ t: string }>(
-      `SELECT coalesce(text,'') AS t FROM cv_document WHERE vacancy_id=$1 AND erased_at IS NULL`,
+    const texts = await db<{ id: string; t: string }>(
+      `SELECT id, coalesce(text,'') AS t FROM cv_document WHERE vacancy_id=$1 AND erased_at IS NULL`,
       [v.id],
     );
+    const loaded = new Set(before.map((r) => r.documentId));
     const ru = texts.filter((x) => {
       const letters = x.t.match(/\p{L}/gu) ?? [];
       const cyr = x.t.match(/\p{Script=Cyrillic}/gu) ?? [];
       return letters.length > 200 && cyr.length / letters.length > 0.3;
     }).length;
+    // PLAN: '1 thin CV(s)' — most of the invented resumes (docs/uat/resumes) are themselves under 400
+    // characters, so the thin count is every loaded CV under 400 characters (the rule of the row's
+    // own precondition), counted here from the stored texts; the added 12-thin.txt must be one of them.
+    const thinN = texts.filter((x) => loaded.has(x.id) && x.t.trim().length < 400).length;
+    expect(thinN, 'the near-empty CV is loaded and thin').toBeGreaterThanOrEqual(1);
     expect(q.headline).toBe(
-      `Data quality for ${v.title}: 1 near-copy pair(s), 1 thin CV(s), ${ru} in Russian.`,
+      `Data quality for ${v.title}: 1 near-copy pair(s), ${thinN} thin CV(s), ${ru} in Russian.`,
     );
+    expect(ru, 'the Russian resume is counted').toBeGreaterThanOrEqual(1);
     expect((q.table?.rows.length ?? 0) <= 15).toBe(true);
+    const flat = (q.table?.rows ?? []).map((r) => r.cells.join(' | ')).join('\n');
+    expect(flat, 'the near-copy pair is named').toMatch(/near|copy|similar/i);
+    expect(flat, 'the thin CV is named').toMatch(/Thin CV/);
+    expect(flat, 'the Russian CV is named').toMatch(/Russian/);
     expect((await ask(t, 'duplicates', { vacancyId: v.id })).answer.headline).toMatch(
       /^Data quality/,
     );
@@ -1306,40 +1355,99 @@ uat(
       'Required: BGP routing, OSPF, MPLS, IS-IS, VLAN design, firewall rules, Linux, Python, Ansible',
     ].join('\n');
     const v = await screenedVacancy(t, { title: uniq('JD Test'), jd });
-    const chat = (await ask(t, 'check the JD', { vacancyId: v.id, language: meta.lang })).answer;
-    expect(chat.headline).toMatch(/^JD check for .+: \d+ suggestion\(s\)\. Nothing was changed\.$/);
-    const tips = JSON.stringify(chat);
-    for (const re of [
-      /must-haves is a lot/,
-      /junior or entry level but also asks for 5\+ years/,
-      /"young"/,
-      /"native speaker"/,
-      /No experience range/,
-      /Terraform/,
-    ])
-      expect.soft(tips, `tip ${re}`).toMatch(re);
-    // The coach box after a save of the Role card.
-    const coach = await api(t).get(`/assistant/jd-coach/${v.id}?language=${meta.lang}`);
+    // The answer follows the language of the question, so the Azerbaijani run asks in Azerbaijani.
+    const chat = (
+      await ask(t, meta.lang === 'az' ? 'vakansiya mətnini yoxla' : 'check the JD', {
+        vacancyId: v.id,
+        language: meta.lang,
+      })
+    ).answer;
+    expect(chat.headline).toMatch(
+      meta.lang === 'az'
+        ? /^.+ üçün JD yoxlaması: \d+ təklif\. Heç nə dəyişdirilməyib\.$/
+        : /^JD check for .+: \d+ suggestion\(s\)\. Nothing was changed\.$/,
+    );
+    // One tip per problem, in the UI language (the notes are the tips; quotes are plain in the data).
+    const kinds: [string, RegExp, RegExp][] = [
+      ['more than 8 must-haves', /must-haves is a lot/, /vacib tələb çoxdur/],
+      [
+        'junior with 5+ years',
+        /junior or entry level but also asks for 5\+ years/,
+        /junior göstərilib, amma 5\+ il/,
+      ],
+      ['"young"', /"young" can exclude/, /"young" ifadəsi/],
+      ['"native speaker"', /"native speaker" can exclude/, /"native speaker" ifadəsi/],
+      ['no experience range', /No experience range/, /Təcrübə müddəti yazılmayıb/],
+      ['Terraform missing', /mentions Terraform/, /Terraform qeyd olunub/],
+    ];
+    const notes = chat.notes;
+    for (const [what, en, az] of kinds)
+      expect(
+        notes.filter((x) => (meta.lang === 'az' ? az : en).test(x)),
+        `one tip for: ${what}`,
+      ).toHaveLength(1);
+    expect(notes.length, 'at most 8 tips').toBeLessThanOrEqual(8);
+    const coach = await api(t).get<{ headline: string; tips: string[] }>(
+      `/assistant/jd-coach/${v.id}?language=${meta.lang}`,
+    );
     expect(coach.status).toBe(200);
+    expect(coach.body.tips, 'the chat answer lists the same tips as the coach box').toEqual(notes);
+
+    // 1-2) Save the Role card: the labelled box lists the tips and nothing in the form changes.
     await openAs(page, accounts().recruiter, `#/vacancies/${v.id}`);
+    const title = page.getByLabel(tt('Position'), { exact: true }).first();
+    await expect(title).toHaveValue(v.title);
+    await page.getByText(tt('More details'), { exact: true }).click();
+    const dept = page.getByLabel(tt('Department'), { exact: true });
     const save = page.getByRole('button', { name: tt('Save'), exact: true }).first();
-    if (await save.isVisible().catch(() => false)) {
+    const box = page.getByRole('region', { name: tt('Suggestions about the wording') });
+    await dept.fill('Networks');
+    const formBefore = await page
+      .locator('form')
+      .first()
+      .evaluate((f) =>
+        [...f.querySelectorAll('input, textarea, select')].map(
+          (e) => (e as HTMLInputElement).value,
+        ),
+      );
+    await save.click();
+    await expect(box).toBeVisible({ timeout: 15_000 });
+    const shown = await box.getByRole('listitem').allTextContents();
+    expect(shown, 'the box shows the tips of the coach').toEqual(coach.body.tips);
+    expect(shown.length).toBeLessThanOrEqual(8);
+    expect(
+      await page
+        .locator('form')
+        .first()
+        .evaluate((f) =>
+          [...f.querySelectorAll('input, textarea, select')].map(
+            (e) => (e as HTMLInputElement).value,
+          ),
+        ),
+      'nothing in the form changes',
+    ).toEqual(formBefore);
+    await ux.check('coach box', [...STD, 'AZ']);
+    // 3) Dismiss hides it until the next save.
+    await box.getByRole('button', { name: tt('Dismiss') }).click();
+    await expect(box).toHaveCount(0);
+    await dept.fill('Networks 2');
+    await expect(box).toHaveCount(0);
+    await save.click();
+    await expect(box).toBeVisible({ timeout: 15_000 });
+    // 6) SenAI off: no box and no error.
+    try {
+      await senaiPut({ enabled: false });
+      await dept.fill('Networks 3');
       await save.click();
-      const box = page
-        .getByRole('region', { name: /JD|coach|SenAI/i })
-        .or(
-          page
-            .getByRole('complementary', { name: /suggest|tip|SenAI/i })
-            .filter({ hasText: /must-have|Terraform/ }),
-        );
-      await expect(page.getByText(/Terraform/).first()).toBeVisible({ timeout: 10_000 });
-      await ux.check('coach box', [...STD, 'AZ']);
-      void box;
-    } else
-      test.info().annotations.push({
-        type: 'note',
-        description: 'Role card Save not reachable on this vacancy page',
+      await expect(page.getByRole('status').filter({ hasText: tt('Saved.') })).toBeVisible({
+        timeout: 15_000,
       });
+      await expect(box).toHaveCount(0);
+      await expect(page.getByRole('alert')).toHaveCount(0);
+      await ux.check('SenAI off', [...STD, 'AZ']);
+    } finally {
+      await senaiOn();
+    }
   },
 );
 
@@ -1350,17 +1458,21 @@ uat(
   async ({ page, ux, meta }) => {
     const tt = w(meta.lang);
     const t = await login(accounts().recruiter);
+    // Two requirement names that no other vacancy in the (shared) database has, so the similar
+    // vacancy list is this pair only.
+    const u = uniq('').trim();
+    const shared = [`Zabbix ${u}`, `Grafana ${u}`];
     const a = await screenedVacancy(t, {
       title: uniq('Backend Engineer'),
-      jd: 'Required: BGP routing, Kubernetes, Python\nNice to have: Linux',
+      jd: `Required: ${shared.join(', ')}`,
     });
     const extra = [
       'Docker',
       'Terraform',
       'Ansible',
-      'Grafana',
       'Prometheus',
       'Jenkins',
+      'Nagios',
       'Helm',
       'Kafka',
       'Redis',
@@ -1368,13 +1480,20 @@ uat(
     ];
     const b = await screenedVacancy(t, {
       title: uniq('Backend Developer'),
-      jd: `Required: BGP routing, Kubernetes, Python, ${extra.slice(0, 5).join(', ')}\nNice to have: ${extra.slice(5).join(', ')}`,
+      // PLAN: 'has 10 it lacks' — the requirement extraction keeps 8 must-haves and 4 nice-to-haves, so
+      // B has 12 requirements: A's 2 and 10 that A lacks.
+      jd: `Required: ${shared.join(', ')}, ${extra.slice(0, 6).join(', ')}\nNice to have: ${extra.slice(6).join(', ')}`,
     });
+    const reqCount = async () =>
+      ((await api(t).get(`/vacancies/${a.id}`)).body.requirements as unknown[]).length;
+    const before = await reqCount();
+    // 1) A table of at most 6 similar vacancies, with the copy button for Backend Developer.
     const sim = (await ask(t, 'similar vacancies', { vacancyId: a.id })).answer as Ans & {
       copy?: { fromId: string }[];
     };
     expect((sim.table?.rows.length ?? 0) <= 6).toBe(true);
     expect(sim.copy?.some((c) => c.fromId === b.id)).toBe(true);
+    // 2) The button opens the vacancy and the Role card offers the requirements.
     await openAs(page, accounts().recruiter, `#/vacancies/${a.id}`);
     const panel = await askUi(page, 'similar vacancies');
     await panel
@@ -1383,11 +1502,66 @@ uat(
       })
       .click();
     await expect(page).toHaveURL(new RegExp(`#/vacancies/${a.id}`));
-    const offer = page.getByText(new RegExp(`Add \\d+ requirements? from "${esc(b.title)}"`));
-    await expect(offer).toBeVisible({ timeout: 15_000 });
-    const n = Number(/Add (\d+)/.exec((await offer.textContent())!)![1]);
+    // The page writes typographic quotes around the title; the plan shows straight ones.
+    const offerBox = page.getByRole('region', { name: tt('Requirements from a similar vacancy') });
+    await expect(offerBox).toBeVisible({ timeout: 15_000 });
+    const head = (await offerBox.getByRole('paragraph').first().textContent())!;
+    expect(head).toMatch(
+      meta.lang === 'az'
+        ? new RegExp(`“${esc(b.title)}”`)
+        : new RegExp(
+            `^Add \\d+ requirements from [“"]${esc(b.title)}[”"] that this vacancy does not have yet\\?$`,
+          ),
+    );
+    // (the title carries digits of its own: look for the count outside the quoted title)
+    const n = Number(/\d+/.exec(head.replace(`“${b.title}”`, '').replace(`"${b.title}"`, ''))![0]);
     expect(n).toBe(10);
+    // Every requirement that will be added is listed, or the rest is stated ('and k more').
+    const listed = await offerBox.getByRole('listitem').allTextContents();
+    const stated = listed.find((x) => /^(and \d+ more|və daha \d+)$/.test(x));
+    const names = listed.filter((x) => x !== stated);
+    expect(names.length + (stated ? Number(/\d+/.exec(stated)![0]) : 0)).toBe(n);
+    for (const x of names)
+      expect(
+        extra.some((e) => x.includes(e)),
+        `${x} comes from B`,
+      ).toBe(true);
     await ux.check('offer', [...STD, 'AZ']);
+    // 3-4) 'Add them to the form': the number added equals the number offered; nothing is saved yet.
+    await offerBox.getByRole('button', { name: tt('Add them to the form') }).click();
+    await expect(
+      page.getByRole('status').filter({ hasText: tt('Added. Read them, then save.') }),
+    ).toBeVisible();
+    expect(await reqCount(), 'nothing is saved before Save').toBe(before);
+    // 5) Save: exactly the offered requirements are added.
+    await page
+      .getByRole('button', { name: tt('Save'), exact: true })
+      .first()
+      .click();
+    await expect.poll(reqCount, { timeout: 15_000 }).toBe(before + n);
+    // 6) With analyzed CVs the setup section is closed, yet the offer opens it and shows.
+    const up = await api(t).upload(`/vacancies/${a.id}/documents`, resumeFiles().slice(0, 2));
+    expect(up.status).toBeLessThan(300);
+    await drain();
+    await page.reload();
+    await expect(page.getByRole('button', { name: tt('Role and CVs') })).toBeVisible({
+      timeout: 15_000,
+    });
+    const panel2 = await askUi(page, 'similar vacancies');
+    await panel2
+      .getByRole('button', {
+        name: tt('Review the requirements of {title} to copy').replace('{title}', b.title),
+      })
+      .click();
+    await expect(offerBox).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: tt('Hide role and CVs') })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await expect(offerBox.getByRole('paragraph').first()).toContainText(
+      meta.lang === 'az' ? `“${b.title}”` : `Everything in “${b.title}” is already here.`,
+    );
+    await ux.check('already here', [...STD, 'AZ']);
   },
 );
 
@@ -1444,33 +1618,71 @@ uat(
 );
 
 uat('SA-23', 'Pushback and recall', { on: ['D'], langs: 'EN+AZ' }, async ({ ux }) => {
-  const v = await backend();
+  // PLAN: 'the first CV mentions Kubernetes, the second does not' — nine of the ten invented resumes
+  // mention it, so this case loads one that does not (resume 02 with Kubernetes written differently).
+  const noK8s = {
+    ...resumeFiles()[1]!,
+    name: '13-no-k8s.txt',
+    data: String(resumeFiles()[1]!.data).replace(/kubernetes\w*/gi, 'Docker Swarm'),
+  };
+  const v = await screenedVacancy(await login(accounts().recruiter), {
+    title: uniq('Backend Engineer'),
+    files: [resumeFiles()[0]!, noK8s],
+  });
   const A = await freshAccount('TA_PARTNER');
   const B = await freshAccount('TA_PARTNER');
   const t = await login(A);
   await ask(t, 'who knows Excel');
   const list = await ask(t, `find candidates for ${v.title}`, { vacancyId: v.id });
   const before = await rowsOf(t, v.id);
-  const k = (
-    await ask(t, 'but the first one does know Kubernetes', {
-      conversationId: list.conversationId,
-      vacancyId: v.id,
-    })
-  ).answer;
-  expect(k.headline).toMatch(/^(You are right that|I cannot find)/);
-  if (/^You are right/.test(k.headline)) {
-    expect(k.headline).toContain('The stored assessment is unchanged');
-    expect(k.actions?.[0]?.label).toMatch(/^Open .+ to re-analyze$/);
+  // Which of the first two listed CVs really mention Kubernetes (the stored text decides, not the plan's wish).
+  const mentions = await Promise.all(
+    list.answer.rows
+      .slice(0, 2)
+      .map(async (r) =>
+        /kubernetes/i.test(
+          (
+            await db<{ t: string }>(`SELECT coalesce(text,'') AS t FROM cv_document WHERE id=$1`, [
+              r.documentId,
+            ])
+          )[0]?.t ?? '',
+        ),
+      ),
+  );
+  for (const [i, word] of [[0, 'first'] as const, [1, 'second'] as const]) {
+    const k = (
+      await ask(t, `but the ${word} one does know Kubernetes`, {
+        conversationId: list.conversationId,
+        vacancyId: v.id,
+      })
+    ).answer;
+    if (mentions[i]) {
+      expect(k.headline, `${word}: the CV does say it`).toMatch(/^You are right that/);
+      expect(k.headline).toContain('The stored assessment is unchanged');
+      expect(k.actions?.[0]?.label).toMatch(/^Open .+ to re-analyze$/);
+      // The headers describe their content: the skill column is not headed 'Candidate'.
+      expect(k.table?.head, 'a table of passages').toEqual(['Skill', 'What the CV says']);
+      expect(k.table!.rows.length).toBeGreaterThan(0);
+    } else {
+      expect(k.headline, `${word}: the CV does not say it`).toMatch(
+        /^I cannot find .+ so the stored assessment stands\./,
+      );
+      expect(k.table).toBeFalsy();
+    }
   }
-  if (k.table)
-    expect(k.table.head[1], 'the column header describes its content').not.toBe('Candidate');
+  // PLAN: 'the first Backend Engineer CV mentions Kubernetes, the second does not' — which CV leads
+  // depends on the scores, so each branch above is chosen from the stored text. Both branches are
+  // needed to cover the row; this must hold for the invented resumes.
+  expect(new Set(mentions).size, 'one CV with and one without Kubernetes among the first two').toBe(
+    2,
+  );
   const az = (
     await ask(t, 'amma o bilir Kubernetes', {
       conversationId: list.conversationId,
       vacancyId: v.id,
     })
   ).answer;
-  expect(az.language).toBe('az');
+  expect(az.language, 'a pushback in Azerbaijani is answered in Azerbaijani').toBe('az');
   expect((await rowsOf(t, v.id)).map((r) => `${r.score}${r.band}`)).toEqual(
     before.map((r) => `${r.score}${r.band}`),
   );
@@ -1489,41 +1701,60 @@ uat(
   'SA-24',
   'About, help glossary and unclear questions',
   { on: ['D'], langs: 'EN+AZ' },
-  async ({ page, ux }) => {
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const v = await backend();
     const t = await login(accounts().recruiter);
-    const about = (await ask(t, 'what can you see?')).answer;
+    // 1) 'What I can see' also says how the last question was read, so a question comes first.
+    const first = await ask(t, `find candidates for ${v.title} please`, { vacancyId: v.id });
+    const about = (
+      await ask(t, 'what can you see?', { conversationId: first.conversationId, vacancyId: v.id })
+    ).answer;
     expect(about.headline).toBe('What I can see and how I answer:');
-    expect(about.notes.join(' ')).toMatch(/How I read your last question: /);
+    expect(about.notes[0], 'the see line').toMatch(/^I see the vacancies you can open/);
+    expect(about.notes[1], 'the limits line').toMatch(/I cannot change marks/);
+    expect(about.notes.join(' ')).toMatch(/How I read your last question: .+\./);
     expect((await ask(t, 'sən kimsən')).answer.language).toBe('az');
     expect((await ask(t, 'что ты умеешь')).answer.language).toBe('ru');
-    for (const q of [
-      'what does out of date mean',
-      'what is a must-have',
-      'what is a nice to have',
-      'what are bands',
-      'what is the shortlist',
-      'what is the star map',
-      'what does re-analyze mean',
-      'what is the score',
-      'what does needs a look mean',
-    ]) {
+    // 4) Each glossary question gets its help line.
+    const glossary: [string, RegExp][] = [
+      ['what does out of date mean', /"Out of date" means the CV was scored against earlier/],
+      ['what is a must-have', /must-have/i],
+      ['what is a nice to have', /nice[- ]to[- ]have/i],
+      ['what are bands', /Strong 80 and above, Good 70 to 79, Partial 50 to 69, Limited below 50/],
+      ['what is the shortlist', /Shortlist/i],
+      ['what is the star map', /star map|evidence map/i],
+      ['what does re-analyze mean', /re-analy[sz]e/i],
+      ['what is the score', /score/i],
+      ['what does needs a look mean', /needs a look/i],
+    ];
+    for (const [q, re] of glossary) {
       const a = (await ask(t, q)).answer;
       expect.soft(a.kind, q).toBe('help');
-      if (q === 'what are bands')
-        expect(JSON.stringify(a)).toContain(
-          'Strong 80 and above, Good 70 to 79, Partial 50 to 69, Limited below 50',
-        );
+      expect.soft(`${a.headline} ${a.notes.join(' ')}`, `${q}: its glossary line`).toMatch(re);
+      expect.soft(a.rows, `${q}: no rows`).toHaveLength(0);
     }
+    // 5) An unclear question offers four chips, each sending its own text.
     const unk = (await ask(t, 'asdf qwer')).answer as Ans & { suggestions: string[] };
     expect(unk.headline).toBe('I am not sure what you want to see. Is it one of these?');
     expect(unk.suggestions).toHaveLength(4);
     await openAs(page, accounts().recruiter, '#/vacancies');
-    const panel = await askUi(page, 'asdf qwer');
-    const chip = panel.locator('[data-answer]').last().getByRole('button').last();
-    const text = (await chip.textContent())!;
-    await chip.click();
-    await expect(panel.locator('p.ml-8').last()).toHaveText(text);
-    await ux.check('unclear', [...STD, 'AZ']);
+    for (let i = 0; i < 4; i++) {
+      const panel = await askUi(page, 'asdf qwer');
+      const unclear = panel.locator('[data-answer]').last();
+      // The answer follows the question's language (English here), whatever the UI language.
+      await expect(unclear).toContainText(
+        'I am not sure what you want to see. Is it one of these?',
+      );
+      const chip = unclear.getByRole('listitem').getByRole('button').nth(i);
+      const text = (await chip.textContent())!.trim();
+      await chip.click();
+      await expect(panel.locator('p.ml-8').last()).toHaveText(text);
+      if (i === 0) await ux.check('unclear', [...STD, 'AZ']);
+      // A fresh chat for the next chip.
+      await panel.getByRole('button', { name: tt('History') }).click();
+      await panel.getByRole('button', { name: tt('New chat') }).click();
+    }
   },
 );
 

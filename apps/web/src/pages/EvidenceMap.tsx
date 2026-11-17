@@ -123,7 +123,7 @@ export function EvidenceMap({
       {view && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 rounded-full border border-edge/70 bg-card/50 transition-[top] duration-150"
+          className="pointer-events-none absolute inset-x-0 rounded-full border border-edge/70 bg-card/50 transition-[top] duration-150 motion-reduce:transition-none"
           style={{ top: `${view.top * 100}%`, height: `${view.height * 100}%`, minHeight: 6 }}
         />
       )}
@@ -149,7 +149,7 @@ export function EvidenceMap({
           >
             <span
               aria-hidden="true"
-              className={`block transition-transform ${on ? 'scale-150' : ''} ${
+              className={`block transition-transform motion-reduce:transition-none ${on ? 'scale-150' : ''} ${
                 partly
                   ? 'h-2.5 w-2.5 rotate-45 rounded-[2px] bg-warn-text'
                   : 'h-2.5 w-2.5 rounded-full bg-ok-text'

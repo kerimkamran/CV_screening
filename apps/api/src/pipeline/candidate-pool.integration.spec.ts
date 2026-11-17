@@ -147,6 +147,39 @@ describeDb('Candidate pool (Development Plan WP 3.1 to 3.6; spec 6.8, 6.9)', () 
     expect((await a.api.get(`/candidates?vacancy=${vid}&archived=true`)).json().total).toBe(1);
   });
 
+  it('an archived vacancy is read-only for criteria, adjustments, stop, continue and decisions (SD-27)', async () => {
+    const a = await h.recruiter('p5b@azerconnect.test');
+    const vid = await h.scenario(a.api, cvs.slice(0, 1), 'Pool role D2');
+    const row = (await a.api.get(`/candidates?vacancy=${vid}`)).json().rows[0];
+    expect((await a.api.post(`/vacancies/${vid}/archive`)).statusCode).toBe(200);
+    const crit = (await a.api.get(`/vacancies/${vid}/criteria`)).json();
+    const calls = [
+      a.api.post(`/vacancies/${vid}/criteria/new-version`),
+      a.api.post(`/vacancies/${vid}/criteria/extract`),
+      a.api.post(`/vacancies/${vid}/criteria/freeze`),
+      a.api.post(`/vacancies/${vid}/adjustments`, {
+        requirementId: crit.current?.requirements?.[0]?.id,
+        to: 'preferred',
+      }),
+      a.api.post(`/vacancies/${vid}/adjustments/reset`),
+      a.api.post(`/vacancies/${vid}/continue`),
+      a.api.post(`/vacancies/${vid}/stop`),
+      a.api.post(`/vacancies/${vid}/rescreen`),
+      a.api.post(`/screenings/${row.matchId}/decision`, {
+        outcome: 'hold',
+        reason: 'Archived vacancy check.',
+      }),
+    ];
+    const answers = await Promise.all(calls);
+    expect(answers.map((r) => `${r.statusCode} ${r.body.slice(0, 90)}`)).toEqual(
+      answers.map(() => expect.stringMatching(/^409 /)),
+    );
+    for (const r of answers) expect(r.json().message).toMatch(/archived/);
+    // Restoring brings the changes back.
+    expect((await a.api.post(`/vacancies/${vid}/restore`)).statusCode).toBeLessThan(300);
+    expect((await a.api.post(`/vacancies/${vid}/stop`)).statusCode).toBe(200);
+  });
+
   it('pages 50 at a time with a cursor, and a cursor expires after 15 minutes', async () => {
     const a = await h.recruiter('p6@azerconnect.test');
     const vid = await h.scenario(a.api, cvs, 'Pool role E');

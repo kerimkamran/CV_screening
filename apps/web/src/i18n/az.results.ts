@@ -144,6 +144,9 @@ export const AZ_RESULTS: Record<string, string> = {
   'I looked at the evidence, not only the band. "Not now" never hides this person.':
     'Yalnız səviyyəyə yox, sübuta da baxdım. “İndi yox” bu şəxsi heç vaxt gizlətmir.',
   'Save my mark': 'İşarəmi saxlayın',
+  'Add a note of at least 10 characters to save.':
+    'Saxlamaq üçün ən azı 10 simvoldan ibarət qeyd yazın.',
+  'Tick the evidence box to save.': 'Saxlamaq üçün sübut xanasını işarələyin.',
 
   // Candidate page
   '← Back to results': '← Nəticələrə qayıdın',

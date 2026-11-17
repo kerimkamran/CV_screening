@@ -18,6 +18,7 @@ import {
   vview,
 } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
+import { appDay } from '../fixtures/dates';
 
 // 7.6 Vacancy list (VL) and 7.8 Vacancy page (VP), layer L1. UAT plan v1.1; each case is the row of the same ID.
 
@@ -57,15 +58,7 @@ const cells = (li: import('@playwright/test').Locator) =>
 
 /** The date the app should show for an old row, in the app language (not the browser's). */
 const longAgo = (page: import('@playwright/test').Page, iso: string, lang: 'en' | 'az') =>
-  page.evaluate(
-    ([d, l]) =>
-      new Date(d!).toLocaleDateString(l === 'az' ? 'az-AZ' : 'en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }),
-    [iso, lang],
-  );
+  appDay(page, iso, lang, 'short');
 
 uat(
   'VL-01',

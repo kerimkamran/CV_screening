@@ -282,9 +282,9 @@ uat(
         .first()
         .click();
       // PLAN: the plan says the card shows 'My mark: Shortlist'. The card's mark box is titled 'My mark
-      // (separate from the AI match)' and reads 'Now: Shortlist.', which says the same.
+      // (separate from the AI match)' and reads 'Now: Shortlisted.' (the done form of the button's word), which says the same.
       await expect
-        .soft(page.getByText(new RegExp(`${esc(t('Now:'))}\\s*${esc(t('Shortlist'))}`)).first())
+        .soft(page.getByText(new RegExp(`${esc(t('Now:'))}\\s*${esc(t('Shortlisted'))}`)).first())
         .toBeVisible();
     }
     await ux.check('marked', [...STD, 'AZ']);
@@ -488,12 +488,15 @@ uat(
     // PLAN: the plan expects 6 skills (4 must-have, 2 nice-to-have) from its scripted extraction. The
     // fake AI here reads the "Required:" and "Nice to have:" lines of vacancy-en.txt / vacancy-az.txt,
     // which give 3 skills: 2 must-have and 1 nice-to-have.
+    // The fake AI splits the Azerbaijani "Tələb olunur" line on " və " too, so it finds one more
+    // must-have there ("operator" and the BGP skill apart): 4 skills, 3 must-have and 1 nice-to-have.
+    const [all, must, nice] = meta.lang === 'az' ? [4, 3, 1] : [3, 2, 1];
     await expect
       .soft(chips(page, meta.lang), 'skills shown without a reload (SD-28)')
-      .toHaveCount(3);
+      .toHaveCount(all);
     const marks = (await chips(page, meta.lang).allInnerTexts()).map((s) => s.trim()[0]);
-    expect.soft(marks.filter((m) => m === '●').length, 'must-have').toBe(2);
-    expect.soft(marks.filter((m) => m === '○').length, 'nice-to-have').toBe(1);
+    expect.soft(marks.filter((m) => m === '●').length, 'must-have').toBe(must);
+    expect.soft(marks.filter((m) => m === '○').length, 'nice-to-have').toBe(nice);
     await expect.soft(c.getByRole('button', { name: t('Read requirements again') })).toBeVisible();
     await expect
       .soft(c.getByText(t('No skills yet. Read the requirements or add your own.')))
@@ -556,16 +559,11 @@ uat(
     const res = page.waitForResponse((r) => r.url().endsWith('/vacancies/read-document'));
     release();
     expect((await res).status()).toBeLessThan(300);
-    await expect(
-      c.getByText(new RegExp(`^${esc(t('Read {file}', { file: 'role.docx · ' }))}\\d+`)),
-    ).toBeVisible();
-    const shownWords = Number(
-      /· (\d+)/.exec(
-        (await c
-          .getByText(new RegExp(`^${esc(t('Read {file}', { file: 'role.docx · ' }))}`))
-          .innerText()) ?? '',
-      )?.[1],
-    );
+    // English "Read role.docx · 160 words"; Azerbaijani "role.docx · 160 söz oxundu" (the count is
+    // inside the file part in both).
+    const readLine = c.getByText(/^(?:Read )?role\.docx · \d+/);
+    await expect(readLine).toBeVisible();
+    const shownWords = Number(/· (\d+)/.exec((await readLine.innerText()) ?? '')?.[1]);
     expect.soft(Math.abs(shownWords - words), `word count near ${words}`).toBeLessThanOrEqual(15);
     const value = await text.inputValue();
     expect

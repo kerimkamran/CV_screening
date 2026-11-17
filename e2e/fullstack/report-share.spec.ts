@@ -1,3 +1,4 @@
+import { appDay } from '../fixtures/dates';
 import { esc, jd, T } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
 import { accounts, login, openAs, screenedVacancy, uniq } from './stack';
@@ -77,9 +78,11 @@ uat(
       .soft(await page.evaluate(() => navigator.clipboard.readText()))
       .toBe(await link.inputValue());
     const row = page.getByRole('listitem').filter({ hasText: viewer });
-    const exp = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString(
-      meta.lang === 'az' ? 'az-AZ' : 'en-GB',
-    );
+    const expIso = new Date(Date.now() + 14 * 86_400_000).toISOString();
+    const exp =
+      meta.lang === 'az'
+        ? await appDay(page, expIso, 'az', 'long')
+        : new Date(expIso).toLocaleDateString('en-GB');
     await expect.soft(row).toContainText(t('Snapshot of {date}', { date: '' }).trim());
     await expect.soft(row).toContainText(exp);
     await expect

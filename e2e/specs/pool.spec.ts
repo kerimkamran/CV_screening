@@ -91,7 +91,8 @@ uat(
         page.getByRole('button', { name: new RegExp(`^${w(h)}\\s*$`, 'i') }),
       ).toBeVisible();
     await expect(
-      page.getByRole('button', { name: new RegExp(`^${w('Match')} ↓$`, 'i') }),
+      // The name also says the order in words (', sorted descending') for screen readers.
+      page.getByRole('button', { name: new RegExp(`^${w('Match')} ↓`, 'i') }),
     ).toBeVisible();
     await expect(page.locator('[role=row]').first()).toContainText(w('Must-haves'), {
       ignoreCase: true,

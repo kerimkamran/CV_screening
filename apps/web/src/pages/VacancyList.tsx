@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import type { VacancyStatus } from '@cv/shared';
 import { api } from '../api';
 import { go } from '../route';
-import { useT } from '../i18n';
+import { tr, useT } from '../i18n';
 import { ago, MARK_STYLE, markName, STATUS_STYLE, statusName, type VacancyListItem } from '../pool';
 import { btnPrimary, errMsg, input, Notice, UndoBar, useDetailsMenu, useUndoToast } from '../ui';
 
@@ -186,7 +186,11 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
   }
   async function duplicate(v: VacancyListItem) {
     try {
-      const r = await api.post<{ id: string }>(`/vacancies/${v.id}/duplicate`);
+      // Named in the page's language: "Copy of X", or "X (surət)" in Azerbaijani.
+      const base = v.title.replace(/^Copy of /, '').replace(/ \(surət\)$/, '');
+      const r = await api.post<{ id: string }>(`/vacancies/${v.id}/duplicate`, {
+        title: tr('Copy of {title}', { title: base }).slice(0, 200),
+      });
       go(`/vacancies/${r.id}`);
     } catch (e) {
       setError(errMsg(e));

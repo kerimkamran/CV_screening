@@ -3,7 +3,7 @@ import { DID, mockApi, openReview } from '../fixtures/api';
 import { ADMIN_ANSWERS, MFA_OFF } from '../fixtures/pkg-a';
 import { hasRing, pageScrollsSideways, smallTargets, vacApi, vrow, vview } from '../fixtures/pkg-c';
 import { DVID, resultsApi } from '../fixtures/pkg-d';
-import { focused, poolAnswer, ringContrast, SENAI_H, T } from '../fixtures/pkg-h';
+import { focused, poolAnswer, press, ringContrast, SENAI_H, T } from '../fixtures/pkg-h';
 import { axe } from '../ux/checks';
 import { expect, STD, uat } from '../ux/test';
 
@@ -11,6 +11,19 @@ import { expect, STD, uat } from '../ux/test';
 
 const BGS = ['white', 'grey', 'cream', 'dark'] as const;
 const ADMIN_ME = { roles: ['ADMIN', 'TA_PARTNER'] };
+
+/** The elements that stick out past the right edge of the viewport (for the failure message). */
+const stickingOut = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('body *')]
+      .filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.right > window.innerWidth + 1 && !e.closest('.overflow-x-auto');
+      })
+      .slice(0, 3)
+      .map((e) => `${e.tagName.toLowerCase()}.${String(e.className).slice(0, 50)}`)
+      .join(' | '),
+  );
 
 /** Answers every screen of the recruiter app needs (L1), SenAI on with the row's features. */
 async function app(
@@ -141,7 +154,7 @@ uat(
     const tabs = page.getByRole('tablist', { name: t('Vacancy views') }).getByRole('tab');
     await expect(tabs.first()).toBeVisible();
     for (let i = 0; i < (await tabs.count()); i++) {
-      await tabs.nth(i).click();
+      await press(tabs.nth(i), page.viewportSize()!.width);
       await page.waitForTimeout(400);
       await onAll(`Vacancy tab ${(await tabs.nth(i).innerText()).trim()}`);
     }
@@ -183,7 +196,11 @@ uat(
           h1: [...document.querySelectorAll('h1')].filter(vis).length,
           firstHeading: hs[0] ?? 0,
           skip,
-          navMain: [...document.querySelectorAll('nav')].filter(vis).length,
+          // The page's own navigation (rail or phone bar); a nav inside the page, like the Admin tabs or the
+          // evidence map, is a further named landmark, not a second Main navigation.
+          navMain: [...document.querySelectorAll('nav')]
+            .filter(vis)
+            .filter((n) => !n.closest('main')).length,
           search: document.querySelectorAll('[role=search], search').length,
           title: document.title,
         };
@@ -259,7 +276,8 @@ uat(
         `both SenAI panels are named the same way (pool '${poolName}', candidate '${candName}')`,
       )
       .toBe(poolName);
-    await ux.check('candidate panel', STD);
+    // On a phone the panel is a bottom sheet that covers the review's Previous/Next bar on purpose.
+    await ux.check('candidate panel', STD, { overlay: 'aside' });
     expect
       .soft(problems, 'one main, one h1, one visible Main navigation, no skipped heading level')
       .toEqual([]);
@@ -272,10 +290,8 @@ uat('A11-03', 'Skip link', { on: ['D', 'E'] }, async ({ page, ux, meta }) => {
   await app(page);
   await page.goto('/#/vacancies');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await page
-    .locator('body')
-    .click({ position: { x: 1, y: 1 } })
-    .catch(() => undefined);
+  // No click first: a click sets the point where the next Tab starts, a person arriving by keyboard
+  // starts at the top of the page.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   // 1) The first Tab reaches a visible 'Skip to main content' link (AZ text in AZ).
   await page.keyboard.press('Tab');
@@ -321,6 +337,7 @@ uat(
       page.evaluate(() => {
         const a = document.activeElement as HTMLElement | null;
         if (!a || a === document.body) return 'body';
+        if (a.matches('a[href="#main"]')) return 'skip';
         if (a.closest('header')) {
           if (a.closest('[role=search]')) return 'ask';
           if (a.closest('details')) return 'account';
@@ -342,10 +359,10 @@ uat(
       if (!r.ring) noRing.push(r.what);
       else if (r.contrast < 3) weak.push(`${r.what} ${r.contrast}:1`);
     }
-    // Brand, Ask bar, account menu, rail, main, footer (footer only when it has a control).
-    const want = ['brand', 'ask', 'account', 'rail', 'main'];
+    // Skip link, brand, Ask bar, account menu, rail, main, footer (footer only when it has a control).
+    const want = ['skip', 'brand', 'ask', 'account', 'rail', 'main'];
     expect
-      .soft(order.slice(0, 5), `focus follows the visual order (got ${order.join(' → ')})`)
+      .soft(order.slice(0, 6), `focus follows the visual order (got ${order.join(' → ')})`)
       .toEqual(want);
     expect.soft([...new Set(noRing)], 'every focused element shows a ring').toEqual([]);
     expect.soft([...new Set(weak)], 'every ring has ≥ 3:1 contrast against the page').toEqual([]);
@@ -552,6 +569,7 @@ uat(
     await resultsApi(page, { answers: { 'GET /assistant/conversations': [] } });
     await page.goto(`/#/vacancies/${DVID}/results`);
     const reqBtn = page.getByRole('button', { name: /^Requirements/ });
+    await reqBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
     if (await reqBtn.isVisible().catch(() => false)) {
       await reqBtn.click();
       const d = page.getByRole('dialog');
@@ -730,12 +748,15 @@ uat(
     // The pool panel with an answer (remove-filter ×, Show all, New chat, Send).
     await page.goto('/?p=1#/vacancies');
     const ask = page.getByRole('search').getByRole('textbox');
+    const phoneAsk = page.getByRole('navigation').last().getByRole('button').last();
+    // The assistant's settings arrive after the page: wait for either way in.
+    await expect(ask.or(phoneAsk).first()).toBeVisible();
     if (await ask.isVisible()) {
       await ask.fill('Who has BGP routing?');
       await ask.press('Enter');
     } else {
       // Phones: the bottom bar's SenAI item opens the sheet.
-      await page.getByRole('navigation').last().getByRole('button').last().tap();
+      await phoneAsk.tap();
       const comp = page.getByRole('complementary', { name: 'SenAI' }).getByRole('textbox').last();
       await comp.fill('Who has BGP routing?');
       await comp.press('Enter');
@@ -841,9 +862,11 @@ uat(
         await page.goto(`/?z=${label}${hash}`);
         await expect(page.locator('main').getByRole('heading').first()).toBeVisible();
         await page.waitForTimeout(250);
-        if (await pageScrollsSideways(page)) sideways.push(`${label} ${hash}`);
+        if (await pageScrollsSideways(page))
+          sideways.push(`${label} ${hash} (${await stickingOut(page)})`);
       }
       await page.goto(`/?z=${label}p#/vacancies`);
+      await expect(page.locator('main').getByRole('heading').first()).toBeVisible();
       const ask = page.getByRole('search').getByRole('textbox');
       if (await ask.isVisible()) {
         await ask.fill('Compare the top two');
@@ -911,7 +934,8 @@ uat(
       if (!(await tabs.nth(i).isVisible())) continue;
       await tabs.nth(i).click();
       await page.waitForTimeout(300);
-      if (await pageScrollsSideways(page)) sideways.push(`320px vacancy tab ${i + 1}`);
+      if (await pageScrollsSideways(page))
+        sideways.push(`320px vacancy tab ${i + 1} (${await stickingOut(page)})`);
     }
     await ux.check('320 results', STD);
     expect.soft(sideways, 'no horizontal page scroll (tables scroll in their own box)').toEqual([]);

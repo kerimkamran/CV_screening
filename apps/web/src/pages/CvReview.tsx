@@ -35,6 +35,7 @@ import {
   errMsg,
   input,
   Notice,
+  tapLink,
   UndoBar,
   usePublishedHeight,
   useUndoToast,
@@ -407,7 +408,7 @@ export function CvReview({
   if (notFound)
     return (
       <div className="space-y-3">
-        <a href={`#${back}`} className="text-sm text-link hover:underline">
+        <a href={`#${back}`} className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Back')}
         </a>
         <Notice kind="error">
@@ -418,7 +419,7 @@ export function CvReview({
   if (error && !d)
     return (
       <div className="space-y-3">
-        <a href={`#${back}`} className="text-sm text-link hover:underline">
+        <a href={`#${back}`} className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Back')}
         </a>
         <Notice kind="error">{error}</Notice>
@@ -714,7 +715,10 @@ export function CvReview({
               {title}
             </h1>
             <p className="mt-0.5 text-sm text-ink-2">
-              <a className="text-link hover:underline" href={`#/vacancies/${d.vacancy.id}`}>
+              <a
+                className={`text-link hover:underline ${tapLink}`}
+                href={`#/vacancies/${d.vacancy.id}`}
+              >
                 {d.vacancy.title}
               </a>
               {a?.email && <> · {a.email}</>}

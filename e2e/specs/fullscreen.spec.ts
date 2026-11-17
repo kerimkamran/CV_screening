@@ -191,7 +191,7 @@ uat(
       if (i === 0) await openReview(page);
       else await page.reload();
       await ready(page);
-      const panel = page.getByRole('complementary', { name: t('Assistant') });
+      const panel = page.getByRole('complementary', { name: 'SenAI' });
       if (!(await panel.isVisible())) {
         const ask = page.getByRole('search').getByRole('textbox');
         await ask.click();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import {
   api,
   ApiError,
@@ -12,23 +12,41 @@ import {
 } from './api';
 import { LanguageSwitch } from './Appearance';
 import { applyLang, tr, useT, type Lang } from './i18n';
-import { AiSettings, AssistantReview, AssistantSettings, Users } from './pages/Admin';
-import { rememberUser } from './assistant';
-import { CandidatePool } from './pages/CandidatePool';
-import { CvReview } from './pages/CvReview';
-import { Monitoring } from './pages/Monitoring';
+import { keepPoolThread, rememberUser } from './assistant';
+import { CandidatePool, CvReview } from './pages/lazy';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
-import { Retention } from './pages/Retention';
-import { Security } from './pages/Security';
-import { SharedList, SharedReport } from './pages/SharedReport';
 import { VacancyList } from './pages/VacancyList';
 import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
 import { Shell } from './Shell';
 import { parseReviewRoute, reviewRoute } from './review';
 import { useRoute } from './route';
 import { applyBackground, isBackground } from './theme';
-import { Notice } from './ui';
+import { Notice, SkipLink } from './ui';
+import { trackPageTitle } from './title';
+import { Boundary, ReloadNote } from './Boundary';
+
+// Screens a recruiter does not open first load on demand, so the first page carries less script
+// (PF-07). A file that is gone after a new deployment shows a reload note instead of a blank page.
+const AiSettings = lazy(() => import('./pages/Admin').then((m) => ({ default: m.AiSettings })));
+const AssistantReview = lazy(() =>
+  import('./pages/Admin').then((m) => ({ default: m.AssistantReview })),
+);
+const AssistantSettings = lazy(() =>
+  import('./pages/Admin').then((m) => ({ default: m.AssistantSettings })),
+);
+const Users = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Users })));
+const Monitoring = lazy(() =>
+  import('./pages/Monitoring').then((m) => ({ default: m.Monitoring })),
+);
+const Retention = lazy(() => import('./pages/Retention').then((m) => ({ default: m.Retention })));
+const Security = lazy(() => import('./pages/Security').then((m) => ({ default: m.Security })));
+const SharedList = lazy(() =>
+  import('./pages/SharedReport').then((m) => ({ default: m.SharedList })),
+);
+const SharedReport = lazy(() =>
+  import('./pages/SharedReport').then((m) => ({ default: m.SharedReport })),
+);
 
 const REFRESH_MS = 20 * 60 * 1000;
 const HEALTH_MS = 30_000;
@@ -98,6 +116,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   const signOut = useCallback((why = '') => {
     session.set(null);
+    keepPoolThread(null);
     setMe(null);
     setNote(why);
   }, []);
@@ -135,6 +154,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     }
   }, []);
 
+  // Each screen names itself in the browser tab (A11-02).
+  useEffect(() => trackPageTitle(), []);
   useEffect(() => {
     void loadMe();
     void check().then(setHealth);
@@ -296,6 +317,23 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     );
   }
 
+  body = (
+    <Boundary
+      name="page"
+      fallback={<ReloadNote text="parallax was updated. Reload to see this page." />}
+    >
+      <Suspense
+        fallback={
+          <p role="status" className="p-4 text-sm text-ink-2">
+            {t('Loading…')}
+          </p>
+        }
+      >
+        {body}
+      </Suspense>
+    </Boundary>
+  );
+
   const footer = (
     <>
       <p>
@@ -328,6 +366,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   return (
     <div className="min-h-screen bg-page text-ink">
+      <SkipLink />
       <header className="bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <a
@@ -356,12 +395,18 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
-      <footer
-        className={`mx-auto px-4 pb-8 text-xs text-ink-3 ${me ? 'max-w-6xl' : 'max-w-xl text-center'}`}
-      >
-        {footer}
-      </footer>
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 py-6 focus:outline-none">
+        {body}
+      </main>
+      {/* Not while the session is being checked: that footer would be thrown away when the page
+          arrives, which counts as a layout shift (PF-01). */}
+      {!booting && (
+        <footer
+          className={`mx-auto px-4 mb-8 text-xs text-ink-3 ${me ? 'max-w-6xl' : 'max-w-xl text-center'}`}
+        >
+          {footer}
+        </footer>
+      )}
     </div>
   );
 }

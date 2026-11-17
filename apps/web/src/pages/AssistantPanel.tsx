@@ -102,9 +102,13 @@ export function AssistantPanel(props: {
     };
   }, [sid, open]);
 
+  // Focus goes to the composer when the panel opens, never when the person moves to another CV
+  // with J or K while it stays open (SD-19): keys must keep reaching the review screen.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open, sid]);
+    if (open && !wasOpen.current) inputRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
   useEffect(() => {
     listRef.current?.scrollTo?.({ top: listRef.current.scrollHeight });
   }, [items, busy]);
@@ -217,7 +221,7 @@ export function AssistantPanel(props: {
     : '';
   return (
     <aside
-      aria-label={t('Assistant')}
+      aria-label={config.name}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();

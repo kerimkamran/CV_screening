@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { DID2, mockApi, openReview, showAnalysis } from '../fixtures/api';
 
+// Written for the English screens before the Azerbaijani pass; the AZ twins of these checks are the
+// UAT cases (CV-*, RS-*, DL-*, MO-*), so the AZ projects skip this file.
+test.beforeEach(({}, info) => {
+  test.skip(info.project.name.endsWith('-az'), 'English-only legacy spec');
+});
+
 // Design additions to Stage 2: the evidence map beside the CV, and the review sprint.
 test('the evidence map shows where each requirement is in the CV, and a dot shows it', async ({
   page,

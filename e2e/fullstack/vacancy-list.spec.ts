@@ -92,6 +92,15 @@ uat(
         posts.push(`${r.url().replace(/^.*\/vacancies\/\w+\//, '')} ${r.status()}`);
     });
     const toast = page.getByRole('status').filter({ hasText: t('Archived “{title}”.', { title }) });
+    // The layout checks of the first toast take longer than 10 s on this page, so for steps 1 and 2
+    // only the 10 s timer is stretched; step 3 below runs on the real timer and times it.
+    await page.evaluate(() => {
+      const w = window as unknown as { __slowToast?: boolean };
+      const real = window.setTimeout.bind(window);
+      w.__slowToast = true;
+      window.setTimeout = ((f: TimerHandler, ms?: number, ...a: unknown[]) =>
+        real(f, ms === 10_000 && w.__slowToast ? 120_000 : ms, ...a)) as typeof window.setTimeout;
+    });
     // 1) Archive.
     await dots(page, meta.lang, title).click();
     await pressItem(page, title, t('Archive'));
@@ -120,7 +129,10 @@ uat(
     await expect.poll(() => posts).toContain('restore 200');
     await expect(row).toBeVisible();
     await expect.soft(row).toContainText(t(status0 === 'open' ? 'Open' : 'Draft'));
-    // 3) Archive again and wait 11 s.
+    // 3) Archive again and wait 11 s (the real timer).
+    await page.evaluate(() => {
+      (window as unknown as { __slowToast?: boolean }).__slowToast = false;
+    });
     await dots(page, meta.lang, title).click();
     await pressItem(page, title, t('Archive'));
     await expect(toast).toBeVisible();
@@ -470,7 +482,7 @@ uat(
     await expect(drawer).toBeVisible();
     const radios = await drawer
       .getByRole('radio')
-      .evaluateAll((rs) => rs.filter((r) => !(r as HTMLInputElement).disabled).length);
+      .evaluateAll((rs) => rs.filter((r) => !r.matches(':disabled')).length);
     expect.soft(radios, 'drawer radios enabled').toBe(0);
     await expect
       .soft(drawer.getByRole('button', { name: t('Back to original') }).first())

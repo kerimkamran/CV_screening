@@ -119,9 +119,8 @@ uat(
     await expect(list.getByRole('listitem').nth(1)).toContainText(
       w('Social networks are never read'),
     );
-    const reads = c.getByRole('button', {
-      name: new RegExp(w('Read {host}', { host: '' }).trim()),
-    });
+    // The name is the visible 'Read this page' plus the host (SD-60).
+    const reads = c.getByRole('button', { name: new RegExp(w('Read this page')) });
     await expect(reads).toHaveCount(2);
     for (const b of await reads.all()) await expect(b).toBeDisabled();
     // Above the CV and Analysis area.

@@ -140,6 +140,9 @@ describe('understand: one question, one typed query', () => {
     expect(understand('what can you see?', ctx()).intent).toBe('about');
     const h = understand('Out of date nə deməkdir?', ctx());
     expect(h).toMatchObject({ intent: 'help', topic: 'out_of_date' });
+    // The band glossary also answers 'what are bands' (SA-24), but 'what are the Strong ones' stays a list.
+    expect(understand('what are bands', ctx())).toMatchObject({ intent: 'help', topic: 'bands' });
+    expect(understand('what are the Strong candidates', ctx()).intent).not.toBe('help');
   });
 
   it('"all vacancies" widens the scope, and is not "show all"', () => {

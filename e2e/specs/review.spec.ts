@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { DID, DID2, mockApi, openReview, showAnalysis, watchProblems } from '../fixtures/api';
 
+// Written for the English screens before the Azerbaijani pass; the AZ twins of these checks are the
+// UAT cases (CV-*, RS-*, DL-*, MO-*), so the AZ projects skip this file.
+test.beforeEach(({}, info) => {
+  test.skip(info.project.name.endsWith('-az'), 'English-only legacy spec');
+});
+
 // Stage 2, R1 and R2: the CV as it looks on the left, the analysis on the right, Previous and Next.
 test.describe('the CV review screen', () => {
   test('draws the original PDF pages under the production CSP and marks the found lines', async ({

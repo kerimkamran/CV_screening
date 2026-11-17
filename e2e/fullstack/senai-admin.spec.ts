@@ -277,9 +277,7 @@ uat(
       await openAs(page, me, `#/cv/${docs[2]!.id}`);
       const bar = page.getByRole('search').getByRole('textbox');
       await bar.press('Enter');
-      const panel = page.getByRole('complementary', {
-        name: meta.lang === 'az' ? 'Köməkçi' : 'Assistant',
-      });
+      const panel = page.getByRole('complementary', { name: 'SenAI' });
       await panel
         .getByRole('button', {
           name: meta.lang === 'az' ? /Ətraflı izah et|Daha çox izah/ : 'Explain more',
@@ -472,7 +470,7 @@ uat(
     // The compliance lines in both panels.
     await openAs(page, B, `#/cv/${v.documents[0]!.id}`);
     await page.getByRole('search').getByRole('textbox').press('Enter');
-    const cand = page.getByRole('complementary', { name: 'Assistant' });
+    const cand = page.getByRole('complementary', { name: 'SenAI' });
     await expect(
       cand.getByText('Chats are saved to this run and may be reviewed for compliance.'),
     ).toBeVisible();

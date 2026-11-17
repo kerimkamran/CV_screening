@@ -135,7 +135,7 @@ describe('assistant panel accessibility', () => {
     const rail = screen.getByRole('button', { name: 'Ask Elon' });
     rail.focus();
     await userEvent.keyboard('{Enter}');
-    const panel = await screen.findByRole('complementary', { name: 'Assistant' });
+    const panel = await screen.findByRole('complementary', { name: 'Elon' });
     expect(
       within(panel).getByRole('textbox', { name: /Ask Elon about Candidate 07/ }),
     ).toBeInTheDocument();
@@ -143,7 +143,7 @@ describe('assistant panel accessibility', () => {
     for (const b of within(panel).getAllByRole('button'))
       expect((b.textContent ?? '').trim() || b.getAttribute('aria-label')).toBeTruthy();
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('complementary', { name: 'Assistant' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Elon' })).toBeNull();
   });
 });
 

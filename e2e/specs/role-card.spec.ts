@@ -18,6 +18,7 @@ import {
   type Req,
 } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
+import { appDayAndTime } from '../fixtures/dates';
 
 // 7.7 New vacancy and Role card (VN) and 7.8 Vacancy page (VP), layer L1. UAT plan v1.1.
 
@@ -1083,10 +1084,7 @@ uat(
       .soft(panel.getByRole('heading', { name: t('Changes to the requirements') }))
       .toBeVisible();
     await expect.soft(panel.getByRole('button', { name: t('Close') })).toBeVisible();
-    const when1 = await page.evaluate(
-      ([d, l]) => new Date(d!).toLocaleString(l),
-      [H[2]!.changedAt, meta.lang === 'az' ? 'az-AZ' : 'en-GB'],
-    );
+    const when1 = await appDayAndTime(page, H[2]!.changedAt as string, meta.lang);
     const v1 = panel.locator(':scope > ul > li').nth(2);
     await expect
       .soft(v1.locator('p'))

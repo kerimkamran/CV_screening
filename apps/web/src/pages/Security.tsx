@@ -66,7 +66,7 @@ export function Security() {
 
   return (
     <div className="mx-auto mt-8 max-w-lg space-y-4">
-      <Card title={t('Two-step sign-in')}>
+      <Card page title={t('Two-step sign-in')}>
         <div className="space-y-3 text-sm">
           <p>
             {t(

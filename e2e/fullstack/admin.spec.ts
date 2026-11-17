@@ -40,6 +40,11 @@ uat(
     page.on('dialog', (d) => void d.accept());
     const sent0 = (await outbox()).filter((m) => m.to === rec.email).length;
     await recRow.getByRole('button', { name: 'Reset password' }).click();
+    // The page asks first, in a box of its own (not a browser dialog).
+    await page
+      .getByRole('alertdialog', { name: 'Reset password' })
+      .getByRole('button', { name: 'Reset password' })
+      .click();
     await expect(recRow.getByRole('cell').nth(3)).toHaveText(/^Invited/);
     // 2) The recruiter clicks Candidates: signed out with the note.
     await rp
@@ -62,6 +67,10 @@ uat(
     const tempToken = await login({ email: rec.email, password: temp! });
     // 5) Disable.
     await recRow.getByRole('button', { name: 'Disable' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Disable' })
+      .getByRole('button', { name: 'Disable' })
+      .click();
     await expect(recRow.getByRole('cell').nth(3)).toHaveText(/^Disabled/);
     const call = await api(tempToken).get('/me');
     expect(call.status).toBe(401);

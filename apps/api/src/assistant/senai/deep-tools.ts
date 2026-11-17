@@ -451,15 +451,15 @@ export class DeepTools {
         r.decision === 'shortlist' ||
         r.decision === 'maybe',
     );
+    // One pass over the resumes for all the skills (a pass per skill took a minute on 8,000 CVs).
+    const found = await this.search.mentioned(
+      others,
+      [...skills.values()].map((s) => ({ id: s.id, label: s.label, phrase: null, words: [] })),
+    );
     const per = new Map<string, string[]>();
-    for (const s of skills.values()) {
-      const found = await this.search.skills(
-        others,
-        [{ id: s.id, label: s.label, phrase: null, words: [] }],
-        false,
-      );
-      for (const r of others)
-        if (found.has(r.documentId)) per.set(r.matchId, [...(per.get(r.matchId) ?? []), s.label]);
+    for (const r of others) {
+      const have = found.get(r.documentId);
+      if (have) per.set(r.matchId, have);
     }
     const need = Math.max(2, Math.ceil(skills.size * 0.6));
     const hit = others
@@ -517,7 +517,7 @@ export class DeepTools {
     if (hit && hit.passages.length) {
       c.a.headline = dsay(lang, 'chlFound', { skill, name: r.label });
       c.a.table = {
-        head: [tsay(lang, 'hCandidate'), '…'],
+        head: [dsay(lang, 'hSkillCol'), dsay(lang, 'hPassage')],
         rows: hit.passages.map((p) => ({
           cells: [p.skill, anonymise(raw.slice(p.start, p.end), [r.label]).text.trim()],
         })),

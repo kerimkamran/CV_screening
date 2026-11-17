@@ -340,7 +340,7 @@ uat(
       .nth(1)
       .getByRole('button', { name: t('Ask {name} about this candidate', { name: 'SenAI' }) })
       .click();
-    await expect.soft(page.getByRole('complementary', { name: t('Assistant') })).toBeVisible();
+    await expect.soft(page.getByRole('complementary', { name: 'SenAI' })).toBeVisible();
     await ux.check('assistant', [...STD, 'AZ']);
     await page.keyboard.press('Escape');
     const link = c

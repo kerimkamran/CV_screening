@@ -52,7 +52,7 @@ export class AdjustmentsController {
   ) {
     const vid = parse(ulidSchema, id);
     const c = parse(change, body);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     if (p.actorType !== 'human')
       throw new BadRequestException('Only a person can change requirements');
     const v = await this.adj.view(vid);
@@ -89,7 +89,7 @@ export class AdjustmentsController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     if (p.actorType !== 'human')
       throw new BadRequestException('Only a person can change requirements');
     if ((await this.adj.overlay(vid)).size > 0) {

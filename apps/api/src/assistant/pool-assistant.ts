@@ -16,7 +16,7 @@ export function detectLanguage(text: string): Lang | null {
   if (/[əƏğĞşŞçÇöÖüÜıİ]/.test(text)) return 'az';
   const f = foldText(text);
   if (
-    /(^| )(ucun|namized\w*|vakansiya\w*|tap|tapin|goster\w*|necə|nece|en yaxsi|haqqinda|hamisi|qisa siyahi|ile|ve|var|yox|kim)( |$)/.test(
+    /(^| )(ucun|namized\w*|vakansiya\w*|tap|tapin|goster\w*|necə|nece|en yaxsi|haqqinda|hamisi|qisa siyahi|ile|ve|var|yox|kim|amma|ancaq|lakin|bilir|bilmir|deyil)( |$)/.test(
       f,
     )
   )

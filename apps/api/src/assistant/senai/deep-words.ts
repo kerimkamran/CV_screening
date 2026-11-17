@@ -206,6 +206,8 @@ const W = {
   },
   hMentions: { en: 'Skills mentioned', az: 'Qeyd olunan bacarıqlar', ru: 'Упомянутые навыки' },
   // pushback check
+  hSkillCol: { en: 'Skill', az: 'Bacarıq', ru: 'Навык' },
+  hPassage: { en: 'What the CV says', az: 'CV-də yazılan', ru: 'Что написано в резюме' },
   chlWho: {
     en: 'About which candidate? Say a number from the list or a name.',
     az: 'Hansı namizəd barədə? Siyahıdan nömrə və ya ad deyin.',

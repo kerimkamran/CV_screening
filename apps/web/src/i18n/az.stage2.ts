@@ -3,6 +3,7 @@
  * older file this wording wins. Azerbaijani wording here still needs the native review (S2-FE15).
  */
 export const AZ_STAGE2: Record<string, string> = {
+  'CV pages': 'CV səhifələri',
   // One status vocabulary (S2-BE1). Same keys as CV_STATUS_LABEL in @cv/shared.
   'Not sent': 'Göndərilməyib',
   'Sending…': 'Göndərilir…',
@@ -213,6 +214,12 @@ export const AZ_STAGE2: Record<string, string> = {
   'Preparing…': 'Hazırlanır…',
   'Download CVs': 'CV-ləri endirin',
   'Up to 500 CVs per download. Narrow the list.': 'Bir endirmədə ən çox 500 CV. Siyahını daraldın.',
+  // The sentences the server sends when a download is refused (downloads.controller.ts).
+  'Up to 500 CVs per download.': 'Bir endirmədə ən çox 500 CV ola bilər.',
+  'None of the chosen CVs can be downloaded.':
+    'Seçilmiş CV-lərin heç birini endirmək mümkün deyil.',
+  'Up to 1 GB per download. Choose fewer CVs.':
+    'Bir endirmədə ən çox 1 GB ola bilər. Daha az CV seçin.',
   'All {n} shown are selected.': 'Göstərilən {n} CV-nin hamısı seçilib.',
   'Select all {n} in this list': 'Bu siyahıdakı {n} CV-nin hamısını seçin',
   'All {n} in this list are selected.': 'Bu siyahıdakı {n} CV-nin hamısı seçilib.',

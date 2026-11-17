@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { mockApi, openReview, showAnalysis } from '../fixtures/api';
 
+// Written for the English screens before the Azerbaijani pass; the AZ twins of these checks are the
+// UAT cases (CV-*, RS-*, DL-*, MO-*), so the AZ projects skip this file.
+test.beforeEach(({}, info) => {
+  test.skip(info.project.name.endsWith('-az'), 'English-only legacy spec');
+});
+
 // parallax motion: movement is decoration only, and "reduce motion" turns all of it off.
 test.describe('with reduced motion', () => {
   test.beforeEach(({ page }) => page.emulateMedia({ reducedMotion: 'reduce' }));

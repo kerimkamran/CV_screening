@@ -47,7 +47,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
         </div>
       </Sky>
       <div className="m-rise relative mx-3 -mt-12 sm:mx-6">
-        <Card title={t('Sign in')}>
+        <Card page title={t('Sign in')}>
           <form onSubmit={submit} className="space-y-3">
             <Field label={t('Email')}>
               <input
@@ -75,7 +75,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
                 aria-pressed={showPw}
                 aria-label={showPw ? t('Hide password') : t('Show password')}
                 onClick={() => setShowPw((x) => !x)}
-                className="absolute right-1 bottom-1 h-8 rounded-full px-3 text-xs font-semibold text-link hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                className="absolute right-1 bottom-1 h-8 rounded-full px-3 pointer-coarse:right-0 pointer-coarse:bottom-0 text-xs font-semibold text-link hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 {showPw ? t('Hide') : t('Show')}
               </button>
@@ -139,7 +139,7 @@ export function ChangePassword({ forced, onDone }: { forced: boolean; onDone: ()
 
   return (
     <div className="mx-auto mt-12 max-w-sm">
-      <Card title={forced ? t('Choose your own password') : t('Change password')}>
+      <Card page title={forced ? t('Choose your own password') : t('Change password')}>
         {forced && (
           <div className="mb-3">
             <Notice kind="info">
@@ -226,7 +226,7 @@ export function SetPassword({ token, onDone }: { token: string; onDone: () => vo
 
   return (
     <div className="mx-auto mt-12 max-w-sm">
-      <Card title={t('Choose your password')}>
+      <Card page title={t('Choose your password')}>
         {invalid ? (
           <div className="space-y-3">
             <Notice kind="error">{invalid}</Notice>

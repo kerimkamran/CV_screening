@@ -27,6 +27,15 @@ import { LinkProblem, type LinkReader } from './link-reader';
 import { PoolService, type PoolRow } from './pool.service';
 import { requirementsInput } from './schemas';
 
+/** HH:MM in Baku (UTC+4), the time people in this company read on their clocks (SD-78). */
+const bakuTime = (at: Date | string) =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Baku',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(at));
+
 const date = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -449,7 +458,7 @@ export class VacancyService {
       if (!cur) throw new NotFoundException();
       if (cur.version !== b.expectedVersion) {
         throw new ConflictException({
-          message: `Changed by ${cur.updated_by_name ?? 'someone else'} at ${new Date(cur.updated_at).toISOString().slice(11, 16)}. Reload to see their version.`,
+          message: `Changed by ${cur.updated_by_name ?? 'someone else'} at ${bakuTime(cur.updated_at)}. Reload to see their version.`,
           code: 'STALE_VERSION',
           changedBy: cur.updated_by_name,
           changedAt: cur.updated_at,
@@ -612,7 +621,7 @@ export class VacancyService {
   }
 
   /** "Copy of …": the same requirements and details, no candidates, a draft owned by the caller. */
-  async duplicate(p: Principal, vid: string, ip: string | undefined) {
+  async duplicate(p: Principal, vid: string, ip: string | undefined, copyTitle?: string) {
     await this.scope.assert(p, vid);
     const id = await this.db.withTx(async (tx) => {
       const v = (
@@ -633,7 +642,7 @@ export class VacancyService {
       const jd = await this.sets.latestJd(tx, vid);
       const latest = await this.sets.latest(tx, vid);
       const nid = newId();
-      const title = `Copy of ${v.title.replace(/^Copy of /, '')}`.slice(0, 200);
+      const title = (copyTitle ?? `Copy of ${v.title.replace(/^Copy of /, '')}`).slice(0, 200);
       await tx.query(
         `INSERT INTO vacancy (id, org_id, title, department, location, experience_range, openings,
                               hiring_manager, notes, created_by, updated_by)

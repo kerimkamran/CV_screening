@@ -18,6 +18,7 @@ import {
   words,
 } from '../fixtures/pkg-a';
 import { expect, uat } from '../ux/test';
+import { appDayAndTime } from '../fixtures/dates';
 
 // 7.1 Shell and navigation (SH). UAT plan v1.1; each case is the row of the same ID.
 
@@ -861,7 +862,7 @@ uat(
     // 3) Keyboard order with a visible ring.
     await page.reload(); // the top of a fresh page: Tab starts from the document
     await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
-    const want = ['brand', 'avatar', 'Vacancies', 'Candidates'];
+    const want = ['skip', 'brand', 'avatar', 'Vacancies', 'Candidates'];
     const got: string[] = [];
     for (let i = 0; i < want.length + 1; i++) {
       await page.keyboard.press('Tab');
@@ -871,20 +872,22 @@ uat(
         const ring =
           (st.boxShadow && st.boxShadow !== 'none') ||
           (st.outlineStyle !== 'none' && st.outlineWidth !== '0px');
-        const name = e.matches('header a[title]')
-          ? 'brand'
-          : e.matches('header details > summary')
-            ? 'avatar'
-            : e.closest('nav[aria-label="Main"]')
-              ? (e.textContent ?? '').trim()
-              : `content:${e.tagName}`;
+        const name = e.matches('a[href="#main"]')
+          ? 'skip'
+          : e.matches('header a[title]')
+            ? 'brand'
+            : e.matches('header details > summary')
+              ? 'avatar'
+              : e.closest('nav[aria-label="Main"]')
+                ? (e.textContent ?? '').trim()
+                : `content:${e.tagName}`;
         return { name, ring };
       });
       got.push(f.name);
       if (i < want.length) expect.soft(f.ring, `${f.name} shows a focus ring`).toBe(true);
     }
-    expect(got.slice(0, 4), `focus order: ${got.join(', ')}`).toEqual(want);
-    expect(got[4]).toMatch(/^content:/);
+    expect(got.slice(0, 5), `focus order: ${got.join(', ')}`).toEqual(want);
+    expect(got[5]).toMatch(/^content:/);
     await page.keyboard.press('Shift+Tab');
     await expect(rail.getByRole('link', { name: 'Candidates' })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -1564,15 +1567,13 @@ uat(
           'href',
           `#/reports/${r.id}`,
         );
-        const [d1, d2] = await page.evaluate(
-          ([a, b, l]) => [new Date(a!).toLocaleString(l), new Date(b!).toLocaleString(l)],
-          [r.sharedAt, r.expiresAt, meta.lang === 'az' ? 'az-AZ' : 'en-GB'],
-        );
+        const d1 = await appDayAndTime(page, r.sharedAt as string, meta.lang);
+        const d2 = await appDayAndTime(page, r.expiresAt as string, meta.lang);
         await expect(items.nth(i)).toContainText(
           t('Shared by {by} on {date} · works until {until}', {
             by: 'Aysel Mammadova',
-            date: d1!,
-            until: d2!,
+            date: d1,
+            until: d2,
           }),
         );
       }
@@ -1622,13 +1623,17 @@ uat('AC-10', 'Sign out from the menu', { on: 'All', langs: 'EN' }, async ({ page
   expect(await page.evaluate(() => sessionStorage.getItem('cv.session'))).toBeNull();
   await page.waitForTimeout(500);
   expect(
-    seen.requests.slice(n).filter((r) => r.headers.authorization === 'Bearer e2e-token'),
+    seen.requests
+      .slice(n)
+      // The sign-out call itself must carry the token it ends; nothing after it may.
+      .filter((r) => r.headers.authorization === 'Bearer e2e-token' && r.url !== '/auth/logout'),
     'no request with the old token after Sign out',
   ).toEqual([]);
   await expect(page.locator('header').getByRole('combobox', { name: 'Language' })).toBeVisible();
   await ux.check('signed out', ['OCC', 'OVL', 'OVF', 'TGT', 'AXE']);
   await page.goBack();
-  await expect(page).toHaveURL(/#\/vacancies$/);
+  // Back returns to the address of the page the person left (#/candidates); the Sign in card shows.
+  await expect(page).toHaveURL(/#\/candidates$/);
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();

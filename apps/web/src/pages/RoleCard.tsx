@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VACANCY_STATUSES, type VacancyStatus } from '@cv/shared';
 import { api, ApiError, type Criteria } from '../api';
+import { mergeDraftOnto, type DraftOf } from '../draft';
 import { getLang, useT, tr } from '../i18n';
 import {
   ago,
@@ -91,6 +92,9 @@ const plural = (n: number, one: string, many: string) => tr(n === 1 ? one : many
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const draftKey = (id: string | null) => `cv-vacancy-draft:${id ?? 'new'}`;
 
+/** A draft is what was typed, plus the saved version it was typed on (see ../draft.ts). */
+type Draft = DraftOf<Form>;
+
 interface Similar {
   id: string;
   title: string;
@@ -126,7 +130,7 @@ export function RoleCard({
   const [showErrors, setShowErrors] = useState(false);
   const [similar, setSimilar] = useState<Similar[]>([]);
   const [ignoreSimilar, setIgnoreSimilar] = useState(false);
-  const [draftFrom, setDraftFrom] = useState<{ form: Form; at: string } | null>(null);
+  const [draftFrom, setDraftFrom] = useState<Draft | null>(null);
   const [newSkill, setNewSkill] = useState('');
   const [wordRead, setWordRead] = useState<{ name: string; words: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -141,6 +145,8 @@ export function RoleCard({
     vacancy?.requirements.length ? vacancy.description : null,
   );
   const manual = useRef(new Set<string>());
+  /** Set by "Reload their version": the next version that arrives replaces the form, edits or not (SD-54). */
+  const takeTheirs = useRef(false);
   const wordRef = useRef<HTMLInputElement>(null);
 
   /** What would be sent on Save, compared with what is saved. Empty means there is nothing to save. */
@@ -183,7 +189,9 @@ export function RoleCard({
     const next = fromView(vacancy);
     setVersion(vacancy.version);
     setSaved(next);
-    setForm((cur) => (hasChanges(cur, saved) ? cur : next));
+    const replace = takeTheirs.current;
+    takeTheirs.current = false;
+    setForm((cur) => (replace || !hasChanges(cur, saved) ? next : cur));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancy?.version, vacancy?.requirementsVersion]);
 
@@ -235,7 +243,7 @@ export function RoleCard({
     try {
       const raw = localStorage.getItem(draftKey(id));
       if (!raw) return;
-      const d = JSON.parse(raw) as { form: Form; at: string };
+      const d = JSON.parse(raw) as Draft;
       if (d?.form && hasChanges(d.form, saved)) setDraftFrom(d);
     } catch {
       /* a draft is a convenience only */
@@ -250,7 +258,7 @@ export function RoleCard({
         if (dirty)
           localStorage.setItem(
             draftKey(id),
-            JSON.stringify({ form, at: new Date().toISOString() }),
+            JSON.stringify({ form, base: saved, at: new Date().toISOString() } satisfies Draft),
           );
         else if (!draftFrom) localStorage.removeItem(draftKey(id));
       } catch {
@@ -258,7 +266,7 @@ export function RoleCard({
       }
     }, 400);
     return () => clearTimeout(h);
-  }, [form, dirty, id, locked, draftFrom]);
+  }, [form, saved, dirty, id, locked, draftFrom]);
   const clearDraft = () => {
     try {
       localStorage.removeItem(draftKey(id));
@@ -307,7 +315,12 @@ export function RoleCard({
   }
 
   /** Returns the saved vacancy, or null when it could not be saved (the reason is on screen). */
-  async function save(): Promise<VacancyView | null> {
+  /**
+   * `stay`: a new vacancy is created but the page does not move to it yet (the caller does that when
+   * it is done), so "Reading…" stays on screen while the AI reads and the skills are there when the
+   * new page opens (SD-28).
+   */
+  async function save(stay = false): Promise<VacancyView | null> {
     setShowErrors(true);
     setError('');
     setStale('');
@@ -343,8 +356,10 @@ export function RoleCard({
         } catch {
           /* ignore */
         }
-        leaving.current = true; // the new vacancy opens next: that is not leaving unsaved work
-        onSaved(v);
+        if (!stay) {
+          leaving.current = true; // the new vacancy opens next: that is not leaving unsaved work
+          onSaved(v);
+        }
         return v;
       }
       const p = payload(form, base);
@@ -376,8 +391,20 @@ export function RoleCard({
       void loadCoach(v.id);
       return v;
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'STALE_VERSION') setStale(errMsg(e));
-      else setError(errMsg(e));
+      if (e instanceof ApiError && e.code === 'STALE_VERSION') {
+        // 'Changed by Ayla at 19:48. Reload…': the name and the Baku time come from the server.
+        const m = /^Changed by (.+) at (\d\d:\d\d)\. Reload to see their version\.$/.exec(
+          e.message,
+        );
+        setStale(
+          m
+            ? tr('Changed by {name} at {time}. Reload to see their version.', {
+                name: m[1]!,
+                time: m[2]!,
+              })
+            : errMsg(e),
+        );
+      } else setError(errMsg(e));
       return null;
     } finally {
       setBusy('');
@@ -477,9 +504,13 @@ export function RoleCard({
     setError('');
     if (form.title.trim().length < 2 || form.text.trim().length < MIN_READ) return;
     setBusy('read');
+    // A new vacancy is created first; the page moves to it once the reading is done (or failed).
+    let created: VacancyView | null = null;
     try {
-      const v = await save();
+      const v = await save(!vacancy);
       if (!v) return;
+      if (!vacancy) created = v;
+      setBusy('read'); // Save clears the busy state; the reading goes on
       const c = await api.post<Criteria>(`/vacancies/${v.id}/criteria/extract`);
       const found = (c.current?.requirements ?? []) as VacancyRequirement[];
       // Skills added by hand are kept; the AI's own are replaced by the new reading.
@@ -499,11 +530,18 @@ export function RoleCard({
             'No skills could be read from this text. Add the skills yourself below, or write a fuller description of the role.',
           ),
         );
+      created = null;
+      if (!vacancy) leaving.current = true;
       onSaved(fresh);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setBusy('');
+      if (created) {
+        // The vacancy exists but reading failed: open it, so a retry does not create a second one.
+        leaving.current = true;
+        onSaved(created);
+      }
     }
   }
 
@@ -567,6 +605,7 @@ export function RoleCard({
               {copyNew.slice(0, 8).map((r) => (
                 <li key={r.text}>{r.text}</li>
               ))}
+              {copyNew.length > 8 && <li>{t('and {n} more', { n: copyNew.length - 8 })}</li>}
             </ul>
           )}
           <div className="mt-2 flex gap-2">
@@ -620,7 +659,8 @@ export function RoleCard({
               type="button"
               className="underline"
               onClick={() => {
-                setForm(draftFrom.form);
+                const d = draftFrom;
+                setForm((cur) => mergeDraftOnto(d, cur));
                 setDraftFrom(null);
               }}
             >
@@ -638,17 +678,22 @@ export function RoleCard({
               type="button"
               className="underline"
               onClick={() => {
-                // Keep what was typed as a draft, then show the newer version.
+                // Keep what was typed as a draft ("Restore them"), then show the newer version.
+                const mine: Draft = { form, base: saved, at: new Date().toISOString() };
                 try {
-                  localStorage.setItem(
-                    draftKey(id),
-                    JSON.stringify({ form, at: new Date().toISOString() }),
-                  );
+                  localStorage.setItem(draftKey(id), JSON.stringify(mine));
                 } catch {
                   /* ignore */
                 }
+                setDraftFrom(mine);
                 setStale('');
-                void onReload();
+                takeTheirs.current = true;
+                // If nothing newer arrives the flag must not linger and swallow a later edit.
+                void onReload().finally(() =>
+                  setTimeout(() => {
+                    takeTheirs.current = false;
+                  }, 2000),
+                );
               }}
             >
               {t('Reload their version')}
@@ -969,21 +1014,23 @@ export function RoleCard({
         {/* A skill can be added by hand on every vacancy, also when the AI found some and on a new
             one (VN-11). */}
         {!locked && (
-          <div className="flex gap-2">
-            <input
-              className={input}
-              aria-label={t('Add another skill')}
-              placeholder={t('Add another skill')}
-              maxLength={120}
-              value={newSkill}
-              onChange={(e) => setNewSkill(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addSkill();
-                }
-              }}
-            />
+          <div className="flex items-end gap-2">
+            <label className="min-w-0 flex-1">
+              <span className="mb-1 block text-sm text-ink-2">{t('Add another skill')}</span>
+              <input
+                className={input}
+                placeholder={t('Add another skill')}
+                maxLength={120}
+                value={newSkill}
+                onChange={(e) => setNewSkill(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addSkill();
+                  }
+                }}
+              />
+            </label>
             <button type="button" className={btnSecondary} onClick={addSkill}>
               {t('Add')}
             </button>

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { Boundary, ReloadNote } from './Boundary';
 import './index.css';
+import { preloadFor } from './pages/lazy';
 
 // A file dropped anywhere but a drop zone must not make the browser open it and leave the app
 // (UP-05). Drop zones cancel the events themselves first; everywhere else the drop is refused.
@@ -15,6 +16,8 @@ window.addEventListener('dragover', (e) => {
 window.addEventListener('drop', (e) => {
   if (hasFiles(e)) e.preventDefault();
 });
+
+preloadFor(window.location.hash);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

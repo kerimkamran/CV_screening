@@ -53,9 +53,16 @@ const NEEDS_ATTENTION: CvStatus[] = [
 ];
 const OPEN_FOR_SEND: CvStatus[] = ['not_sent', 'could_not_send', 'vacancy_full'];
 
-function label(status: CvStatus, code: string | null): string {
+/** The number a rejection text names: the server's own limit for that code, not a fixed 10. */
+function limitFor(code: string, info: IntakeInfo | null): number {
+  if (code === 'too_many_entries') return info?.limit ?? 500;
+  if (code === 'zip_too_large') return info?.maxZipMb ?? 100;
+  return info?.maxFileMb ?? 10;
+}
+
+function label(status: CvStatus, code: string | null, info: IntakeInfo | null): string {
   if (status === 'rejected' && code && code in UPLOAD_CODE_MESSAGE)
-    return tr(UPLOAD_CODE_MESSAGE[code as UploadCode], { n: 10 });
+    return tr(UPLOAD_CODE_MESSAGE[code as UploadCode], { n: limitFor(code, info) });
   return tr(CV_STATUS_LABEL[status]);
 }
 
@@ -85,6 +92,15 @@ export function BatchPanel({
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const pickRef = useRef<HTMLInputElement>(null);
+  // Hide removes the button that was pressed: focus goes to "Show the waiting screen" (plan 4.7).
+  const showRef = useRef<HTMLButtonElement>(null);
+  const focusShow = useRef(false);
+  useEffect(() => {
+    if (view === 'hidden' && focusShow.current) {
+      focusShow.current = false;
+      showRef.current?.focus();
+    }
+  }, [view]);
 
   useEffect(() => {
     fetchIntakeInfo(vacancy.id).then(setInfo, () => undefined);
@@ -112,6 +128,11 @@ export function BatchPanel({
 
   const pr = useMemo(() => (status ? progressOf(status, run) : null), [status, run]);
   const active = !!pr && pr.phase !== 'finished';
+  // How much room the vacancy has left changes as the CVs are read in: ask again once it settles.
+  const settled = !!pr && pr.phase === 'finished';
+  useEffect(() => {
+    if (settled) fetchIntakeInfo(vacancy.id).then(setInfo, () => undefined);
+  }, [settled, vacancy.id]);
   useEffect(() => {
     onWatching(active);
     return () => onWatching(false);
@@ -215,6 +236,7 @@ export function BatchPanel({
   };
   const hideIt = () => {
     setBatchView(user.id, batchId, 'hidden');
+    focusShow.current = true;
     setView('hidden');
   };
   const openResults = () => {
@@ -224,7 +246,9 @@ export function BatchPanel({
   };
   const toggleDetails = () => setDetailsOpen((v) => !v);
   const started = status.batch;
-  const waitingFiles = pr.notSent;
+  // Files left out because the vacancy is full are not offered again while it is still full (SD-57).
+  const stillFull = !!info && info.used >= info.limit;
+  const waitingFiles = pr.notSent - (stillFull ? (status.counts.byStatus.vacancy_full ?? 0) : 0);
   const holding = !!run && run.items.some((i) => i.file && i.client !== 'sent');
 
   return (
@@ -256,7 +280,12 @@ export function BatchPanel({
               {t('Latest upload')} · {when(started.createdAt)} · {started.createdBy}
             </h2>
             {mine && view === 'hidden' && (
-              <button type="button" className={btnSecondary} onClick={() => setView('full')}>
+              <button
+                ref={showRef}
+                type="button"
+                className={btnSecondary}
+                onClick={() => setView('full')}
+              >
                 {t('Show the waiting screen')}
               </button>
             )}
@@ -362,7 +391,9 @@ export function BatchPanel({
                   <li key={r.itemId} className="flex items-center justify-between gap-2 py-1.5">
                     <span className="min-w-0">
                       <span className="block truncate">{r.clientPath ?? r.filename}</span>
-                      <span className="block text-xs text-ink-3">{label(r.status, r.code)}</span>
+                      <span className="block text-xs text-ink-3">
+                        {label(r.status, r.code, info)}
+                      </span>
                     </span>
                     {action === 'open' && r.documentId && (
                       <a

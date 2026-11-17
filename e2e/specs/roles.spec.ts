@@ -246,10 +246,16 @@ uat('RO-04', 'Route matrix: governance', { on: ['D', 'A'], langs: 'EN' }, async 
     await expect(page.getByRole('button', { name: /Run the paired-CV test/ })).toHaveCount(0);
   }
   noCandidateCalls(seen, from, 'no request to candidate or document endpoints');
-  for (const r of ['#/admin', '#/admin/ai', '#/admin/assistant', '#/admin/retention']) {
+  for (const r of ['#/admin', '#/admin/ai', '#/admin/retention']) {
     await go(page, r);
     await adminOnly(page);
   }
+  // SX-08: governance reads the assistant's recent answers and payload log, and nothing to edit.
+  await go(page, '#/admin/assistant');
+  await expect(page.getByRole('heading', { level: 1, name: 'Administration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Recent answers/ })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Administration' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Save/ })).toHaveCount(0);
   await commonPages(page);
   await expect(page.locator('nav[aria-label="Main"]')).toHaveCount(0);
   expect((await menuLinks(page)).links).toEqual([

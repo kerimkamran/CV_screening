@@ -26,6 +26,7 @@ export const AZ_SHELL: Record<string, string> = {
   'Could not save your choice. It applies on this device only for now.':
     'Seçiminiz saxlanmadı. Hələlik yalnız bu cihazda keçərlidir.',
   'Loading…': 'Yüklənir…',
+  'Skip to main content': 'Əsas məzmuna keç',
   'Administrators only.': 'Yalnız administratorlar üçün.',
   'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.':
     'Administratorlar istifadəçiləri və süni intellekt modellərini “İdarə” bölməsində idarə edir. Namizəd məlumatları yalnız işə götürənlər üçün əlçatandır.',
@@ -142,6 +143,8 @@ export const AZ_SHELL: Record<string, string> = {
   // a part of the page that could not load (SD-45)
   'parallax was updated. Reload to see the CV.':
     'parallax yeniləndi. CV-ni görmək üçün səhifəni yenidən yükləyin.',
+  'parallax was updated. Reload to see this page.':
+    'parallax yeniləndi. Səhifəni görmək üçün yenidən yükləyin.',
   'parallax was updated. Reload to see the picture.':
     'parallax yeniləndi. Şəkli görmək üçün səhifəni yenidən yükləyin.',
   'Something went wrong on this page. Reload to continue.':

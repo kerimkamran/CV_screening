@@ -130,17 +130,32 @@ export async function occ(page: Page, opts: { overlay?: string } = {}): Promise<
       const hit = document.elementFromPoint(x, y);
       if (!hit || c.contains(hit) || hit.contains(c)) continue;
       // Content scrolled under a fixed or sticky bar is out of view, not covered by a layout fault.
+      // A sticky bar counts as pinned only while it is stuck; in its own place in the page it is
+      // content like any other and scrolls out from under a fixed bar.
       const pinned = (el: Element | null) => {
         for (let p = el; p; p = p.parentElement) {
-          const pos = getComputedStyle(p).position;
-          if (pos === 'fixed' || pos === 'sticky') return true;
+          const cs = getComputedStyle(p);
+          if (cs.position === 'fixed') return true;
+          if (cs.position === 'sticky') {
+            const top = parseFloat(cs.top);
+            const bottom = parseFloat(cs.bottom);
+            const r = p.getBoundingClientRect();
+            // The offset applies to the margin box, so a bar with its own margin sits that much lower; a few
+            // pixels more allow for a bar still settling from its entrance animation.
+            const mt = parseFloat(cs.marginTop) || 0;
+            const mb = parseFloat(cs.marginBottom) || 0;
+            if (!Number.isNaN(top) && r.top <= top + mt + 4) return true;
+            if (!Number.isNaN(bottom) && r.bottom >= innerHeight - bottom - mb - 4) return true;
+          }
         }
         return false;
       };
       if (pinned(hit) && !pinned(c)) continue;
       // An open menu, list box or dialog is meant to cover what lies under it.
       const OPEN = 'details[open] > div, [role=menu], [role=listbox], dialog[open], [role=dialog]';
-      const cover = hit.closest(OPEN);
+      // So is an overlay the test names on purpose (a phone's bottom sheet), which the loop above
+      // already checked is not covered itself.
+      const cover = hit.closest(sel ? `${OPEN}, ${sel}` : OPEN);
       if (cover && !cover.contains(c)) continue;
       // A label that wraps its own input counts as the control.
       if (c instanceof HTMLInputElement && hit.closest('label')?.contains(c)) continue;

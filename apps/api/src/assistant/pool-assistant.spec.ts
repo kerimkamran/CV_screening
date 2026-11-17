@@ -7,6 +7,8 @@ describe('detectLanguage', () => {
     expect(detectLanguage('Find the right candidate for Network Engineer')).toBe('en');
     expect(detectLanguage('Şəbəkə mühəndisi üçün uyğun namizədi tap')).toBe('az');
     expect(detectLanguage('sebeke muhendisi ucun namized tap')).toBe('az');
+    // A pushback typed without special letters is still Azerbaijani (SA-23).
+    expect(detectLanguage('amma o bilir Kubernetes')).toBe('az');
     expect(detectLanguage('Найди подходящего кандидата')).toBe('ru');
     expect(detectLanguage('5')).toBeNull();
   });

@@ -172,7 +172,8 @@ uat(
       .toMatch(new RegExp(`#/cv/${DID}\\?l=e2e-list$`));
     await expect.soft(sel).toHaveValue('maybe');
     if (meta.dev === 'A') {
-      // The toast sits above the bottom bars.
+      // The toast sits above the bottom bars (measured once its slide-in has finished).
+      await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
       const r = await page.evaluate(() => {
         const toast = [...document.querySelectorAll('[role=status]')]
           .find((e) => e.querySelector('button'))!
@@ -486,6 +487,16 @@ uat(
     await openReview(page);
     await ready(page);
     const list = page.getByRole('tablist', { name: t('View'), exact: true });
+    if (meta.dev === 'TL') {
+      // 1180 px leaves the content 60 rem or more, where the app shows the CV and the Analysis side
+      // by side (the tabs are for narrower screens): no tabs here, both panes on screen.
+      await expect(list, 'no tabs when the two panes fit').toBeHidden();
+      await expect.soft(page.getByTestId('cv-pane')).toBeVisible();
+      await expect.soft(page.getByTestId('analysis-pane')).toBeVisible();
+      await expect.soft(page.getByRole('separator', { name: t('Resize the panes') })).toBeVisible();
+      await ux.check('two panes', [...STD, 'AZ']);
+      return;
+    }
     await expect(list, "a tablist 'View'").toBeVisible();
     const cvTab = list.getByRole('tab', { name: t('CV'), exact: true });
     const anTab = list.getByRole('tab', { name: t('Analysis') });

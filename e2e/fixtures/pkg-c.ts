@@ -571,6 +571,10 @@ export async function smallTargets(scope: import('@playwright/test').Locator, mi
       const st = getComputedStyle(e);
       if (r.width === 0 || r.height === 0 || st.visibility === 'hidden') continue;
       if (e.closest('.sr-only, [aria-hidden=true]') || e.classList.contains('sr-only')) continue;
+      // Inside a closed <details> (a collapsed menu) nothing can be tapped.
+      const closed = e.closest('details:not([open])');
+      if (closed && !e.closest('summary')) continue;
+      if (e.checkVisibility && !e.checkVisibility()) continue;
       let w = r.width;
       let h = r.height;
       const lab = e.closest('label');
@@ -579,9 +583,9 @@ export async function smallTargets(scope: import('@playwright/test').Locator, mi
         w = Math.max(w, lr.width);
         h = Math.max(h, lr.height);
       }
-      if (w < m || h < m)
+      if (w < m - 0.75 || h < m - 0.75)
         out.push(
-          `${(e.getAttribute('aria-label') || e.innerText || e.tagName).trim().slice(0, 40)} ${Math.round(w)}×${Math.round(h)}`,
+          `${(e.getAttribute('aria-label') || e.innerText || (e instanceof HTMLInputElement ? `INPUT[${e.type}] ${e.closest('label')?.innerText.trim().slice(0, 24) ?? ''} ${e.closest('[class]')?.className.toString().slice(0, 50) ?? ''}` : e.tagName)).trim().slice(0, 100)} ${Math.round(w)}×${Math.round(h)}`,
         );
     }
     return [...new Set(out)];

@@ -6,7 +6,8 @@ import {
   type Mark,
   type VacancyStatus,
 } from '@cv/shared';
-import { locale, tr } from './i18n';
+import { day } from './dates';
+import { tr } from './i18n';
 
 /** Shapes the Vacancy pool, the Candidate pool and the report use (Development Plan, Phases 1 to 3). */
 
@@ -283,11 +284,7 @@ export function ago(iso: string, now = Date.now()): string {
   const d = Math.round(h / 24);
   if (d < 14) return d === 1 ? tr('yesterday') : tr('{n} days ago', { n: d });
   // In the app's language, not the browser's (VL-01).
-  return new Date(iso).toLocaleDateString(locale(), {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  return day(new Date(iso), 'short');
 }
 
 /**

@@ -38,6 +38,7 @@ export const AZ_POOL: Record<string, string> = {
   Undo: 'Geri qaytarın',
   'Actions for {title}': '{title} üçün əməliyyatlar',
   'Archived “{title}”.': '“{title}” arxivə atıldı.',
+  'Copy of {title}': '{title} (surət)',
   '{n} analyzed': '{n} təhlil olunub',
   '{n} analyzed, {m} running': '{n} təhlil olunub, {m} davam edir',
   '{n} out of date': '{n} köhnəlib',
@@ -105,6 +106,8 @@ export const AZ_POOL: Record<string, string> = {
   'You have unsaved changes from {when}.': 'Yadda saxlanılmamış dəyişiklikləriniz var ({when}).',
   'Restore them': 'Bərpa edin',
   Discard: 'Ləğv edin',
+  'Changed by {name} at {time}. Reload to see their version.':
+    '{name} dəyişiklik edib ({time}). Onun versiyasını görmək üçün yeniləyin.',
   'Reload their version': 'Onların versiyasını yükləyin',
   'Create a new one anyway': 'Yenə də yenisini yaradın',
   'A vacancy like this is already in the system. Use that one?':
@@ -191,6 +194,7 @@ export const AZ_POOL: Record<string, string> = {
   // Report
   '← Back': '← Geri',
   '← Back to {list}': '← {list} siyahısına qayıdın',
+  'SenAI answer': 'SenAI cavabı',
   'Previous and next': 'Əvvəlki və sonrakı',
   Previous: 'Əvvəlki',
   'Previous (K)': 'Əvvəlki (K)',

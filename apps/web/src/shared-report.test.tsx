@@ -178,7 +178,8 @@ describe('Shared report (spec 6.5)', () => {
     expect(
       await screen.findByRole('heading', { name: 'Reports shared with me' }),
     ).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: 'Backend Engineer' });
+    // The list is a screen that loads on demand, so its rows come a moment after its heading.
+    const link = await screen.findByRole('link', { name: 'Backend Engineer' });
     expect(link).toHaveAttribute('href', '#/reports/01ARZ3NDEKTSV4RRFFQ69G5FAV');
     // No recruiter navigation for a person with no role.
     expect(screen.queryByRole('link', { name: 'New screening' })).toBeNull();

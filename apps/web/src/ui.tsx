@@ -1,14 +1,38 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ReqStatus } from './api';
-import { locale, tr } from './i18n';
+import { dayAndTime } from './dates';
+import { tr, useT } from './i18n';
 
 export const btn =
   'm-press inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold pointer-coarse:min-h-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
 export const btnPrimary = `${btn} bg-accent text-on-accent hover:bg-accent-hover`;
 export const btnSecondary = `${btn} border border-edge bg-card text-ink hover:bg-hover`;
 export const btnDanger = `${btn} bg-danger text-on-accent hover:bg-danger-hover`;
+/** A stand-alone link (a way back, a one-line action): a 44 px target on touch screens, WCAG 2.5.5. */
+export const tapLink = 'inline-flex items-center pointer-coarse:min-h-11';
+
 export const input =
   'block w-full rounded-xl border border-edge px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus';
+
+/** The first Tab stop of every page: jumps over the header to the content (WCAG 2.4.1, A11-03). */
+export function SkipLink() {
+  const t = useT();
+  return (
+    <a
+      href="#main"
+      onClick={(e) => {
+        // The address bar holds the route, so the link moves focus instead of changing the hash.
+        e.preventDefault();
+        const main = document.getElementById('main');
+        main?.focus();
+        main?.scrollIntoView?.({ block: 'start' });
+      }}
+      className="sr-only focus:not-sr-only focus:block focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink focus:ring-2 focus:ring-inset focus:ring-focus focus:outline-none"
+    >
+      {t('Skip to main content')}
+    </a>
+  );
+}
 
 export function Field({
   label,
@@ -32,16 +56,20 @@ export function Card({
   title,
   children,
   actions,
+  page = false,
 }: {
   title?: string;
   children: ReactNode;
   actions?: ReactNode;
+  /** The card is the whole page (sign in, change password): its title is the page's h1 (A11-02). */
+  page?: boolean;
 }) {
+  const Heading = page ? 'h1' : 'h2';
   return (
     <section className="min-w-0 rounded-2xl border border-line bg-card p-5 shadow-[0_1px_2px_rgb(11_31_58/0.05),0_6px_20px_-12px_rgb(11_31_58/0.18)]">
       {(title || actions) && (
         <div className="mb-3 flex items-center justify-between gap-2">
-          {title && <h2 className="text-base font-semibold text-ink">{title}</h2>}
+          {title && <Heading className="text-base font-semibold text-ink">{title}</Heading>}
           {actions}
         </div>
       )}
@@ -114,18 +142,7 @@ export const OUTCOME: Record<string, [string, string]> = {
 
 export function when(iso: string | null | undefined) {
   if (!iso) return '';
-  const d = new Date(iso);
-  // Azerbaijani gets the month in words: the browser's own short form is year-month-day with
-  // digits only, which reads like an ISO stamp (RP-01).
-  return locale() === 'az-AZ'
-    ? d.toLocaleString(locale(), {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : d.toLocaleString(locale());
+  return dayAndTime(new Date(iso));
 }
 
 /** Server messages are English; the common ones have an Azerbaijani entry, the rest show as sent. */

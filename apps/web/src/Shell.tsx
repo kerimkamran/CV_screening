@@ -4,7 +4,7 @@ import { Appearance, LanguageSwitch } from './Appearance';
 import {
   askSenAI,
   setAssistantOpen,
-  SLOGAN,
+  sloganFor,
   useAssistantConfig,
   useAssistantOpen,
   useAssistantRegistration,
@@ -15,7 +15,7 @@ import { AssistantPanel } from './pages/AssistantPanel';
 import { PoolPanel } from './pages/PoolPanel';
 import { getReviewList, parseReviewRoute } from './review';
 import { isBackground } from './theme';
-import { useDetailsMenu, usePublishedHeight } from './ui';
+import { SkipLink, useDetailsMenu, usePublishedHeight } from './ui';
 
 /**
  * The frame around every signed-in page (Development Plan, Phase 1): a left rail with Vacancies and
@@ -119,7 +119,7 @@ function AskBar() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           maxLength={1000}
-          placeholder={`${cfg.name}: ${SLOGAN}`}
+          placeholder={`${cfg.name}: ${sloganFor(cfg.name)}`}
           className="block w-full rounded-full border border-white/25 bg-white/10 py-2 pl-10 pr-4 text-sm text-on-brand placeholder:text-white/80 transition-colors hover:bg-white/15 focus:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         />
       </label>
@@ -356,6 +356,7 @@ export function Shell({
 
   return (
     <div className="min-h-screen bg-page text-ink">
+      <SkipLink />
       <header
         className="sticky top-0 z-40 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
         style={{ viewTransitionName: 'app-header' }}
@@ -389,10 +390,12 @@ export function Shell({
 
       <div className="flex">
         {rail && (
+          // -mb-48: an open menu at the foot of a page makes the page a little taller than this
+          // row; without the negative margin the rail would be pushed up under the header.
           <nav
             aria-label={t('Main')}
             style={{ viewTransitionName: 'app-rail' }}
-            className="sticky top-[57px] hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
+            className="sticky top-[57px] -mb-48 hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
           >
             {NAV.map(([href, label]) => (
               <a
@@ -410,8 +413,10 @@ export function Shell({
         <div
           className={`min-w-0 flex-1 ${isTa && open && cfg ? 'sm:pr-96' : ''} ${rail ? 'pb-[var(--bottombar-h,0px)] sm:pb-0' : ''}`}
         >
-          <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-          <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>
+          <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
+            {children}
+          </main>
+          <footer className="mx-auto max-w-7xl px-4 mb-8 text-xs text-ink-3">{footer}</footer>
         </div>
       </div>
 

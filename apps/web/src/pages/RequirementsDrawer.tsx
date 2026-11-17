@@ -20,6 +20,8 @@ export function RequirementsDrawer(props: {
   onClose: () => void;
   /** A requirement to point at when the drawer is opened from the assistant. */
   focusId?: string | null;
+  /** An archived vacancy: the choices are shown, not changeable. */
+  readOnly?: boolean;
 }) {
   const t = useT();
   const { data } = props;
@@ -133,7 +135,7 @@ export function RequirementsDrawer(props: {
             key={r.id}
             id={`req-row-${r.id}`}
             className={`rounded-md border p-3 ${props.focusId === r.id ? 'border-accent bg-sel' : 'border-line'}`}
-            disabled={props.busy}
+            disabled={props.busy || props.readOnly}
           >
             <legend className="px-1 text-sm font-medium">
               {r.text}
@@ -172,7 +174,7 @@ export function RequirementsDrawer(props: {
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           className={btnSecondary}
-          disabled={data.changeCount === 0 || props.busy}
+          disabled={data.changeCount === 0 || props.busy || props.readOnly}
           onClick={props.onReset}
         >
           {t('Back to original')}

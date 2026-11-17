@@ -35,11 +35,22 @@ async function openCv(
   log: AskLog,
   opts: Parameters<typeof senaiRoutes>[1] = {},
 ) {
-  await page.addInitScript((k) => localStorage.setItem(k, '1'), `cv-assistant-open:${ME.userId}`);
+  await page.addInitScript((k) => {
+    try {
+      localStorage.setItem(k, '1');
+    } catch {
+      /* a blank page has no storage */
+    }
+  }, `cv-assistant-open:${ME.userId}`);
   await mockApi(page, { assistant: CFG, extra: senaiRoutes(log, opts) });
   await openReview(page, DID);
   await showAnalysis(page);
 }
+
+/** On a phone the panel is a bottom sheet over the page: what it covers is covered on purpose. */
+const phoneSheet = (page: Page) => ({
+  overlay: (page.viewportSize()?.width ?? 1280) < 640 ? 'aside' : undefined,
+});
 
 uat(
   'SC-01',
@@ -49,7 +60,7 @@ uat(
     const log: AskLog = { asks: [], cand: [] };
     await openCv(page, log, { thread: { [MID]: threadPair(1) } });
     const tt = w(meta.lang);
-    const panel = page.getByRole('complementary', { name: tt('Assistant') });
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
     await expect(panel.getByRole('heading', { name: 'SenAI' })).toBeVisible();
     await expect(panel.getByTestId('context-chip')).toHaveText(
       tt('Discussing: {label} · {band}')
@@ -60,7 +71,7 @@ uat(
     await expect(
       panel.getByText(tt('Chats are saved to this run and may be reviewed for compliance.')),
     ).toBeVisible();
-    await ux.check('thread', [...STD, 'AZ']);
+    await ux.check('thread', [...STD, 'AZ'], phoneSheet(page));
     // The Ask bar question goes to this candidate's thread.
     const bar = page.getByRole('search').getByRole('textbox');
     await bar.fill('Why is BGP found?');
@@ -94,7 +105,7 @@ uat(
     const log: AskLog = { asks: [], cand: [] };
     await openCv(page, log, { candDelayMs: 2500 });
     const tt = w(meta.lang);
-    const panel = page.getByRole('complementary', { name: tt('Assistant') });
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
     const box = panel.getByRole('textbox');
     const send = panel.getByRole('button', { name: tt('Send'), exact: true });
     // 2) empty or spaces only: Send disabled.
@@ -128,7 +139,7 @@ uat(
     await expect(panel.getByText('Aysel Məmmədova matches on what the record shows.')).toHaveCount(
       0,
     );
-    await ux.check('stopped', [...STD, 'AZ']);
+    await ux.check('stopped', [...STD, 'AZ'], phoneSheet(page));
     // 6) another question works.
     await box.fill('What is missing?');
     await box.press('Enter');
@@ -148,7 +159,7 @@ uat(
     const puts: string[] = [];
     page.on('request', (r) => r.method() === 'PUT' && puts.push(new URL(r.url()).pathname));
     await openCv(page, log);
-    const panel = page.getByRole('complementary', { name: 'Assistant' });
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
     await expect(panel).toBeVisible();
     await page.locator('main').click({ position: { x: 30, y: 250 } });
     await page.keyboard.press('j');
@@ -166,7 +177,7 @@ uat(
     await box.click();
     await box.pressSequentially('jks');
     await expect(page).toHaveURL(new RegExp(`#/cv/${DID}`));
-    await ux.check('sprint', STD);
+    await ux.check('sprint', STD, phoneSheet(page));
     void candAnswer;
   },
 );
@@ -191,7 +202,13 @@ const otherRow = (i: number, label: string) =>
 
 /** The CV screen of DID with the candidate panel open and the SenAI routes answered. */
 async function cvWith(page: Page, log: AskLog, o: Opts = {}) {
-  await page.addInitScript((k) => localStorage.setItem(k, '1'), `cv-assistant-open:${ME.userId}`);
+  await page.addInitScript((k) => {
+    try {
+      localStorage.setItem(k, '1');
+    } catch {
+      /* a blank page has no storage */
+    }
+  }, `cv-assistant-open:${ME.userId}`);
   const route = senaiRoutes(log, o);
   await mockApi(page, {
     assistant: o.cfg ?? CFG,
@@ -221,8 +238,7 @@ async function cvWith(page: Page, log: AskLog, o: Opts = {}) {
   await openReview(page, DID);
   await showAnalysis(page);
 }
-const cpanel = (page: Page, lang: string) =>
-  page.getByRole('complementary', { name: w(lang)('Assistant') });
+const cpanel = (page: Page, lang: string) => page.getByRole('complementary', { name: 'SenAI' });
 const posts = (log: AskLog) => log.cand.filter((c) => c.method === 'POST');
 const claim = (state: string, id: string, text: string, quote?: string) => ({
   text: `${text}: ${state.toLowerCase()}.`,
@@ -267,6 +283,12 @@ uat(
       },
     });
     await page.goto(`/#/vacancies/${DVID}/results`);
+    // Below 1024 px the star map starts hidden: open it first (it sits behind the sheet on a phone).
+    await expect(
+      page.getByRole('heading', { level: 2, name: tt('Your constellation') }),
+    ).toBeVisible();
+    const showMap = page.getByRole('button', { name: tt('Show star map'), exact: true });
+    if (await showMap.isVisible()) await showMap.click();
     const ask = tt('Ask {name} about this candidate').replace('{name}', 'SenAI');
     const strong = page.locator('article').filter({ hasText: 'Aysel Məmmədova' }).first();
     const btn = strong.getByRole('button', { name: ask });
@@ -282,9 +304,12 @@ uat(
         .replace('{label}', 'Aysel Məmmədova')
         .replace('{band}', tt('Strong')),
     );
-    await ux.check('ask about', [...STD, 'AZ']);
+    await ux.check('ask about', [...STD, 'AZ'], phoneSheet(page));
     // 3) The Partial star: the context follows and the strongest-case chip is offered.
-    await page.locator('[data-testid="star-map"] button[data-star]').nth(1).click();
+    const partialStar = page.locator('[data-testid="star-map"] button[data-star]').nth(1);
+    // On a phone the sheet lies over the map: the person closes it to tap, so the tap is sent directly.
+    if ((page.viewportSize()?.width ?? 1280) < 640) await partialStar.dispatchEvent('click');
+    else await partialStar.click();
     await expect(panel.getByTestId('context-chip')).toHaveText(
       tt('Discussing: {label} · {band}')
         .replace('{label}', 'Rauf Əliyev')
@@ -372,7 +397,7 @@ uat(
         tt('From the record: {facts}').replace('{facts}', 'Score 88% | 3 of 4 must-haves found'),
       ),
     ).toBeVisible();
-    await ux.check('answer', [...STD, 'AZ']);
+    await ux.check('answer', [...STD, 'AZ'], phoneSheet(page));
     await ans.getByRole('button', { name: tt('Show less') }).click();
     await expect(ans.locator('ol > li')).toHaveCount(0);
     // 5) The 'AI' badge is reachable by keyboard and by touch.
@@ -426,7 +451,7 @@ uat(
     await expect(ans).toContainText('Interview questions for Aysel Məmmədova.');
     await ans.getByRole('button', { name: tt('Show more') }).click();
     await expect(ans.locator('ol > li')).toHaveCount(2);
-    await ux.check('interview', [...STD, 'AZ']);
+    await ux.check('interview', [...STD, 'AZ'], phoneSheet(page));
     // 3) Interview switched off: no chip after a reload.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     cfg = { ...CFG, features: { ...CFG.features, interview: false } };
@@ -521,7 +546,7 @@ uat(
     const chips = panel.locator('div.mr-4').last().getByRole('listitem');
     await expect(chips.first()).toContainText('Aysel Məmmədova: ');
     await expect(chips.nth(1)).toContainText('Rauf Əliyev: ');
-    await ux.check('compared', [...STD, 'AZ']);
+    await ux.check('compared', [...STD, 'AZ'], phoneSheet(page));
     // 5) Cancel: chips return, nothing sent.
     await panel.getByRole('button', { name: tt('Compare with…') }).click();
     await panel.getByRole('button', { name: tt('Cancel') }).click();
@@ -550,7 +575,7 @@ uat(
     await expect(boxes.nth(34)).toBeInViewport();
     await expect(fs.getByRole('button', { name: tt('Compare'), exact: true })).toBeInViewport();
     await expect(fs.getByRole('button', { name: tt('Cancel') })).toBeInViewport();
-    await ux.check('long list', [...STD, 'AZ']);
+    await ux.check('long list', [...STD, 'AZ'], phoneSheet(page));
   },
 );
 
@@ -583,7 +608,7 @@ uat(
     const read = panel.getByLabel(tt('Your own read (optional)'));
     await read.fill('r'.repeat(420));
     expect((await read.inputValue()).length).toBe(400);
-    await ux.check('challenge form', [...STD, 'AZ']);
+    await ux.check('challenge form', [...STD, 'AZ'], phoneSheet(page));
     await panel.getByRole('button', { name: tt('Challenge this match') }).click();
     await expect.poll(() => posts(log).length).toBe(2);
     expect(posts(log)[1]!.body).toMatchObject({ intent: 'challenge', read: 'r'.repeat(400) });
@@ -626,10 +651,13 @@ uat(
       candAnswer({
         handoff: [{ requirementId: CCIE, text: 'CCIE certification', to: 'preferred' }],
       });
-    await page.addInitScript(
-      (k) => localStorage.setItem(k, '1'),
-      `cv-assistant-open:${AYSEL.userId}`,
-    );
+    await page.addInitScript((k) => {
+      try {
+        localStorage.setItem(k, '1');
+      } catch {
+        /* a blank page has no storage */
+      }
+    }, `cv-assistant-open:${AYSEL.userId}`);
     const previews: unknown[] = [];
     await resultsApi(page, {
       rows: [
@@ -702,21 +730,23 @@ uat(
     await expect(drawer).toHaveCount(0);
     // 4) On the CV screen the same button opens the Criteria tab.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await vacApi(page, {
-      assistant: CFG,
-      views: [vview({ id: VID, title: 'Network Engineer' })],
-      extra: senaiRoutes(log, { cand: handoff }),
+    await page.goto('about:blank'); // a hash-only change would keep the Results page and its panel
+    // On the CV screen the requirement ids are the CV fixture's (R4 is 'CCIE certification').
+    await openCv(page, log, {
+      cand: () =>
+        candAnswer({
+          handoff: [{ requirementId: 'R4', text: 'CCIE certification', to: 'preferred' }],
+        }),
     });
-    await page.addInitScript((k) => localStorage.setItem(k, '1'), `cv-assistant-open:${ME.userId}`);
-    await openReview(page, DID);
-    await showAnalysis(page);
+    await expect(cpanel(page, meta.lang).getByTestId('context-chip')).toContainText(
+      'Aysel Məmmədova',
+    );
     await cpanel(page, meta.lang).getByRole('textbox').fill('Why is CCIE not found?');
     await cpanel(page, meta.lang).getByRole('textbox').press('Enter');
-    await cpanel(page, meta.lang)
-      .getByRole('button', {
-        name: tt('Edit requirement: {text}').replace('{text}', 'CCIE certification'),
-      })
-      .click();
+    const editCv = cpanel(page, meta.lang).getByRole('button', {
+      name: tt('Edit requirement: {text}').replace('{text}', 'CCIE certification'),
+    });
+    await editCv.click();
     await expect(page).toHaveURL(new RegExp(`#/vacancies/${VID}/criteria`));
     const covered = await page.evaluate(() => {
       const aside = document.querySelector('aside');
@@ -761,7 +791,7 @@ uat(
     const ask = panel.getByRole('alertdialog').or(panel.getByRole('button', { name: /Undo|Geri/ }));
     await expect(ask, 'a confirmation or Undo appears (SD-24)').toBeVisible();
     expect(dels(), 'no DELETE before confirming').toHaveLength(0);
-    await ux.check('confirm', [...STD, 'AZ']);
+    await ux.check('confirm', [...STD, 'AZ'], phoneSheet(page));
     // 2) Cancel: the thread stays.
     await panel.getByRole('button', { name: tt('Cancel') }).click();
     await expect(panel.locator('p.ml-8')).toHaveCount(2);
@@ -875,7 +905,7 @@ uat(
     await page.keyboard.press('PageDown');
     await page.keyboard.press('ArrowDown');
     await expect.poll(() => conv.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-    await ux.check('focus', STD);
+    await ux.check('focus', STD, phoneSheet(page));
   },
 );
 
@@ -921,7 +951,7 @@ uat(
           `${where}: the wheel scrolls the conversation`,
         )
         .toBeGreaterThan(t0);
-      await ux.check(`${where} thread`, STD);
+      await ux.check(`${where} thread`, STD, phoneSheet(page));
       await panel.getByRole('button', { name: tt('Compare with…') }).click();
       await expect(
         panel.getByRole('button', { name: tt('Compare'), exact: true }),
@@ -931,16 +961,19 @@ uat(
       const list = panel.getByRole('checkbox').last();
       await list.scrollIntoViewIfNeeded();
       await expect(list).toBeInViewport();
-      await ux.check(`${where} compare`, STD);
+      await ux.check(`${where} compare`, STD, phoneSheet(page));
     };
     await cvWith(page, log, { thread: { [MID]: thread }, others });
     await measure('CV');
     // 5) The same on Results.
     await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await page.addInitScript(
-      (k) => localStorage.setItem(k, '1'),
-      `cv-assistant-open:${AYSEL.userId}`,
-    );
+    await page.addInitScript((k) => {
+      try {
+        localStorage.setItem(k, '1');
+      } catch {
+        /* a blank page has no storage */
+      }
+    }, `cv-assistant-open:${AYSEL.userId}`);
     const rows = Array.from({ length: 31 }, (_, i) => crow(i + 1, { score: 95 - i }));
     await resultsApi(page, {
       rows,
@@ -949,5 +982,133 @@ uat(
     });
     await page.goto(`/#/vacancies/${DVID}/results`);
     await measure('Results');
+  },
+);
+
+uat(
+  'RQ-05',
+  "'Edit requirement' from SenAI opens the drawer fully visible above the SenAI panel",
+  { on: ['D', 'DS'], langs: 'EN+AZ', timeout: 120_000 },
+  async ({ page, ux, meta }) => {
+    const tt = w(meta.lang);
+    const log: AskLog = { asks: [], cand: [] };
+    const CCIE = REQS[2].id;
+    const previews: unknown[] = [];
+    const seenAdj: string[] = [];
+    await page.addInitScript((k) => {
+      try {
+        localStorage.setItem(k, '1');
+      } catch {
+        /* a blank page has no storage */
+      }
+    }, `cv-assistant-open:${AYSEL.userId}`);
+    const { seen } = await resultsApi(page, {
+      rows: [
+        crow(1, { score: 92, name: 'Aysel Məmmədova' }),
+        crow(2, { score: 75, name: 'Rauf Əliyev' }),
+      ],
+      assistant: CFG,
+      answers: {
+        [`POST /vacancies/${DVID}/adjustments/preview`]: async (
+          _r: unknown,
+          _u: unknown,
+          _m: unknown,
+          b: unknown,
+        ) => {
+          await new Promise((r) => setTimeout(r, 900));
+          previews.push(b);
+          return { scores: {} };
+        },
+        ...senaiAnswers(log, {
+          cand: () =>
+            candAnswer({
+              handoff: [{ requirementId: CCIE, text: 'CCIE certification', to: 'preferred' }],
+            }),
+        }),
+      },
+    });
+    const edit = () =>
+      cpanel(page, meta.lang).getByRole('button', {
+        name: tt('Edit requirement: {text}').replace('{text}', 'CCIE certification'),
+      });
+    const drawer = page.getByRole('dialog', { name: tt('Requirements') });
+    const what = new RegExp(
+      tt('What if “{text}” were nice-to-have: {line} Nothing changes until you choose it below.')
+        .split('{line}')[0]!
+        .replace('{text}', 'CCIE certification')
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+    );
+    /** Every probe at the drawer's Close, its radios and Back to original hits the drawer itself. */
+    const onTop = () =>
+      drawer.evaluate((d) => {
+        const bad: string[] = [];
+        const probes = [...d.querySelectorAll<HTMLElement>('button, input[type=radio]')];
+        for (const el of probes) {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          const y = Math.min(innerHeight - 2, r.top + r.height / 2);
+          const h = document.elementFromPoint(r.left + r.width / 2, y);
+          if (!h || !d.contains(h))
+            bad.push(el.getAttribute('aria-label') ?? el.textContent ?? el.tagName);
+        }
+        return { bad, n: probes.length };
+      });
+    const scenario = async (size: string) => {
+      previews.length = 0;
+      await page.goto('about:blank');
+      await page.goto(`/#/vacancies/${DVID}/results`);
+      const panel = cpanel(page, meta.lang);
+      await expect(panel.getByTestId('context-chip')).toContainText('Aysel Məmmədova');
+      const box = panel.getByRole('textbox');
+      await box.fill('Why is CCIE not found?');
+      await box.press('Enter');
+      // 2) The button opens the drawer; while the preview is out the note says so.
+      await edit().click();
+      await expect(drawer).toBeVisible();
+      await expect(
+        drawer.getByText(tt('Checking what this would change…')),
+        `${size}: checking note`,
+      ).toBeVisible();
+      await expect.poll(() => previews.length, { message: `${size}: preview asked` }).toBe(1);
+      await expect(page.getByText(what), `${size}: what-if note`).toBeVisible();
+      const top = await onTop();
+      expect(top.n, 'Close, three radios per requirement and Back to original').toBeGreaterThan(5);
+      expect(top.bad, `${size}: every control is above the SenAI panel`).toEqual([]);
+      const group = drawer.locator(`#req-row-${CCIE}`);
+      await expect(group, `${size}: the group is pointed at`).toHaveClass(/border-accent/);
+      await expect(
+        group.locator('input:checked'),
+        `${size}: its checked radio has focus`,
+      ).toBeFocused();
+      await ux.check(`drawer ${size}`, STD, { overlay: 'dialog[open]' });
+      // Nothing is saved until a radio is chosen.
+      seenAdj.length = 0;
+      seenAdj.push(
+        ...seen.requests
+          .filter((r) => r.method === 'POST' && /\/adjustments(\/reset)?$/.test(r.url))
+          .map((r) => r.url),
+      );
+      expect(seenAdj, `${size}: no adjustment saved by opening`).toEqual([]);
+    };
+    // 1) At the project's screen size.
+    await scenario(`${page.viewportSize()!.width} px`);
+    // 3) The same at 1024 x 768.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await scenario('1024 px');
+    // 4) Close and open it again with the Requirements button: the earlier what-if is gone.
+    await drawer.getByRole('button', { name: tt('Close'), exact: true }).click();
+    await expect(drawer).toHaveCount(0);
+    await page
+      .getByRole('button', { name: new RegExp(`^${tt('Requirements')}`) })
+      .first()
+      .click();
+    await expect(drawer).toBeVisible();
+    await expect(page.getByText(what), 'the earlier what-if note is gone').toHaveCount(0);
+    await expect(drawer.locator(`#req-row-${CCIE}`)).not.toHaveClass(/border-accent/);
+    expect(
+      seen.requests.filter((r) => r.method === 'POST' && /\/adjustments(\/reset)?$/.test(r.url)),
+      'still nothing saved',
+    ).toHaveLength(0);
+    await ux.check('drawer reopened', STD, { overlay: 'dialog[open]' });
   },
 );

@@ -64,6 +64,7 @@ export function Brand({
 }) {
   return (
     <span
+      role="img"
       className="inline-flex items-center gap-2.5"
       aria-label={compact ? BRAND_NAME : BRAND_FULL}
     >

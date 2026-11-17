@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { api, type Me } from '../api';
 import { setAssistantScope } from '../assistant';
 import { tr, useT } from '../i18n';
 import { go } from '../route';
 import { ago, STATUS_STYLE, statusName, type VacancyView } from '../pool';
-import { btnSecondary, errMsg, Notice, when } from '../ui';
-import { CandidatePool } from './CandidatePool';
-import { Report } from './Report';
+import { btnSecondary, errMsg, Notice, tapLink, when } from '../ui';
+import { CandidatePool, Report } from './lazy';
 import { BatchPanel } from './BatchPanel';
 import { ResumesCard } from './ResumesCard';
 import { Results } from './Results';
@@ -173,7 +172,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   if (creating)
     return (
       <div className="mx-auto max-w-3xl space-y-4">
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <h1 className="text-2xl font-bold tracking-tight">{t('New vacancy')}</h1>
@@ -191,7 +190,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   if (error && !v)
     return (
       <div className="space-y-3">
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <Notice kind="error">{error}</Notice>
@@ -214,7 +213,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   return (
     <div className="space-y-5">
       <div>
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <div className="mt-1 flex flex-wrap items-center gap-3">
@@ -423,17 +422,29 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         ))}
       </div>
       <div role="tabpanel" id="vacancy-tabpanel" aria-labelledby={`vtab-${tab}`}>
-        {tab === 'candidates' ? (
-          <CandidatePool vacancyId={v.id} vacancyTitle={v.title} canMark />
-        ) : tab === 'results' ? (
-          <Results vacancyId={v.id} onTable={() => go(`/vacancies/${v.id}/candidates`)} />
-        ) : tab === 'report' ? (
-          <Report vacancyId={v.id} title={v.title} createdAt={v.createdAt} />
-        ) : tab === 'runs' ? (
-          <Runs id={v.id} rows={runs} error={runsError} />
-        ) : (
-          <CriteriaTab id={v.id} />
-        )}
+        <Suspense
+          fallback={
+            <p role="status" className="p-4 text-sm text-ink-2">
+              {t('Loading…')}
+            </p>
+          }
+        >
+          {tab === 'candidates' ? (
+            <CandidatePool vacancyId={v.id} vacancyTitle={v.title} canMark />
+          ) : tab === 'results' ? (
+            <Results
+              vacancyId={v.id}
+              onTable={() => go(`/vacancies/${v.id}/candidates`)}
+              archived={v.archived}
+            />
+          ) : tab === 'report' ? (
+            <Report vacancyId={v.id} title={v.title} createdAt={v.createdAt} />
+          ) : tab === 'runs' ? (
+            <Runs id={v.id} rows={runs} error={runsError} />
+          ) : (
+            <CriteriaTab id={v.id} archived={v.archived} />
+          )}
+        </Suspense>
       </div>
     </div>
   );

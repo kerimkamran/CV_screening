@@ -288,6 +288,10 @@
     :is(button, summary, [role='button']):not([data-tgt='small']) {
       min-width: 44px;
     }
+    /* A checkbox or radio is small by nature; the label that wraps it is the target. */
+    label:has(> input:is([type='checkbox'], [type='radio'])) {
+      min-height: 44px;
+    }
   }
 }
 
@@ -361,5 +365,14 @@
     animation: none;
     transform: none;
     opacity: 0.4;
+  }
+}
+
+/* Forced colours (Windows high contrast): a focus ring drawn with box-shadow is removed by the
+   system, so every focused control gets a real outline there (A11-10). */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
   }
 }

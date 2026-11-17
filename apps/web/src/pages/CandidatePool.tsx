@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { CV_STATUS_LABEL, type CvStatus, type Mark } from '@cv/shared';
 import { api, ApiError } from '../api';
 import { go } from '../route';
-import { locale, tr, useT } from '../i18n';
+import { clock } from '../dates';
+import { tr, useT } from '../i18n';
 import {
   ago,
   BAND_NAME,
@@ -80,6 +81,8 @@ interface State {
   sort: SortKey;
   order: Order;
   scroll: number;
+  /** How many rows were on screen, so coming back from a CV brings them all back (CP-24). */
+  loaded: number;
 }
 const DEFAULT: State = {
   active: '',
@@ -93,6 +96,7 @@ const DEFAULT: State = {
   sort: 'match',
   order: 'desc',
   scroll: 0,
+  loaded: 0,
 };
 const stateKey = (vacancyId?: string) => `cv-pool:${vacancyId ?? 'all'}`;
 function remembered(vacancyId?: string): State {
@@ -114,6 +118,10 @@ function remembered(vacancyId?: string): State {
         : 'match',
       order: j.order === 'asc' ? 'asc' : 'desc',
       scroll: typeof j.scroll === 'number' ? j.scroll : 0,
+      loaded:
+        typeof j.loaded === 'number' && Number.isFinite(j.loaded)
+          ? Math.min(Math.max(Math.floor(j.loaded), 0), 1000)
+          : 0,
     };
   } catch {
     return DEFAULT;
@@ -124,6 +132,8 @@ const params = (s: State, vacancyId?: string) => {
   const p = new URLSearchParams();
   const v = vacancyId ?? s.vacancy;
   if (v) p.set('vacancy', v);
+  // The page of one vacancy shows its CVs even when the vacancy is archived (read-only there).
+  if (vacancyId) p.set('archived', 'true');
   if (s.batch) p.set('batch', s.batch);
   if (s.show === 'all') p.set('status', 'all');
   else if (s.show) p.set('status', SHOW_STATUSES[s.show].join(','));
@@ -179,6 +189,7 @@ export function CandidatePool({
   const [copied, setCopied] = useState<'yes' | 'no' | ''>('');
   const { toast, show, dismiss } = useUndoToast();
   const restored = useRef(false);
+  const wantRows = useRef(s.loaded);
   const wide = useWide();
   const [activeId, setActiveId] = useState<string | null>(() => s.active || null);
   // The whole ordered list as ids, for Previous and Next on the review screen (S2-FE5).
@@ -195,6 +206,10 @@ export function CandidatePool({
       /* a convenience only */
     }
   }, [s, vacancyId]);
+  useEffect(() => {
+    if (rows.length === 0) return;
+    setS((cur) => (cur.loaded === rows.length ? cur : { ...cur, loaded: rows.length }));
+  }, [rows.length]);
   useEffect(() => {
     const keep = () => setS((cur) => ({ ...cur, scroll: window.scrollY }));
     window.addEventListener('pagehide', keep);
@@ -233,10 +248,26 @@ export function CandidatePool({
     async (keepError = false) => {
       if (!keepError) setError('');
       setExpired(false);
+      // Only the first load after arriving brings back the rows that were on screen when the person
+      // left (the next pages, by cursor); a new filter or search starts again from the top.
+      const want = wantRows.current;
+      wantRows.current = 0;
       try {
         const r = await api.get<PoolPage>(`/candidates?${query}&limit=${PAGE}`);
-        setPage(r);
-        setRows(r.rows);
+        let last = r;
+        const all = [...r.rows];
+        while (all.length < want && last.nextCursor) {
+          try {
+            last = await api.get<PoolPage>(
+              `/candidates?${query}&limit=${PAGE}&cursor=${encodeURIComponent(last.nextCursor)}`,
+            );
+          } catch {
+            break; // an expired list: what was loaded is shown, 'Show more' reports it
+          }
+          all.push(...last.rows);
+        }
+        setPage(last === r ? r : { ...last, rows: [] });
+        setRows(all);
       } catch (e) {
         setError(errMsg(e));
       }
@@ -659,10 +690,10 @@ export function CandidatePool({
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <label className="flex items-center gap-2">
+          <label className="flex max-w-full min-w-0 items-center gap-2">
             <span className="text-ink-3">{t('Show')}</span>
             <select
-              className={`${input} w-auto!`}
+              className={`${input} w-auto! max-w-full min-w-0`}
               aria-label={t('Show')}
               value={s.show}
               onChange={(e) => patch({ show: e.target.value as ShowKey })}
@@ -752,10 +783,7 @@ export function CandidatePool({
             <span className="text-ink-3">
               {' · '}
               {t('As of {time}', {
-                time: new Date(page.asOf).toLocaleTimeString(locale(), {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
+                time: clock(new Date(page.asOf)),
               })}
             </span>
           )}
@@ -984,14 +1012,17 @@ export function CandidatePool({
                 >
                   <span role="columnheader" aria-hidden={canMark ? undefined : true}>
                     {canMark && (
-                      <input
-                        type="checkbox"
-                        aria-label={t('Select all shown')}
-                        checked={allSelected}
-                        onChange={(e) =>
-                          setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
-                        }
-                      />
+                      // A label, so the whole 44 px square toggles the box (WCAG 2.5.5).
+                      <label className="-m-3 flex h-11 w-11 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          aria-label={t('Select all shown')}
+                          checked={allSelected}
+                          onChange={(e) =>
+                            setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
+                          }
+                        />
+                      </label>
                     )}
                   </span>
                   {(
@@ -1072,7 +1103,8 @@ export function CandidatePool({
                       else leave(r);
                     }}
                   >
-                    <span
+                    {/* A label, so the whole 44 px square toggles the box (a touch target, WCAG 2.5.5). */}
+                    <label
                       onClick={(e) => e.stopPropagation()}
                       className="-m-3 flex h-11 w-11 items-center justify-center"
                     >
@@ -1085,7 +1117,7 @@ export function CandidatePool({
                           onChange={(e) => toggleOne(r, e.target.checked)}
                         />
                       )}
-                    </span>
+                    </label>
                     <span className="min-w-0">
                       <a
                         href={reviewHref(r.documentId)}

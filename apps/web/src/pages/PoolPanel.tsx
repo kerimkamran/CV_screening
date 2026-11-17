@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import {
   closeAssistant,
-  SLOGAN,
+  keepPoolThread,
+  keptPoolThread,
+  sloganFor,
   takePendingQuestion,
   useAssistantOpen,
   useAssistantScope,
@@ -12,8 +14,8 @@ import {
 import { Mark as Logo } from '../brand';
 import { getLang, tr, useT } from '../i18n';
 import { ago, BAND_NAME, BAND_STYLE, MARK_STYLE, type Band } from '../pool';
-import { reviewHref } from '../review';
-import { btnPrimary, btnSecondary, errMsg } from '../ui';
+import { openCv, reviewHref } from '../review';
+import { btnPrimary, btnSecondary, errMsg, tapLink } from '../ui';
 
 /** What the server writes for a pool question (apps/api pool-assistant.service.ts). */
 export interface PoolAnswer {
@@ -95,8 +97,12 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
   const scope = useAssistantScope();
   const queued = usePendingQuestion();
   const scopeId = scope?.id;
-  const [items, setItems] = useState<Item[]>([]);
-  const [cid, setCid] = useState<string | undefined>();
+  const [items, setItems] = useState<Item[]>(
+    () => keptPoolThread<{ items: Item[]; cid?: string }>()?.items ?? [],
+  );
+  const [cid, setCid] = useState<string | undefined>(
+    () => keptPoolThread<{ items: Item[]; cid?: string }>()?.cid,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [text, setText] = useState('');
@@ -168,6 +174,11 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
     },
     [busy, cid, scopeId, config.name],
   );
+
+  // The thread outlives this panel: a CV screen takes the panel over and gives it back (SA-16).
+  useEffect(() => {
+    keepPoolThread(items.length ? { items, cid } : null);
+  }, [items, cid]);
 
   // A question typed in the Ask bar arrives here.
   useEffect(() => {
@@ -267,7 +278,9 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
             <Logo size={20} />
             {config.name}
           </h2>
-          <p className="mt-0.5 text-xs text-ink-3">{SLOGAN}</p>
+          <p lang="az" className="mt-0.5 text-xs text-ink-3">
+            {sloganFor(config.name)}
+          </p>
           <p className="mt-1 truncate text-sm text-ink-2" data-testid="scope-chip">
             {scope
               ? t('Searching in: {title}', { title: scope.title })
@@ -469,7 +482,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
             rows={2}
             maxLength={1000}
             value={text}
-            placeholder={SLOGAN}
+            placeholder={sloganFor(config.name)}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -517,7 +530,10 @@ function PoolAnswerView({
       <p className="font-medium">{a.headline}</p>
       {a.vacancy && a.kind === 'pool' && (
         <p className="text-xs text-ink-3">
-          <a className="text-link hover:underline" href={`#/vacancies/${a.vacancy.id}`}>
+          <a
+            className={`text-link hover:underline ${tapLink}`}
+            href={`#/vacancies/${a.vacancy.id}`}
+          >
             {a.vacancy.title}
           </a>
         </p>
@@ -661,6 +677,29 @@ function PoolAnswerView({
                 <a
                   className="font-medium text-link hover:underline"
                   href={reviewHref(r.documentId)}
+                  onClick={(e) => {
+                    // Previous and Next on that CV follow this answer, and Back returns to it (SA-16).
+                    if (
+                      e.defaultPrevented ||
+                      e.button !== 0 ||
+                      e.metaKey ||
+                      e.ctrlKey ||
+                      e.shiftKey
+                    )
+                      return;
+                    e.preventDefault();
+                    openCv(
+                      r.documentId,
+                      {
+                        label: t('SenAI answer'),
+                        back: window.location.hash.slice(1) || '/vacancies',
+                        ids: a.rows.map((x) => x.documentId),
+                      },
+                      (route) => {
+                        window.location.hash = `#${route}`;
+                      },
+                    );
+                  }}
                 >
                   {r.label}
                 </a>
