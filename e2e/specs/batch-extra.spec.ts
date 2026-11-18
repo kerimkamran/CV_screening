@@ -60,7 +60,7 @@ uat(
     }
     if (meta.lang === 'az') {
       const head = await run('Aysel Mammadova', 6);
-      await expect(head).toHaveText('Salam, Aysel! Özünə bir qəhvə götür və dincəl.');
+      await expect(head).toHaveText('Salam, Aysel! Özünüzə bir qəhvə götürün və dincəlin.');
     }
     await ux.check('greeting', [...STD, 'AZ']);
   },

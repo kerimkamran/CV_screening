@@ -81,7 +81,7 @@ uat(
     await b.getByLabel('Password', { exact: true }).fill(acc.password);
     await b.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(b.getByRole('navigation', { name: az('Main') })).toBeVisible();
-    await expect(b.getByRole('heading', { level: 1, name: az('Vacancies') })).toBeVisible();
+    await expect(b.getByRole('heading', { level: 1, name: az('Home') })).toBeVisible();
     expect(await bgOf(b)).toBe('dark');
     expect(await b.evaluate(() => document.documentElement.lang)).toBe('az');
 
@@ -109,7 +109,7 @@ uat(
 
     // 4) Reload: the choice stays, and theme-init.js set it before the app ran.
     await b.reload();
-    await expect(b.getByRole('heading', { level: 1, name: az('Vacancies') })).toBeVisible();
+    await expect(b.getByRole('heading', { level: 1, name: az('Home') })).toBeVisible();
     expect(await b.evaluate(() => (window as unknown as { __bgAtBody?: string }).__bgAtBody)).toBe(
       'auto',
     );

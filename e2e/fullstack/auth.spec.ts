@@ -242,7 +242,7 @@ uat(
       await expect(q.getByLabel('Account menu', { exact: true })).toBeVisible();
       if (i === 0) {
         await expect(q.getByRole('navigation', { name: 'Main' })).toBeVisible();
-        await expect(q.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
+        await expect(q.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
       } else
         await expect(q.getByRole('heading', { level: 1, name: 'Shared with me' })).toBeVisible();
       flush();
@@ -327,7 +327,7 @@ uat(
     // 6) A valid one: the recruiter home; the API answers.
     await fill(temp, 'A quiet river at dawn 42');
     await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeVisible();
     const t2 = (await page.evaluate(() => sessionStorage.getItem('cv.session')))!;
     expect((await api(t2).get('/vacancies')).status).toBe(200);
     await ux.check('recruiter home', ['OCC', 'OVL', 'OVF', 'TGT', 'AXE']);

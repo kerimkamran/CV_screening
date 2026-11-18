@@ -240,7 +240,8 @@ export async function growVacancy(vacancyId: string, total: number) {
                             ai_provider, ai_model, created_at, started_at, completed_at)
      SELECT upper(substr(md5('s' || g::text || $1), 1, 26)), upper(substr(md5('d' || g::text || $1), 1, 26)),
             s.requirement_set_id, s.state, s.candidate_name || ' ' || g, NULL, s.summary, s.knockout,
-            s.knockout_triggered, s.injection_suspected, LEAST(100, GREATEST(0, s.score + (g % 9) - 4)),
+            s.knockout_triggered, s.injection_suspected,
+            CASE WHEN s.score IS NULL THEN NULL ELSE LEAST(100, GREATEST(0, s.score + (g % 9) - 4)) END,
             s.breakdown, s.band, s.ai_provider, s.ai_model, s.created_at, s.started_at, s.completed_at
        FROM generate_series(1, $2::int) g
        JOIN LATERAL (SELECT sc.* FROM screening sc JOIN cv_document d ON d.id = sc.document_id

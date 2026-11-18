@@ -274,7 +274,7 @@ uat(
       }
     }
     await attach(info, 'toolbar controls', found);
-    if (meta.lang === 'az') expect.soft(t('Close full screen')).toBe('Tam ekranı bağla');
+    if (meta.lang === 'az') expect.soft(t('Close full screen')).toBe('Tam ekranı bağlayın');
     await ux.check('full screen toolbar', [...STD, 'AZ']);
 
     // Every control with a normal click (no force).

@@ -295,7 +295,7 @@ uat(
       expect.soft(q.get('sort'), `${label}: sort`).toBe('updated');
       expect.soft(q.get('order'), `${label}: order`).toBe('desc');
       await expect.soft(pressed()).toHaveCount(1);
-      await expect.soft(pressed()).toHaveText(t(label));
+      await expect.soft(pressed()).toHaveText(S(meta.lang)(label));
     }
     await ux.check('chips', [...STD, 'AZ']);
     // KEY: Tab to the chips, Space on 'Closed'.

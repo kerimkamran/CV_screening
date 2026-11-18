@@ -78,10 +78,11 @@ uat(
     await expect(page.getByRole('checkbox', { name: w('Out of date only') })).not.toBeChecked();
     await expect(page.getByRole('button', { name: w('Clear the filters') })).toHaveCount(0);
     const time = meta.lang === 'az' ? /\d{2}:\d{2} vəziyyətinə görə/ : /As of \d{2}:\d{2}/;
-    await expect(statusLine(page)).toHaveText(
-      new RegExp(
-        `^${w('{n} candidates', { n: 4 })} · ${w('{n} strong', { n: 1 })} · ${w('{n} out of date', { n: 2 })} · ${time.source}$`,
-      ),
+    // Only the counts are in the live region; the time beside them is not announced again on a refresh.
+    const counts = `${w('{n} candidates', { n: 4 })} · ${w('{n} strong', { n: 1 })} · ${w('{n} out of date', { n: 2 })}`;
+    await expect(statusLine(page)).toHaveText(new RegExp(`^${counts}$`));
+    await expect(statusLine(page).locator('xpath=..')).toHaveText(
+      new RegExp(`^${counts} · ${time.source}$`),
     );
     await expect(page.getByRole('button', { name: w('Export to Excel') })).toBeEnabled();
     await expect(page.getByRole('button', { name: w('Shortlist summary') })).toBeDisabled();

@@ -491,7 +491,7 @@ uat(
     await expect.soft(page.getByText(t('{n} skipped,', { n: 2 }))).toBeVisible();
     await expect.soft(see).toHaveAttribute('aria-expanded', 'false');
     await see.click();
-    await expect.soft(page.getByText('a.png: Not a CV file type')).toBeVisible();
+    await expect.soft(page.getByText(`a.png: ${t('Not a CV file type')}`)).toBeVisible();
     await expect
       .soft(page.getByRole('button', { name: t('hide which') }))
       .toHaveAttribute('aria-expanded', 'true');

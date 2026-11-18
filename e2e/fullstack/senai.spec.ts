@@ -942,13 +942,13 @@ uat(
     const p2 = await page.context().newPage();
     await openAs(p2, accounts().admin, '#/admin/assistant');
     const row = p2
-      .getByRole('list', { name: 'Added words' })
+      .getByRole('list', { name: tt('Added words') })
       .getByRole('listitem')
       .filter({ hasText: word });
-    await expect(row).toContainText('(proposed)');
-    await expect(row).toContainText(`by ${rec.displayName}`);
-    await row.getByRole('button', { name: `Approve ${word}` }).click();
-    await expect(row).toContainText('(approved)');
+    await expect(row).toContainText(`(${tt('proposed')}`);
+    await expect(row).toContainText(tt('by {name}').replace('{name}', rec.displayName));
+    await row.getByRole('button', { name: `${tt('Approve')} ${word}` }).click();
+    await expect(row).toContainText(`(${tt('approved')}`);
     await p2.close();
     // 5) A new chat: no unknown-word note and a skill chip.
     const r2 = (await ask(await login(rec), `who knows ${word}`)).answer as Ans & {

@@ -38,6 +38,30 @@ describe('the language switch (SD-133)', () => {
     expect(tr('Language')).not.toBe('');
   });
 
+  it('sends two quick changes one after the other, so the last choice is the one stored (AC-04)', async () => {
+    const started: string[] = [];
+    const release: (() => void)[] = [];
+    vi.stubGlobal('fetch', (_u: string, init?: RequestInit) => {
+      started.push(JSON.parse(String(init?.body)).language);
+      return new Promise<Response>((done) =>
+        release.push(() =>
+          done(
+            new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+          ),
+        ),
+      );
+    });
+    render(<LanguageSwitch signedIn />);
+    const pick = screen.getByRole('combobox', { name: 'Language' });
+    await userEvent.selectOptions(pick, 'az');
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'en');
+    // The second save waits for the first: only one is on its way.
+    await waitFor(() => expect(started).toEqual(['az']));
+    release[0]!();
+    await waitFor(() => expect(started).toEqual(['az', 'en']));
+    release[1]!();
+  });
+
   it('does not call the server when nobody is signed in', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);

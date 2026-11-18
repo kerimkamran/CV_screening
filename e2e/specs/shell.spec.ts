@@ -504,7 +504,7 @@ uat(
             ),
           ).toBeVisible(),
         '#/admin/unknown': () =>
-          expect(page.getByRole('heading', { name: 'Add a user' })).toBeVisible(),
+          expect(page.getByRole('heading', { name: t('Add a user') })).toBeVisible(),
       },
       governance: {
         '#/nope': async () => {
@@ -707,11 +707,11 @@ uat(
     down = false;
     await page.clock.install();
     await openWith(page, '#/admin', { me: { roles: ['ADMIN'] }, table: ADMIN_ANSWERS, extra: cut });
-    await expect(page.getByRole('heading', { name: 'Add a user' })).toBeVisible();
-    await page.getByLabel('Email', { exact: true }).fill('new.person@example.az');
-    await page.getByLabel('Name', { exact: true }).fill('New Person');
+    await expect(page.getByRole('heading', { name: t('Add a user') })).toBeVisible();
+    await page.getByLabel(t('Email'), { exact: true }).fill('new.person@example.az');
+    await page.getByLabel(t('Name'), { exact: true }).fill('New Person');
     down = true;
-    await page.getByRole('button', { name: 'Create user' }).click();
+    await page.getByRole('button', { name: t('Create user') }).click();
     await expect(alert).toBeVisible();
     const adminText = (await alert.innerText()).trim();
     expect.soft(adminText, 'the Create user error is never empty').not.toBe('');
@@ -729,7 +729,7 @@ uat(
     // 4) One answer is an HTML error page with an empty status text.
     down = false;
     html520 = true;
-    await page.getByRole('button', { name: 'Create user' }).click();
+    await page.getByRole('button', { name: t('Create user') }).click();
     await page.waitForTimeout(500);
     expect(html520, 'the 502 answer was used').toBe(false);
     await expect
@@ -1187,9 +1187,9 @@ uat('AC-02', 'Account menu items per role', { on: ['D', 'A'] }, async ({ page, u
   const t = words(meta);
   const LINK: Record<string, RegExp> = {
     'Shared with me': /#\/reports$/,
-    Monitoring: /#\/admin\/monitoring$/,
-    Admin: /#\/admin$/,
-    Password: /#\/password$/,
+    'Fairness monitoring': /#\/admin\/monitoring$/,
+    Administration: /#\/admin$/,
+    'Change password': /#\/password$/,
     Security: /#\/security$/,
   };
   const cases: [string, string[], string[], boolean][] = [

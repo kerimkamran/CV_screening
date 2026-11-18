@@ -45,6 +45,8 @@ uat(
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     for (let i = 0; i < 12; i++) {
       const k = keys[i % 3]!;
+      // A key pressed before the CV has loaded has nothing to decide yet: wait for the analysis.
+      await expect(page.getByTestId('analysis-pane')).toBeVisible();
       const t0 = Date.now();
       await page.keyboard.press(k);
       want[order[i]!] = { s: 'shortlist', m: 'maybe', n: 'not_now' }[k]!;

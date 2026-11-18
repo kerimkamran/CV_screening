@@ -631,7 +631,7 @@ uat(
     await page.goto(`/#/vacancies/${VID}/candidates`);
     // The vacancy page has its own live region (what is missing before a start): take the pool's.
     await expect(
-      page.locator('p[role="status"]').filter({ hasText: /\d+ (candidates?|namizəd)/ }),
+      page.locator('span[role="status"]').filter({ hasText: /\d+ (candidates?|namizəd)/ }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: w('Candidates') })).toHaveCount(0);
     await expect(page.getByRole('combobox', { name: w('Vacancy') })).toHaveCount(0);

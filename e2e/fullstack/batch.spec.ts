@@ -466,7 +466,6 @@ uat(
     } finally {
       await setFailMarkers([]);
     }
-    void rx;
   },
 );
 

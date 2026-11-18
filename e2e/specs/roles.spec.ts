@@ -255,7 +255,7 @@ uat('RO-04', 'Route matrix: governance', { on: ['D', 'A'], langs: 'EN' }, async 
     if (r === '#/') {
       // Home for governance: monitoring, the assistant review and shared reports, nothing else.
       await expect(page.getByRole('region', { name: 'Oversight' })).toBeVisible();
-      await expect(page.getByRole('link', { name: /^Monitoring/ })).toBeVisible();
+      await expect(page.getByRole('link', { name: /^Fairness monitoring/ })).toBeVisible();
       await expect(page.getByRole('link', { name: /^Users/ })).toHaveCount(0);
       continue;
     }

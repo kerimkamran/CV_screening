@@ -822,8 +822,8 @@ uat('CV-10', 'Show in CV and Hide in CV', { on: ['D', 'T', 'A'] }, async ({ page
   });
   expect.soft(r.inside, 'the <mark> is in view inside the text box').toBe(true);
   if (meta.lang === 'az') {
-    expect.soft(t('Show in CV')).toBe('CV-də göstər');
-    expect.soft(t('Hide in CV')).toBe('CV-də gizlət');
+    expect.soft(t('Show in CV')).toBe('CV-də göstərin');
+    expect.soft(t('Hide in CV')).toBe('CV-də gizlədin');
   }
   await ux.check('text CV marked', [...STD, 'AZ']);
 });
@@ -1884,7 +1884,7 @@ uat(
           .toHaveCount(0);
     }
     await page.goto(`/#/cv/${DID18}`);
-    await expect.soft(cvPane.getByText('Scanned image without text.')).toBeVisible();
+    await expect.soft(cvPane.getByText(t('Scanned image without text.'))).toBeVisible();
     await ux.check('no text', [...STD, 'AZ']);
     textMode = 'fail';
     await page.goto(`/#/cv/${DID2}`);

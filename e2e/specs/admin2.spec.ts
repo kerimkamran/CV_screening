@@ -579,7 +579,7 @@ uat(
     );
     await expect(page.getByRole('heading', { name: t('Paired-CV test') })).toBeVisible();
     for (const v of ['Base', 'Azerbaijani female name', 'Career break line'])
-      await expect(page.getByText(new RegExp(`^${v}:`))).toBeVisible();
+      await expect(page.getByText(new RegExp(`^${t(v)}:`))).toBeVisible();
     await expect(
       page.getByText(
         t(

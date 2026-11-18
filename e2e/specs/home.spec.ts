@@ -178,7 +178,12 @@ uat(
     await expect(panel.getByText(q).first()).toBeVisible();
     await expect(prompt).toHaveValue('');
 
-    // 3) The Ask tile opens it without a question.
+    // 3) The Ask tile opens it without a question. The panel stays open across reloads once opened,
+    //    so forget that, or on a phone the sheet covers the tile before it is pressed.
+    await page.evaluate(() => {
+      for (const k of Object.keys(localStorage))
+        if (k.startsWith('cv-assistant-open')) localStorage.removeItem(k);
+    });
     await openWith(page, '#/', {
       me: { roles: ['TA_PARTNER'] },
       assistant: SENAI_ON,

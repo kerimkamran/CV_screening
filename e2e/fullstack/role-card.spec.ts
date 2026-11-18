@@ -107,9 +107,14 @@ uat(
     const since = new Date().toISOString();
     // 1) Sign in.
     await signInUi(page, acc.recruiter);
-    await expect(page.getByRole('heading', { level: 1, name: t('Vacancies') })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: t('Home') })).toBeVisible();
     await ux.check('signed in', [...STD, 'AZ']);
-    // 2) New vacancy.
+    // 2) New vacancy, from the Vacancies page (a recruiter lands on Home now).
+    await page
+      .getByRole('navigation', { name: t('Main') })
+      .getByRole('link', { name: t('Vacancies') })
+      .click();
+    await expect(page.getByRole('heading', { level: 1, name: t('Vacancies') })).toBeVisible();
     await page
       .getByRole('link', { name: t('New vacancy'), exact: true })
       .first()

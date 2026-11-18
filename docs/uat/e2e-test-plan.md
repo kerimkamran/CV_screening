@@ -10,7 +10,7 @@
 | Owner | Kamran (product owner) |
 | Where | this Mac, against a local copy of the full app (no live candidate data) |
 | Results | in this file (section 10) and in the copy sheet `docs/uat/e2e-test-cases.csv` |
-| Status | **Ready to run. Nothing has been installed or run yet.** |
+| Status | **Run 3 to 18 Nov 2026: 390 of 398 cases pass, 0 fail, 8 blocked (real AI, owner key).** Report: `docs/uat/e2e-final-report.md` |
 
 ## At a glance
 

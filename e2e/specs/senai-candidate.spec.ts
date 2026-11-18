@@ -132,7 +132,7 @@ uat(
       .filter({ hasText: tt('{name} is reading the record…').replace('{name}', 'SenAI') });
     await expect(busy).toBeVisible();
     await busy.getByRole('button', { name: tt('Stop') }).click();
-    await expect(panel.getByText(tt('Stopped. Nothing was changed.'))).toBeVisible();
+    await expect(panel.getByText(tt('Stopped. Nothing was changed.')).first()).toBeVisible();
     await expect(box).toBeEnabled();
     // 5) the late answer is not added.
     await page.waitForTimeout(3000);

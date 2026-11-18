@@ -546,6 +546,16 @@ uat(
           const cx = b.left + b.width / 2;
           const cy = b.top + b.height / 2;
           if (cy < 57 || cy > innerHeight || cx < 0 || cx > innerWidth) continue;
+          // Part of a strip that scrolls (the vacancy tabs): where its box is cut off, the control is
+          // not on screen; scrolling the strip brings it into the visible part.
+          let cut = false;
+          for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+            const st = getComputedStyle(a);
+            if (st.overflowX === 'visible' && st.overflowY === 'visible') continue;
+            const ab = a.getBoundingClientRect();
+            if (cx < ab.left || cx > ab.right || cy < ab.top || cy > ab.bottom) cut = true;
+          }
+          if (cut) continue;
           const hit = document.elementFromPoint(cx, cy);
           if (hit && document.querySelector('aside')!.contains(hit))
             covered.push(

@@ -9,6 +9,17 @@ import {
   type BackgroundChoice,
 } from './theme';
 
+/**
+ * Saves go out one after the other, in the order the person made them: two quick changes (language
+ * twice, say) must not reach the server the other way round and leave the older choice stored (AC-04).
+ */
+let saving: Promise<unknown> = Promise.resolve();
+function savePreference(patch: { language: Lang } | { background: BackgroundChoice }) {
+  const run = saving.then(() => api.put('/me/preferences', patch));
+  saving = run.catch(() => undefined);
+  return run;
+}
+
 /** Language switch (spec 13). Saved per person when signed in; kept in the browser either way. */
 export function LanguageSwitch({ signedIn }: { signedIn: boolean }) {
   const t = useT();
@@ -19,7 +30,7 @@ export function LanguageSwitch({ signedIn }: { signedIn: boolean }) {
     if (!signedIn) return;
     // The language applies at once; when the account could not keep it, say so (SD-133).
     try {
-      await api.put('/me/preferences', { language: next });
+      await savePreference({ language: next });
       setFailed(false);
     } catch {
       setFailed(true);
@@ -66,7 +77,7 @@ export function Appearance({
     onChange(next);
     applyBackground(next);
     try {
-      await api.put('/me/preferences', { background: next });
+      await savePreference({ background: next });
       setFailed(false);
     } catch {
       setFailed(true);

@@ -172,7 +172,14 @@ uat(
       expect(r.status).toBe(200);
       // The admin notice.
       await openAs(page, acc.admin, '#/admin/assistant');
-      await expect(page.getByText(/SenAI is off\. Recruiters do not see it\./)).toBeVisible();
+      await expect(
+        page.getByText(
+          T(meta.lang)(
+            '{name} is off. Recruiters do not see it. It explains stored matches; it never scores, ranks or decides.',
+            { name: 'SenAI' },
+          ),
+        ),
+      ).toBeVisible();
       // The recruiter, who had the panel open before.
       const p2 = await page.context().browser()!.newPage();
       const flush = ux.watch(p2);
@@ -266,7 +273,7 @@ uat(
       const panel = page.getByRole('complementary', { name: 'SenAI' });
       await panel
         .getByRole('button', {
-          name: meta.lang === 'az' ? /Ətraflı izah et|Daha çox izah/ : 'Explain more',
+          name: T(meta.lang)('Explain more'),
         })
         .click();
       const limit =
@@ -292,12 +299,14 @@ uat(
       await senaiPut({ dailyCap: 5, warnPct: 80 });
       const p2 = await page.context().newPage();
       await openAs(p2, acc.admin, '#/admin/assistant');
-      const daily = p2.getByLabel(/Answers per day/);
+      const daily = p2.getByLabel(new RegExp(`^${T(meta.lang)('Answers per day')}`));
       await daily.click();
       await daily.press('End');
       for (let i = 0; i < 4; i++) await daily.press('Backspace');
       await expect(daily).toHaveValue('');
-      const warn = p2.getByLabel(/Warn me at/);
+      const warn = p2.getByLabel(
+        new RegExp(`^${T(meta.lang)('Warn me at (%)').replace(/[()%]/g, '.')}`),
+      );
       await warn.click();
       await warn.press('ControlOrMeta+a');
       await warn.press('Backspace');
