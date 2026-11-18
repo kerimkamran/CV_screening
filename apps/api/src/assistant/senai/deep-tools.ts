@@ -4,7 +4,7 @@
  * All read-only except the person's own typed preference. Fixed wording; nothing here judges a person.
  */
 import { Injectable } from '@nestjs/common';
-import { fold, skillsInTokens, tokens } from '@cv/shared';
+import { fold, markFromStored, skillsInTokens, tokens } from '@cv/shared';
 import { DbService } from '../../db/db.service';
 import { anonymise } from '../../pipeline/anonymise';
 import { AdjustmentService } from '../../pipeline/adjustments.service';
@@ -144,13 +144,19 @@ export class DeepTools {
     const scope = one ? one.title : tsay(lang, 'everywhere');
     const rows = await this.pool.rows(list.map((v) => v.id));
     // Only the person's own marks are read.
-    const { rows: own } = await this.db.query<{ document_id: string }>(
-      `SELECT DISTINCT ON (s.document_id) s.document_id
+    // The person's own latest mark and note on each CV, never someone else's later one (SD-108).
+    const { rows: own } = await this.db.query<{
+      document_id: string;
+      outcome: string;
+      reason: string | null;
+    }>(
+      `SELECT DISTINCT ON (s.document_id) s.document_id, x.outcome::text AS outcome, x.reason
          FROM decision x JOIN screening s ON s.id = x.screening_id
         WHERE s.document_id = ANY($1::char(26)[]) AND x.decided_by = $2
         ORDER BY s.document_id, x.decided_at DESC, x.id DESC`,
       [rows.map((r) => r.documentId), c.p.userId],
     );
+    const ownMark = new Map(own.map((r) => [r.document_id, r]));
     const mine = new Set(own.map((r) => r.document_id));
     const items = await this.items(rows.map((r) => r.matchId));
     const sig = (r: PoolRow) =>
@@ -159,7 +165,13 @@ export class DeepTools {
         .map((i) => `${i.text}:${i.status}`)
         .sort()
         .join('|');
-    const marked = rows.filter((r) => mine.has(r.documentId) && r.decision !== 'new');
+    const marked = rows
+      .filter((r) => mine.has(r.documentId))
+      .map((r) => {
+        const m = ownMark.get(r.documentId)!;
+        return { ...r, decision: markFromStored(m.outcome), decisionNote: m.reason };
+      })
+      .filter((r) => r.decision !== 'new');
     const pairs: [PoolRow, PoolRow][] = [];
     for (let i = 0; i < marked.length; i++)
       for (let j = i + 1; j < marked.length; j++) {
@@ -236,13 +248,20 @@ export class DeepTools {
         const a = rows[i]!;
         const b = rows[j]!;
         const s = jaccard(sh.get(a.documentId)!, sh.get(b.documentId)!);
-        if (s >= 0.9) {
+        // A short resume with one word changed loses many shingles: compare its words too (SA-19).
+        const ta = tokens(text.get(a.documentId) ?? '');
+        const tb = tokens(text.get(b.documentId) ?? '');
+        const wordSim =
+          Math.abs(ta.length - tb.length) <= 3 && ta.length >= 20
+            ? jaccard(new Set(ta), new Set(tb))
+            : 0;
+        if (s >= 0.9 || wordSim >= 0.95) {
           dups += 1;
           if (out.length < 15)
             out.push({
               cells: [
                 `${a.label} / ${b.label}`,
-                dsay(lang, 'qualDup', { a: a.label, b: b.label, pct: pct(s) }),
+                dsay(lang, 'qualDup', { a: a.label, b: b.label, pct: pct(Math.max(s, wordSim)) }),
               ],
             });
         }
@@ -300,12 +319,24 @@ export class DeepTools {
       Number(years[1]) >= 5
     )
       tips.push(dsay(lang, 'jdJunior', { years: years[1]! }));
-    const wording =
-      /\b(young|youthful|native speaker|energetic young|under \d\d|up to \d\d years old|gənc|genc kollektiv|yas ?\d\d|кандидат моложе|молод\w+ коллектив|носитель языка)\b/.exec(
-        f,
-      );
-    if (wording) tips.push(dsay(lang, 'jdWording', { w: wording[0] }));
-    if (body.trim() && !years) tips.push(dsay(lang, 'jdNoRange'));
+    // One tip for each wording that can exclude people (SA-20), not only the first one found.
+    const wordings = new Set(
+      [
+        ...f.matchAll(
+          /\b(young|youthful|native speaker|energetic young|under \d\d|up to \d\d years old|gənc|genc kollektiv|yas ?\d\d|кандидат моложе|молод\w+ коллектив|носитель языка)\b/g,
+        ),
+      ].map((m) => m[0]),
+    );
+    for (const w of wordings) tips.push(dsay(lang, 'jdWording', { w }));
+    // A range is the vacancy's experience field or "3-5 years" in the text; "5+ years" alone is not one.
+    const { rows: vr } = await this.db.query<{ r: string }>(
+      `SELECT experience_range AS r FROM vacancy WHERE id = $1`,
+      [v.id],
+    );
+    const range =
+      (vr[0]?.r && vr[0].r !== 'any') ||
+      /\d{1,2}\s*(?:-|–|to|ilə|до)\s*\d{1,2}\s*(?:years?|il|yil|лет|года?)/.test(f);
+    if (body.trim() && !range) tips.push(dsay(lang, 'jdNoRange'));
     const reqText = fold(set.map((r) => r.text).join(' '));
     const seen = new Set<string>();
     for (const h of skillsInTokens(tokens(body))) {
@@ -315,7 +346,7 @@ export class DeepTools {
       if (!inReq) tips.push(dsay(lang, 'jdMissing', { skill: h.skill.label }));
       if (tips.length >= 8) break;
     }
-    return { tips, empty: false };
+    return { tips: tips.slice(0, 8), empty: false };
   }
 
   async jd(c: ToolCtx) {
@@ -420,15 +451,15 @@ export class DeepTools {
         r.decision === 'shortlist' ||
         r.decision === 'maybe',
     );
+    // One pass over the resumes for all the skills (a pass per skill took a minute on 8,000 CVs).
+    const found = await this.search.mentioned(
+      others,
+      [...skills.values()].map((s) => ({ id: s.id, label: s.label, phrase: null, words: [] })),
+    );
     const per = new Map<string, string[]>();
-    for (const s of skills.values()) {
-      const found = await this.search.skills(
-        others,
-        [{ id: s.id, label: s.label, phrase: null, words: [] }],
-        false,
-      );
-      for (const r of others)
-        if (found.has(r.documentId)) per.set(r.matchId, [...(per.get(r.matchId) ?? []), s.label]);
+    for (const r of others) {
+      const have = found.get(r.documentId);
+      if (have) per.set(r.matchId, have);
     }
     const need = Math.max(2, Math.ceil(skills.size * 0.6));
     const hit = others
@@ -486,7 +517,7 @@ export class DeepTools {
     if (hit && hit.passages.length) {
       c.a.headline = dsay(lang, 'chlFound', { skill, name: r.label });
       c.a.table = {
-        head: [tsay(lang, 'hCandidate'), '…'],
+        head: [dsay(lang, 'hSkillCol'), dsay(lang, 'hPassage')],
         rows: hit.passages.map((p) => ({
           cells: [p.skill, anonymise(raw.slice(p.start, p.end), [r.label]).text.trim()],
         })),

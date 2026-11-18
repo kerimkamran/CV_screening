@@ -34,7 +34,7 @@ export type ZipEntry =
 
 export class ZipProblem extends Error {}
 
-const WANTED = /\.(pdf|docx|txt)$/i;
+const WANTED = /\.(pdf|docx|txt|md)$/i;
 const ARCHIVE = /\.(zip|rar|7z|gz|tgz|tar|bz2|xz)$/i;
 
 const isLitter = (path: string) => {
@@ -112,7 +112,7 @@ export async function* iterateZip(buf: Buffer, limits: ZipLimits): AsyncGenerato
       continue;
     }
     if (!WANTED.test(name)) {
-      yield skip('Only PDF, DOCX and TXT files', 'wrong_type');
+      yield skip('Only PDF, DOCX, TXT and MD files', 'wrong_type');
       continue;
     }
     const meta = (

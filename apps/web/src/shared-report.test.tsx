@@ -175,10 +175,9 @@ describe('Shared report (spec 6.5)', () => {
       return { body: opened(report()) };
     });
     render(<App check={async () => ({ state: 'up' as const })} />);
-    expect(
-      await screen.findByRole('heading', { name: 'Reports shared with me' }),
-    ).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: 'Backend Engineer' });
+    expect(await screen.findByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
+    // The list is a screen that loads on demand, so its rows come a moment after its heading.
+    const link = await screen.findByRole('link', { name: 'Backend Engineer' });
     expect(link).toHaveAttribute('href', '#/reports/01ARZ3NDEKTSV4RRFFQ69G5FAV');
     // No recruiter navigation for a person with no role.
     expect(screen.queryByRole('link', { name: 'New screening' })).toBeNull();
@@ -251,6 +250,8 @@ describe('Share panel (spec 6.5)', () => {
   });
 
   it('lists what was shared, who opened it, and revokes a link', async () => {
+    // Revoking asks first (SD-37); the person confirms.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     let revoked = false;
     const calls = mockFetch((url, init) => {
       if (url.endsWith('/shares/SH1/revoke') && init?.method === 'POST') {

@@ -144,6 +144,37 @@ export class PoolSearch {
     return out;
   }
 
+  /**
+   * Which of these skills each resume mentions (document id → labels), reading every text once and
+   * folding it once for all the skills. Rediscovery looks across every other vacancy, so asking
+   * skill by skill read thousands of texts again for each skill (a minute on 8,000 CVs).
+   */
+  async mentioned(rows: PoolRow[], terms: SkillTerm[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    const res = terms.map((t) => ({ t, re: termRegex(t) }));
+    for (let i = 0; i < rows.length; i += 200) {
+      const batch = rows.slice(i, i + 200);
+      const { rows: docs } = await this.db.query<{ id: string; text: string | null }>(
+        `SELECT id, text FROM cv_document WHERE id = ANY($1::char(26)[]) AND erased_at IS NULL`,
+        [batch.map((r) => r.documentId)],
+      );
+      for (const d of docs) {
+        if (!d.text) continue;
+        const f = foldMapped(d.text);
+        const have: string[] = [];
+        for (const { t, re } of res) {
+          let found = re ? mentionsOf(f, re, d.text) : [];
+          if (!found.length && !t.id && t.phrase) found = nearMentions(f, d.text, t.phrase);
+          if (found.length) have.push(t.label);
+        }
+        if (have.length) out.set(d.id, have);
+      }
+      // Let other requests run between batches.
+      await new Promise<void>((r) => setImmediate(r));
+    }
+    return out;
+  }
+
   /** Puts the text of every passage into an answer for display. The stored answer keeps offsets only. */
   async hydrate<T extends { rows: { matchId: string; label: string; passages?: PassageRef[] }[] }>(
     a: T,

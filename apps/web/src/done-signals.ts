@@ -126,6 +126,17 @@ function show(title: string, icon: string) {
   }
 }
 
+/**
+ * The page's own title changed (a new screen opened). While a finish signal holds the tab title
+ * ("✓ Ready"), the new title is what gets restored; otherwise it is set now.
+ */
+export function retitle(next: string): void {
+  if (typeof document === 'undefined') return;
+  if (originalTitle === null) {
+    if (document.title !== next) document.title = next;
+  } else originalTitle = next;
+}
+
 /** Put the title and icon back as they were. */
 export function restoreTitle(): void {
   if (restoreTimer) clearTimeout(restoreTimer);

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useT } from '../i18n';
 import { api, type CandidateRow } from '../api';
 import { MARKS, markLabel, type MarkKey } from '../shortlist';
-import { btnPrimary, btnSecondary, errMsg, Notice } from '../ui';
+import { btnPrimary, btnSecondary, errMsg, Notice, tapLink } from '../ui';
 import { BAND_LABEL, skillChips, STAR_COLOUR, type MatchBand } from '../results-logic';
 
 export interface Span {
@@ -37,6 +37,8 @@ export function CandidateCard(props: {
   /** The assistant's name when it is on; the button is drawn only then. */
   assistantName?: string;
   onAsk?: () => void;
+  /** An archived vacancy: marks are off until it is restored (SD-27). */
+  readOnly?: boolean;
 }) {
   const t = useT();
   const { r, band, name, selected, detail } = props;
@@ -154,7 +156,7 @@ export function CandidateCard(props: {
               {open?.rationale && <p className="mt-2 text-ink-3">{open.rationale}</p>}
             </div>
           )}
-          {r.screeningId && band !== 'human' && (
+          {r.screeningId && band !== 'human' && !props.readOnly && (
             <MarkControls
               current={r.decision}
               screeningId={r.screeningId}
@@ -168,7 +170,7 @@ export function CandidateCard(props: {
           )}
           <p className="text-sm">
             {r.screeningId && (
-              <a className="text-link hover:underline" href={reviewHref(r.documentId)}>
+              <a className={`text-link hover:underline ${tapLink}`} href={reviewHref(r.documentId)}>
                 {t('Open the full review and record a decision')}
               </a>
             )}
@@ -276,9 +278,22 @@ export function MarkControls({
               </span>
             </label>
           )}
-          <button className={btnPrimary} disabled={!ready || busy} onClick={() => void save()}>
+          <button
+            className={btnPrimary}
+            disabled={!ready || busy}
+            aria-describedby={ready ? undefined : `mark-why-${screeningId}`}
+            onClick={() => void save()}
+          >
             {t('Save my mark')}
           </button>
+          {/* A disabled button says why (SD-33). */}
+          {!ready && (
+            <p id={`mark-why-${screeningId}`} className="text-xs text-ink-3">
+              {!noteOk
+                ? t('Add a note of at least 10 characters to save.')
+                : t('Tick the evidence box to save.')}
+            </p>
+          )}
         </div>
       )}
       {err && <Notice kind="error">{err}</Notice>}

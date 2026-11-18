@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { DID, DID2, DID3, mockApi } from '../fixtures/api';
 
+// Written for the English screens before the Azerbaijani pass; the AZ twins of these checks are the
+// UAT cases (CV-*, RS-*, DL-*, MO-*), so the AZ projects skip this file.
+test.beforeEach(({}, info) => {
+  test.skip(info.project.name.endsWith('-az'), 'English-only legacy spec');
+});
+
 // Stage 2, R4: select across the whole list and download the chosen CVs as one ZIP.
 test('selects all CVs in the list and hands the ZIP to the browser download manager', async ({
   page,

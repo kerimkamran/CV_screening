@@ -40,8 +40,8 @@ export const AZ_RESULTS: Record<string, string> = {
   'No CVs yet. Start a screening from': 'Hələ CV yoxdur. Skanı buradan başladın:',
   'New screening': 'Yeni skan',
   ', or upload on the Table tab.': ', yaxud Cədvəl bölməsindən yükləyin.',
-  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.':
-    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu Admin → Süni intellekt modelləri bölməsində quraşdıra bilər.',
+  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.':
+    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu İdarəetmə → Süni intellekt modelləri bölməsində quraşdıra bilər.',
   'Your constellation': 'Sizin bürcünüz',
   'Select a star. Brighter means a better fit.':
     'Ulduz seçin. Daha parlaq ulduz daha yaxşı uyğunluq deməkdir.',
@@ -49,15 +49,15 @@ export const AZ_RESULTS: Record<string, string> = {
   '({n} changed)': '({n} dəyişdirilib)',
   '{n} CV in this scan': 'Bu skanda {n} CV',
   '{n} CVs in this scan': 'Bu skanda {n} CV',
-  '{n} failed (see Table)': '{n} uğursuz oldu (Cədvələ baxın)',
+  '{n} failed (see the Candidates tab)': '{n} uğursuz oldu (Namizədlər bölməsinə baxın)',
   'The ranking uses your requirement changes ({n}).':
     'Sıralamada tələblərdə etdiyiniz dəyişikliklər nəzərə alınır ({n}).',
   'Back to original': 'İlkin vəziyyətə qayıdın',
   'Sending {sent} of {total} files. You can start looking now: the rest appear here as they are read.':
     'Fayllar göndərilir: {sent} / {total}. İndi baxmağa başlaya bilərsiniz: qalanları oxunduqca burada görünəcək.',
   'Some files could not be sent.': 'Bəzi faylları göndərmək mümkün olmadı.',
-  '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.':
-    'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Keçmiş skanlarda saxlanılır.',
+  '{read} of {total} read. You can leave this page: the scan continues and is kept under Runs.':
+    'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Təhlillər bölməsində saxlanılır.',
   'Stop the scan': 'Skanı dayandırın',
   'CVs read': 'Oxunmuş CV-lər',
   '{ready} ready, {pending} being read, {human} need a look':
@@ -81,7 +81,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'Names are hidden to keep the first look about skills. Show all?':
     'İlk baxış bacarıqlara yönəlsin deyə adlar gizlədilib. Hamısı göstərilsin?',
   'Show all': 'Hamısını göstərin',
-  Cancel: 'Ləğv et',
+  Cancel: 'Ləğv edin',
   'Names are hidden on screen, not removed from the file.':
     'Adlar yalnız ekranda gizlədilir, fayldan silinmir.',
   'Want a first look about skills only?':
@@ -118,7 +118,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'a knockout rule matched': 'kənarlaşdırma qaydası işlədi',
   'no readable text': 'oxunaqlı mətn yoxdur',
   Open: 'Açın',
-  'Retry on the Table tab': 'Cədvəl bölməsində yenidən cəhd edin',
+  'Retry on the Candidates tab': 'Namizədlər bölməsində yenidən cəhd edin',
 
   // Candidate card
   'My mark: {mark}': 'Mənim işarəm: {mark}',
@@ -144,6 +144,9 @@ export const AZ_RESULTS: Record<string, string> = {
   'I looked at the evidence, not only the band. "Not now" never hides this person.':
     'Yalnız səviyyəyə yox, sübuta da baxdım. “İndi yox” bu şəxsi heç vaxt gizlətmir.',
   'Save my mark': 'İşarəmi saxlayın',
+  'Add a note of at least 10 characters to save.':
+    'Saxlamaq üçün ən azı 10 simvoldan ibarət qeyd yazın.',
+  'Tick the evidence box to save.': 'Saxlamaq üçün sübut xanasını işarələyin.',
 
   // Candidate page
   '← Back to results': '← Nəticələrə qayıdın',
@@ -203,7 +206,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'No changes since the first scan.': 'İlk skandan bəri dəyişiklik yoxdur.',
   '{n} change since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
   '{n} changes since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   'Change what counts and the list re-ranks. No CV is read again. A missing must-have lowers the match; it never hides anyone.':
     'Nəyin vacib olduğunu dəyişin, siyahı yenidən sıralanacaq. Heç bir CV təkrar oxunmur. Çatışmayan vacib tələb uyğunluğu azaldır, amma heç kimi gizlətmir.',
   'changed (was {kind})': 'dəyişdirilib (əvvəl: {kind})',

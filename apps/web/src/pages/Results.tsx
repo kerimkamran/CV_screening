@@ -1,5 +1,5 @@
 import { reviewHref } from '../review';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import { api, type Adjustments, type CandidateRow, type Kind } from '../api';
 import {
@@ -12,6 +12,7 @@ import {
   matchBand,
   nextStar,
   orderCandidates,
+  placeLabels,
   pseudonyms,
   STAR_COLOUR,
   STAR_SIZE,
@@ -45,8 +46,21 @@ const PAGE = 20;
 const MAP_TOP = 12;
 const MAP_MAX = 79;
 const LABELS_ON_MAP = 5;
+const LABEL_MAX_W = 144; // 9rem: a longer name is cut with an ellipsis; the star button has the full name
 
-export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: () => void }) {
+/** A first guess at the width of a name label, until the real one is measured. */
+const guessWidth = (text: string) => Math.min(LABEL_MAX_W, Math.ceil(text.length * 7) + 6);
+
+export function Results({
+  vacancyId,
+  onTable,
+  archived = false,
+}: {
+  vacancyId: string;
+  onTable: () => void;
+  /** An archived vacancy is read-only: no Stop, Continue, mark or requirement change (SD-27). */
+  archived?: boolean;
+}) {
   const t = useT();
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState('');
@@ -55,6 +69,26 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const [shown, setShown] = useState(PAGE);
   const [mapAll, setMapAll] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  // The size of the map, so the name labels can be placed clear of each other (RS-05).
+  const [mapNode, setMapNode] = useState<HTMLDivElement | null>(null);
+  const [mapBox, setMapBox] = useState({ w: 0, h: 360 });
+  const [labelW, setLabelW] = useState<Record<string, number>>({});
+  useLayoutEffect(() => {
+    if (!mapNode) return;
+    const read = () =>
+      setMapBox((b) =>
+        b.w === mapNode.clientWidth && b.h === mapNode.clientHeight
+          ? b
+          : { w: mapNode.clientWidth, h: mapNode.clientHeight },
+      );
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(mapNode);
+    return () => ro.disconnect();
+  }, [mapNode]);
+  // The Limited group is collapsed; choosing a Limited CV (a star on the map) opens it.
+  const [limitedOpen, setLimitedOpen] = useState(false);
   const [details, setDetails] = useState<Record<string, Detail | 'loading' | 'error'>>({});
   const [proof, setProof] = useState<{ doc: string; req: string } | null>(null);
 
@@ -153,6 +187,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
     setProof(null);
     const idx = ranked.findIndex((r) => r.documentId === id);
     if (idx >= shown) setShown(Math.ceil((idx + 1) / PAGE) * PAGE);
+    if (limited.some((r) => r.documentId === id)) setLimitedOpen(true);
     if (scroll) {
       setTimeout(
         () => document.getElementById(`card-${id}`)?.scrollIntoView?.({ block: 'nearest' }),
@@ -271,6 +306,36 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
   const mapRows = scored.slice(0, mapAll ? MAP_MAX : MAP_TOP);
   const stars = layoutStars(mapRows.map((r) => r.documentId));
   const links = linkStars(mapRows.length);
+  const labelAt = (() => {
+    const W = mapBox.w || 640; // no layout (a test renderer): a typical width
+    const H = mapBox.h || 360;
+    const centres = stars.map((st) => ({ x: (st.x / 100) * W, y: (st.y / 100) * H }));
+    const order = Array.from({ length: Math.min(LABELS_ON_MAP, mapRows.length) }, (_, i) => i);
+    for (const id of [selected, hovered]) {
+      const k = id ? mapRows.findIndex((r) => r.documentId === id) : -1;
+      if (k >= 0 && !order.includes(k)) order.push(k);
+    }
+    return placeLabels(
+      centres,
+      order.map((i) => ({ i, w: labelW[nameOf(mapRows[i]!)] ?? guessWidth(nameOf(mapRows[i]!)) })),
+      { w: W, h: H },
+    );
+  })();
+  // The real width of each label, measured after it is drawn, so the places chosen above are exact.
+  useLayoutEffect(() => {
+    if (!mapNode) return;
+    const next = { ...labelW };
+    let changed = false;
+    for (const el of mapNode.querySelectorAll<HTMLElement>('[data-label]')) {
+      const w = Math.min(LABEL_MAX_W, Math.ceil(el.scrollWidth));
+      const key = el.dataset.label!;
+      if (w > 0 && next[key] !== w) {
+        next[key] = w;
+        changed = true;
+      }
+    }
+    if (changed) setLabelW(next);
+  }, [mapNode, labelW, labelAt]);
   const counts = (b: MatchBand) => (b === 'human' ? human.length : inBand(b).length);
 
   if (error && !data) return <Notice kind="error">{error}</Notice>;
@@ -289,7 +354,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
       {!data.aiActive && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.',
           )}
         </Notice>
       )}
@@ -304,7 +369,12 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             className={btnSecondary}
             aria-haspopup="dialog"
             aria-expanded={drawer}
-            onClick={() => setDrawer(true)}
+            onClick={() => {
+              // What the page said about the last change is now the drawer's to say.
+              setAdjNote('');
+              setAdjError('');
+              setDrawer(true);
+            }}
           >
             {t('Requirements')}
             {adj.changeCount > 0 ? ` ${t('({n} changed)', { n: adj.changeCount })}` : ''}
@@ -314,7 +384,8 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           {data.counts.total === 1
             ? t('{n} CV in this scan', { n: data.counts.total })
             : t('{n} CVs in this scan', { n: data.counts.total })}
-          {data.counts.failed > 0 && ` · ${t('{n} failed (see Table)', { n: data.counts.failed })}`}
+          {data.counts.failed > 0 &&
+            ` · ${t('{n} failed (see the Candidates tab)', { n: data.counts.failed })}`}
         </p>
       </div>
 
@@ -327,11 +398,20 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           onChange={(requirementId, to: Kind) => void adjust('', { requirementId, to })}
           onReset={() => void adjust('/reset')}
           focusId={drawerFocus}
+          readOnly={archived}
           onClose={() => {
             setDrawer(false);
             setDrawerFocus(null);
+            // A what-if from the assistant belongs to that visit: the next opening starts clean.
+            setAdjNote('');
+            setAdjError('');
           }}
         />
+      )}
+      {/* "Back to original" from the page notice: its answer is shown here, as the drawer is closed (SD-93). */}
+      {!drawer && adjError && <Notice kind="error">{adjError}</Notice>}
+      {!drawer && !adjError && adjNote && adj?.changeCount === 0 && (
+        <Notice kind="info">{adjNote}</Notice>
       )}
       {adj && adj.changeCount > 0 && (
         <Notice kind="info">
@@ -347,17 +427,19 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-ink-2">
               {t(
-                '{read} of {total} read. You can leave this page: the scan continues and is kept in Past scans.',
+                '{read} of {total} read. You can leave this page: the scan continues and is kept under Runs.',
                 { read, total: data.counts.total },
               )}
             </p>
-            <button
-              className={btnSecondary}
-              disabled={busy}
-              onClick={() => void runControl('stop')}
-            >
-              {t('Stop the scan')}
-            </button>
+            {!archived && (
+              <button
+                className={btnSecondary}
+                disabled={busy}
+                onClick={() => void runControl('stop')}
+              >
+                {t('Stop the scan')}
+              </button>
+            )}
           </div>
           <progress
             className="h-2 w-full"
@@ -390,7 +472,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             <ul className="mt-1 max-h-48 list-disc overflow-auto pl-5">
               {skipped.map((x, i) => (
                 <li key={i}>
-                  {x.filename}: {x.reason}
+                  {x.filename}: {t(x.reason)}
                 </li>
               ))}
             </ul>
@@ -405,9 +487,15 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               total: data.counts.total,
             })}
           </span>{' '}
-          <button className="underline" disabled={busy} onClick={() => void runControl('continue')}>
-            {t('Continue reading the other {n}', { n: stoppedCount })}
-          </button>
+          {!archived && (
+            <button
+              className="underline"
+              disabled={busy}
+              onClick={() => void runControl('continue')}
+            >
+              {t('Continue reading the other {n}', { n: stoppedCount })}
+            </button>
+          )}
         </Notice>
       )}
       {pending === 0 && stoppedCount === 0 && (
@@ -481,6 +569,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           <div className={mapOpen ? 'mt-3 block' : 'hidden lg:block'}>
             <div
               data-testid="star-map"
+              ref={setMapNode}
               className="relative h-[360px] overflow-hidden rounded-3xl"
               data-scanning={pending > 0 ? 'true' : 'false'}
               style={{ background: '#0C1A3D' }}
@@ -528,7 +617,6 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                 const band = bandOf.get(r.documentId)!;
                 const size = STAR_SIZE[band];
                 const on = r.documentId === selected;
-                const label = i < LABELS_ON_MAP || on || hovered === r.documentId;
                 return (
                   <div
                     key={r.documentId}
@@ -548,7 +636,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                     >
                       <span
                         aria-hidden="true"
-                        className="block rounded-full transition-transform duration-200 hover:scale-125"
+                        className="block rounded-full transition-transform duration-200 hover:scale-125 motion-reduce:transition-none motion-reduce:hover:scale-100"
                         style={{
                           width: size,
                           height: size,
@@ -558,18 +646,27 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                         }}
                       />
                     </button>
-                    {label && (
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 -mt-1 whitespace-nowrap text-xs font-semibold"
-                        style={{ color: '#E8EEFF' }}
-                      >
-                        {nameOf(r)}
-                      </span>
-                    )}
                   </div>
                 );
               })}
+              {[...labelAt].map(([i, at]) => (
+                <span
+                  key={mapRows[i]!.documentId}
+                  aria-hidden="true"
+                  data-label={nameOf(mapRows[i]!)}
+                  className="pointer-events-none absolute truncate whitespace-nowrap text-xs font-semibold"
+                  style={{
+                    left: at.left,
+                    top: at.top,
+                    maxWidth: at.w,
+                    height: 16,
+                    lineHeight: '16px',
+                    color: '#E8EEFF',
+                  }}
+                >
+                  {nameOf(mapRows[i]!)}
+                </span>
+              ))}
             </div>
             <p id="star-summary" className="sr-only">
               {t('Star map, a picture of the ranked list below. {n} stars, best first:', {
@@ -583,18 +680,30 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
               {t('Use the arrow keys to move between stars and Enter to select one.')}
             </p>
             <p className="mt-2 text-sm text-ink-3">
-              {scored.length > mapRows.length ? (
+              {scored.length > mapRows.length && (
                 <>
-                  {t('Showing top {n} of {total}.', { n: mapRows.length, total: scored.length })}{' '}
+                  {t('Showing top {n} of {total}.', {
+                    n: mapRows.length,
+                    total: scored.length,
+                  })}{' '}
+                </>
+              )}
+              {/* 'Show all' only while there is more to show; once it was pressed (the map caps
+                  at MAP_MAX) the way back is offered instead of a button that does nothing. */}
+              {!mapAll && scored.length > mapRows.length && (
+                <>
                   <button className="text-link hover:underline" onClick={() => setMapAll(true)}>
                     {t('Show all')}
                   </button>{' '}
                 </>
-              ) : mapAll && scored.length > MAP_TOP ? (
-                <button className="text-link hover:underline" onClick={() => setMapAll(false)}>
-                  {t('Show top {n} only', { n: MAP_TOP })}
-                </button>
-              ) : null}
+              )}
+              {mapAll && scored.length > MAP_TOP && (
+                <>
+                  <button className="text-link hover:underline" onClick={() => setMapAll(false)}>
+                    {t('Show top {n} only', { n: MAP_TOP })}
+                  </button>{' '}
+                </>
+              )}
               {t("A star's place on the map has no meaning beyond its rank.")}
             </p>
           </div>
@@ -615,6 +724,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
             onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
             onMarked={() => void load()}
             assistantName={assistant?.name}
+            readOnly={archived}
             onAsk={() => askAbout(r.documentId)}
           />
         ))}
@@ -627,7 +737,11 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
           </button>
         )}
         {limited.length > 0 && (
-          <details className="rounded-2xl border border-line bg-card p-3">
+          <details
+            open={limitedOpen}
+            onToggle={(e) => setLimitedOpen(e.currentTarget.open)}
+            className="rounded-2xl border border-line bg-card p-3"
+          >
             <summary className="cursor-pointer font-medium">
               {t('Limited ({n}): fewer of the requirements found. Nobody is rejected.', {
                 n: limited.length,
@@ -647,6 +761,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                   onProof={(req) => setProof(req ? { doc: r.documentId, req } : null)}
                   onMarked={() => void load()}
                   assistantName={assistant?.name}
+                  readOnly={archived}
                   onAsk={() => askAbout(r.documentId)}
                 />
               ))}
@@ -705,7 +820,7 @@ export function Results({ vacancyId, onTable }: { vacancyId: string; onTable: ()
                     </a>
                     {r.state === 'failed' && (
                       <button className="text-link hover:underline" onClick={onTable}>
-                        {t('Retry on the Table tab')}
+                        {t('Retry on the Candidates tab')}
                       </button>
                     )}
                   </span>

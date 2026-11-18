@@ -4,6 +4,7 @@ import {
   bandMoves,
   hash01,
   layoutStars,
+  placeLabels,
   linkStars,
   matchBand,
   orderCandidates,
@@ -201,5 +202,56 @@ describe('bandMoves', () => {
       line: '2 candidates changed band: 1 from Strong to Good, 1 from Good to Partial.',
     });
     expect(bandMoves(before, before).moved).toBe(0);
+  });
+});
+
+describe('placeLabels (RS-05)', () => {
+  const ids = Array.from(
+    { length: 12 },
+    (_, i) => `01HZZZZZZZZZZZZZZZZZZZ${String(i).padStart(4, '0')}`,
+  );
+  const overlap = (
+    a: { left: number; top: number; w: number },
+    b: { left: number; top: number; w: number },
+  ) => a.left < b.left + b.w && b.left < a.left + a.w && a.top < b.top + 16 && b.top < a.top + 16;
+
+  for (const box of [
+    { w: 380, h: 360 },
+    { w: 692, h: 360 },
+    { w: 1100, h: 360 },
+  ]) {
+    it(`keeps seven long labels inside a ${box.w} px map and apart from each other`, () => {
+      const stars = layoutStars(ids).map((s) => ({
+        x: (s.x / 100) * box.w,
+        y: (s.y / 100) * box.h,
+      }));
+      const want = [0, 1, 2, 3, 4, 8, 10].map((i) => ({ i, w: 144 }));
+      const at = placeLabels(stars, want, box);
+      expect(at.size).toBe(7);
+      const all = [...at.values()];
+      for (const p of all) {
+        expect(p.left).toBeGreaterThanOrEqual(0);
+        expect(p.left + p.w).toBeLessThanOrEqual(box.w);
+        expect(p.top).toBeGreaterThanOrEqual(0);
+        expect(p.top + 16).toBeLessThanOrEqual(box.h);
+      }
+      for (let i = 0; i < all.length; i++)
+        for (let j = i + 1; j < all.length; j++) expect(overlap(all[i]!, all[j]!)).toBe(false);
+    });
+  }
+
+  it('does not move the first labels when another one is added', () => {
+    const stars = layoutStars(ids).map((s) => ({ x: (s.x / 100) * 380, y: (s.y / 100) * 360 }));
+    const base = placeLabels(
+      stars,
+      [0, 1, 2].map((i) => ({ i, w: 144 })),
+      { w: 380, h: 360 },
+    );
+    const more = placeLabels(
+      stars,
+      [0, 1, 2, 9].map((i) => ({ i, w: 144 })),
+      { w: 380, h: 360 },
+    );
+    for (const i of [0, 1, 2]) expect(more.get(i)).toEqual(base.get(i));
   });
 });

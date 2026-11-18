@@ -100,9 +100,9 @@ describe('assistant panel', () => {
     const { unmount } = render(
       <AssistantPanel config={config} target={target} others={[]} onEditRequirement={noEdit} />,
     );
-    expect(screen.queryByRole('complementary', { name: 'Assistant' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Elon' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Ask Elon' }));
-    expect(await screen.findByRole('complementary', { name: 'Assistant' })).toBeInTheDocument();
+    expect(await screen.findByRole('complementary', { name: 'Elon' })).toBeInTheDocument();
     unmount();
     // A new visit by the same person starts open.
     setAssistantOpen(false);
@@ -118,7 +118,7 @@ describe('assistant panel', () => {
     render(
       <AssistantPanel config={config} target={target} others={[]} onEditRequirement={noEdit} />,
     );
-    const panel = await screen.findByRole('complementary', { name: 'Assistant' });
+    const panel = await screen.findByRole('complementary', { name: 'Elon' });
     expect(within(panel).getByTestId('context-chip')).toHaveTextContent(
       'Discussing: Candidate 07 · Strong',
     );
@@ -127,7 +127,7 @@ describe('assistant panel', () => {
     );
     await waitFor(() => expect(within(panel).getByRole('textbox')).toHaveFocus());
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('complementary', { name: 'Assistant' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Elon' })).toBeNull();
   });
 
   it('asks a starter question, shows an AI-labelled answer with proof chips from the record', async () => {
@@ -368,6 +368,12 @@ describe('assistant panel', () => {
     );
     expect(await screen.findByText('Saved earlier answer.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete this chat' }));
+    // Deleting asks first (SC-10).
+    await userEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'Delete this chat' })).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
     await waitFor(() => expect(screen.queryByText('Saved earlier answer.')).toBeNull());
     expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(true);
   });

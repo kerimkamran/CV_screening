@@ -59,13 +59,13 @@ const SHAPES: { dots: [number, number][]; lines: [number, number, number, number
   },
 ];
 
-const TWINKLE: { x: number; y: number; size: number; delay: number }[] = [
-  { x: 8, y: 22, size: 3, delay: 0 },
-  { x: 24, y: 70, size: 2, delay: 0.9 },
-  { x: 47, y: 18, size: 2, delay: 1.7 },
-  { x: 63, y: 62, size: 3, delay: 0.4 },
-  { x: 81, y: 20, size: 2, delay: 2.3 },
-  { x: 93, y: 68, size: 3, delay: 1.2 },
+const TWINKLE: { x: number; y: number; size: number }[] = [
+  { x: 8, y: 22, size: 3 },
+  { x: 24, y: 70, size: 2 },
+  { x: 47, y: 18, size: 2 },
+  { x: 63, y: 62, size: 3 },
+  { x: 81, y: 20, size: 2 },
+  { x: 93, y: 68, size: 3 },
 ];
 
 /** Number of stars drawn in the constellations (the waiting screen lights them one by one). */
@@ -227,19 +227,25 @@ export function Sky({
             />
           </>
         )}
-        {TWINKLE.map((s, i) => (
-          <span
-            key={i}
+        {/* Two groups, each fading as one layer (twelve loops of their own cost the page's main thread). */}
+        {[0, 1].map((g) => (
+          <div
+            key={g}
             aria-hidden="true"
-            className={`pointer-events-none absolute rounded-full bg-white ${calm ? 'opacity-70' : 'sky-twinkle'}`}
+            className={`pointer-events-none absolute inset-0 ${calm ? '' : 'sky-twinkle'}`}
             style={{
-              left: `${s.x}%`,
-              top: `${s.y}%`,
-              width: s.size,
-              height: s.size,
-              animationDelay: `${s.delay}s`,
+              animationDelay: `${g * 1.6}s`,
+              ...(calm ? { opacity: 0.7 } : null),
             }}
-          />
+          >
+            {TWINKLE.filter((_, i) => i % 2 === g).map((s, i) => (
+              <span
+                key={i}
+                className="pointer-events-none absolute rounded-full bg-white"
+                style={{ left: `${s.x}%`, top: `${s.y}%`, width: s.size, height: s.size }}
+              />
+            ))}
+          </div>
         ))}
       </div>
       {/* 3. Dim constellations, or the progress picture (nearest: drifts the most) */}

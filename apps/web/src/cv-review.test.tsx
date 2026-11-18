@@ -221,9 +221,7 @@ describe('CV review screen', () => {
       return undefined;
     });
     render(<App check={up} />);
-    expect(
-      await screen.findByText('Read the CV on the left and decide yourself.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Read the CV and decide yourself.')).toBeInTheDocument();
     expect(screen.getAllByText('No text could be read from this file.').length).toBeGreaterThan(0);
     await userEvent.selectOptions(
       await screen.findByLabelText('Decision for Aysel Mammadova'),

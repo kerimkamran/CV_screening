@@ -51,7 +51,7 @@ export interface IntakeCtx {
 }
 
 export const MSG = {
-  wrongType: 'Only PDF, DOCX and TXT files are accepted',
+  wrongType: 'Only PDF, DOCX, TXT and MD files are accepted',
   oldWord: 'Old Word format: save it as .docx or PDF',
   empty: 'The file is empty',
   duplicate: 'Already uploaded for this vacancy',

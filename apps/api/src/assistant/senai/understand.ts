@@ -346,6 +346,10 @@ const CHALLENGE = lex(
 const HELP = lex(
   'what does',
   'what is',
+  // The plural form is a glossary question only for the bands ("what are the Strong candidates" is a list).
+  'what are bands',
+  'what are the bands',
+  'what are score bands',
   'what means',
   'means',
   'mean',

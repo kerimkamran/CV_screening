@@ -103,6 +103,8 @@ export function ShareReport({
     }
   }
   async function revoke(id: string) {
+    // Revoking ends the link for everyone who has it, so it asks first (SD-37).
+    if (!window.confirm(t('Revoke this link? Everyone who has it loses access at once.'))) return;
     try {
       await api.post(`/shares/${id}/revoke`);
       await loadShares();
@@ -128,11 +130,12 @@ export function ShareReport({
         </h3>
         <button
           className={btnSecondary}
-          aria-expanded={open}
+          aria-expanded={open && !blocked}
           onClick={() => setOpen((v) => !v)}
-          disabled={Boolean(blocked) && shares.length === 0}
+          // While a new scan runs nothing can be shared; the earlier links below stay usable (RP-15).
+          disabled={Boolean(blocked)}
         >
-          {open ? t('Close') : t('Share as a link')}
+          {open && !blocked ? t('Close') : t('Share as a link')}
         </button>
       </div>
       <p className="mt-1 text-sm text-ink-3">
@@ -162,6 +165,7 @@ export function ShareReport({
                   {t('Share with someone else')}
                 </button>
               </div>
+              {error && <Notice kind="error">{error}</Notice>}
             </div>
           ) : (
             <>

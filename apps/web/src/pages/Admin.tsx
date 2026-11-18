@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   api,
   type AdminUser,
@@ -8,6 +8,7 @@ import {
   type AiOverview,
   type Role,
 } from '../api';
+import { useT } from '../i18n';
 import {
   btnDanger,
   btnPrimary,
@@ -19,6 +20,7 @@ import {
   Notice,
   when,
 } from '../ui';
+import { trServer } from '../i18n/server';
 
 const ROLE_LABEL: Record<string, string> = {
   TA_PARTNER: 'Recruiter',
@@ -41,49 +43,78 @@ export const inviteLink = (token: string) =>
   `${window.location.origin}/#/set-password?token=${encodeURIComponent(token)}`;
 
 /** The one-time link an administrator sends to a user, who opens it and chooses a password. */
-function InviteLink({ created }: { created: Created }) {
+function InviteLink({
+  created,
+  autoCopy = false,
+  onClose,
+}: {
+  created: Created;
+  /** Copy as soon as the link is shown (the row action: the admin asked for the link to copy). */
+  autoCopy?: boolean;
+  onClose?: () => void;
+}) {
+  const t = useT();
   const [copied, setCopied] = useState<'yes' | 'no' | ''>('');
+  const field = useRef<HTMLInputElement>(null);
   const link = inviteLink(created.setupToken);
   async function copy() {
     try {
       await navigator.clipboard.writeText(link);
       setCopied('yes');
     } catch {
-      setCopied('no'); // clipboard blocked: the field below is pre-selected for a manual copy
+      setCopied('no'); // clipboard blocked: the field below is focused and selected for a manual copy
+      field.current?.focus();
+      field.current?.select();
     }
   }
+  useEffect(() => {
+    if (autoCopy) void copy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the link first shows
+  }, []);
   const who = created.user.email;
   return (
     <div className="space-y-2">
       {created.emailSent === true ? (
         <Notice kind="ok">
-          Credentials were emailed to {who}. You can also send an invitation link yourself.
+          {t('Credentials were emailed to {who}. You can also send an invitation link yourself.', {
+            who,
+          })}
         </Notice>
       ) : (
         <Notice kind="warn">
           {created.emailSent === false
-            ? 'Email could not be sent (check the email settings). '
+            ? `${t('Email could not be sent (check the email settings).')} `
             : ''}
-          Copy this link and send it to {who} by any channel. When they open it they choose their
-          own password. The link has no time limit and works once. It is shown only once.
+          {t(
+            'Copy this link and send it to {who} by any channel. When they open it they choose their own password. The link has no time limit and works once. It is shown only once.',
+            { who },
+          )}
         </Notice>
       )}
       <div className="flex flex-wrap gap-2">
         <input
           readOnly
-          aria-label="Invitation link"
+          ref={field}
+          aria-label={t('Invitation link')}
           className={`${input} min-w-0 flex-1 font-mono text-xs`}
           value={link}
           onFocus={(e) => e.currentTarget.select()}
         />
         <button type="button" className={btnPrimary} onClick={() => void copy()}>
-          Copy link
+          {t('Copy link')}
         </button>
+        {onClose && (
+          <button type="button" className={btnSecondary} onClick={onClose}>
+            {t('Close')}
+          </button>
+        )}
       </div>
-      {copied === 'yes' && <p className="text-xs text-green-800">Link copied.</p>}
+      {copied === 'yes' && <p className="text-xs text-green-800">{t('Link copied.')}</p>}
       {copied === 'no' && (
         <p className="text-xs text-warn-text">
-          Your browser blocked copying. The link is selected above: press Ctrl+C (Cmd+C on Mac).
+          {t(
+            'Your browser blocked copying. The link is selected above: press Ctrl+C (Cmd+C on Mac).',
+          )}
         </p>
       )}
     </div>
@@ -91,11 +122,29 @@ function InviteLink({ created }: { created: Created }) {
 }
 
 export function Users({ meId }: { meId: string }) {
+  const t = useT();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [error, setError] = useState('');
   const [created, setCreated] = useState<Created | null>(null);
   const [form, setForm] = useState({ email: '', displayName: '', role: 'TA_PARTNER' as Role });
   const [busy, setBusy] = useState(false);
+  // 'Copy invite link' works at its own row: it first says the earlier link stops working, then shows
+  // the new link right under the row and copies it (SD-42).
+  const [rowLink, setRowLink] = useState<{
+    id: string;
+    step: 'ask' | 'link';
+    created?: Created;
+  } | null>(null);
+  const rowPanel = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    rowPanel.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [rowLink?.id, rowLink?.step]);
+  // Actions that sign someone out or lock them out ask first, naming the person (SD-38).
+  const [ask, setAsk] = useState<{
+    text: string;
+    label: string;
+    go: () => Promise<unknown>;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -137,9 +186,9 @@ export function Users({ meId }: { meId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card title="Add a user">
+      <Card title={t('Add a user')}>
         <form onSubmit={create} className="grid gap-3 sm:grid-cols-4">
-          <Field label="Email">
+          <Field label={t('Email')}>
             <input
               className={input}
               type="email"
@@ -148,7 +197,7 @@ export function Users({ meId }: { meId: string }) {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </Field>
-          <Field label="Name">
+          <Field label={t('Name')}>
             <input
               className={input}
               required
@@ -156,7 +205,7 @@ export function Users({ meId }: { meId: string }) {
               onChange={(e) => setForm({ ...form, displayName: e.target.value })}
             />
           </Field>
-          <Field label="Role">
+          <Field label={t('Role')}>
             <select
               className={input}
               value={form.role}
@@ -164,20 +213,21 @@ export function Users({ meId }: { meId: string }) {
             >
               {Object.entries(ROLE_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>
-                  {v}
+                  {t(v)}
                 </option>
               ))}
             </select>
           </Field>
           <div className="flex items-end">
             <button className={`${btnPrimary} w-full`} disabled={busy}>
-              Create user
+              {t('Create user')}
             </button>
           </div>
         </form>
         <p className="mt-2 text-xs text-ink-3">
-          The user gets an email with a one-time link to choose their own password. If email is not
-          set up, or fails, you get the link to copy and send yourself.
+          {t(
+            'The user gets an email with a one-time link to choose their own password. If email is not set up, or fails, you get the link to copy and send yourself.',
+          )}
         </p>
         {error && (
           <div className="mt-3">
@@ -191,81 +241,195 @@ export function Users({ meId }: { meId: string }) {
         )}
       </Card>
 
-      <Card title="Users">
+      <Card title={t('Users')}>
+        {ask && (
+          <div
+            role="alertdialog"
+            aria-label={ask.label}
+            className="mb-3 space-y-2 rounded-xl border border-warn-line bg-warn p-3 text-sm text-warn-ink"
+          >
+            <p>{ask.text}</p>
+            <div className="flex flex-wrap gap-2">
+              <button className={btnSecondary} onClick={() => setAsk(null)} autoFocus>
+                {t('Cancel')}
+              </button>
+              <button
+                className={btnDanger}
+                onClick={() => {
+                  const go = ask.go;
+                  setAsk(null);
+                  void act(go);
+                }}
+              >
+                {ask.label}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <caption className="sr-only">Users</caption>
+            <caption className="sr-only">{t('Users')}</caption>
             <thead className="border-b text-xs uppercase text-ink-3">
               <tr>
-                <th className="py-2 pr-3">Name</th>
-                <th className="pr-3">Email</th>
-                <th className="pr-3">Roles</th>
-                <th className="pr-3">Status</th>
-                <th className="pr-3">Last seen</th>
-                <th>Actions</th>
+                <th className="py-2 pr-3">{t('Name')}</th>
+                <th className="pr-3">{t('Email')}</th>
+                <th className="pr-3">{t('Roles')}</th>
+                <th className="pr-3">{t('Status')}</th>
+                <th className="pr-3">{t('Last seen')}</th>
+                <th>{t('Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {users
                 .filter((u) => u.issuer !== 'system')
                 .map((u) => (
-                  <tr key={u.id} className="border-b border-line align-top">
-                    <td className="py-2 pr-3 font-medium">{u.displayName}</td>
-                    <td className="pr-3">{u.email}</td>
-                    <td className="pr-3">
-                      {u.roles.map((r) => ROLE_LABEL[r] ?? r).join(', ') || 'Report viewer only'}
-                    </td>
-                    <td className="pr-3">
-                      {u.status === 'disabled'
-                        ? 'Disabled'
-                        : u.mustChangePassword
-                          ? 'Invited'
-                          : 'Active'}
-                      {u.mfa && <span className="ml-1 text-xs text-ink-3">· two-step on</span>}
-                    </td>
-                    <td className="pr-3 text-xs text-ink-3">{when(u.lastSeenAt)}</td>
-                    <td className="space-x-2 whitespace-nowrap py-1">
-                      {u.status === 'active' && (
-                        <button
-                          className={btnSecondary}
-                          onClick={() => act(() => api.post(`/admin/users/${u.id}/setup-link`))}
-                        >
-                          Copy invite link
-                        </button>
-                      )}
-                      {u.status === 'active' && (
-                        <button
-                          className={btnSecondary}
-                          onClick={() => act(() => api.post(`/admin/users/${u.id}/reset-password`))}
-                        >
-                          Reset password
-                        </button>
-                      )}
-                      {u.mfa && (
-                        <button
-                          className={btnSecondary}
-                          title="For someone who lost their phone and recovery codes"
-                          onClick={() => act(() => api.post(`/admin/users/${u.id}/mfa-reset`))}
-                        >
-                          Reset two-step
-                        </button>
-                      )}
-                      {u.id !== meId && (
-                        <button
-                          className={u.status === 'active' ? btnDanger : btnSecondary}
-                          onClick={() =>
-                            act(() =>
-                              api.post(`/admin/users/${u.id}/status`, {
-                                status: u.status === 'active' ? 'disabled' : 'active',
-                              }),
+                  <Fragment key={u.id}>
+                    <tr className="border-b border-line align-top">
+                      <td className="py-2 pr-3 font-medium">{u.displayName}</td>
+                      <td className="pr-3">{u.email}</td>
+                      <td className="pr-3">
+                        {u.roles.map((r) => t(ROLE_LABEL[r] ?? r)).join(', ') ||
+                          t('Report viewer only')}
+                      </td>
+                      <td className="pr-3">
+                        {u.status === 'disabled'
+                          ? t('Disabled')
+                          : u.mustChangePassword
+                            ? t('Invited')
+                            : t('Active')}
+                        {u.mfa && (
+                          <span className="ml-1 text-xs text-ink-3">{t('· two-step on')}</span>
+                        )}
+                      </td>
+                      <td className="pr-3 text-xs text-ink-3">{when(u.lastSeenAt)}</td>
+                      <td className="space-x-2 whitespace-nowrap py-1">
+                        {u.status === 'active' && (
+                          <button
+                            className={btnSecondary}
+                            onClick={() => setRowLink({ id: u.id, step: 'ask' })}
+                          >
+                            {t('Copy invite link')}
+                          </button>
+                        )}
+                        {u.status === 'active' && u.id !== meId && (
+                          <button
+                            className={btnSecondary}
+                            onClick={() =>
+                              setAsk({
+                                label: t('Reset password'),
+                                text: t(
+                                  'Reset the password of {who}? They are signed out everywhere and get a temporary password by email.',
+                                  { who: u.displayName ?? u.email ?? '' },
+                                ),
+                                go: () => api.post(`/admin/users/${u.id}/reset-password`),
+                              })
+                            }
+                          >
+                            {t('Reset password')}
+                          </button>
+                        )}
+                        {u.mfa && (
+                          <button
+                            className={btnSecondary}
+                            title={t('For someone who lost their phone and recovery codes')}
+                            onClick={() =>
+                              setAsk({
+                                label: t('Reset two-step'),
+                                text: t(
+                                  'Remove two-step sign-in for {who}? They sign in with the password alone until they set it up again.',
+                                  { who: u.displayName ?? u.email ?? '' },
+                                ),
+                                go: () => api.post(`/admin/users/${u.id}/mfa-reset`),
+                              })
+                            }
+                          >
+                            {t('Reset two-step')}
+                          </button>
+                        )}
+                        {u.id !== meId && (
+                          <button
+                            className={u.status === 'active' ? btnDanger : btnSecondary}
+                            onClick={() => {
+                              const go = () =>
+                                api.post(`/admin/users/${u.id}/status`, {
+                                  status: u.status === 'active' ? 'disabled' : 'active',
+                                });
+                              if (u.status !== 'active') return void act(go);
+                              setAsk({
+                                label: t('Disable'),
+                                text: t(
+                                  'Disable {who}? They are signed out and cannot sign in until the account is enabled again.',
+                                  { who: u.displayName ?? u.email ?? '' },
+                                ),
+                                go,
+                              });
+                            }}
+                          >
+                            {u.status === 'active' ? t('Disable') : t('Enable')}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {rowLink?.id === u.id && (
+                      <tr ref={rowPanel} className="border-b border-line">
+                        <td colSpan={6} className="pb-3 pt-1">
+                          {rowLink.step === 'ask' ? (
+                            <div
+                              role="alertdialog"
+                              aria-label={t('New invite link')}
+                              className="space-y-2 rounded-xl border border-warn-line bg-warn p-3 text-sm text-warn-ink"
+                            >
+                              <p>
+                                {t(
+                                  'Make a new invite link for {who}? Their earlier link stops working.',
+                                  { who: u.displayName ?? u.email ?? '' },
+                                )}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  className={btnSecondary}
+                                  onClick={() => setRowLink(null)}
+                                  autoFocus
+                                >
+                                  {t('Cancel')}
+                                </button>
+                                <button
+                                  className={btnPrimary}
+                                  onClick={() => {
+                                    setError('');
+                                    setCreated(null);
+                                    void (async () => {
+                                      try {
+                                        const r = await api.post<Created>(
+                                          `/admin/users/${u.id}/setup-link`,
+                                        );
+                                        setRowLink({ id: u.id, step: 'link', created: r });
+                                        await load();
+                                      } catch (e) {
+                                        setRowLink(null);
+                                        setError(errMsg(e));
+                                        await load().catch(() => undefined);
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  {t('Make a new link')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            rowLink.created && (
+                              <InviteLink
+                                created={rowLink.created}
+                                autoCopy
+                                onClose={() => setRowLink(null)}
+                              />
                             )
-                          }
-                        >
-                          {u.status === 'active' ? 'Disable' : 'Enable'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
             </tbody>
           </table>
@@ -289,6 +453,7 @@ interface PayloadLog {
 }
 
 export function AiSettings() {
+  const t = useT();
   const [data, setData] = useState<AiOverview>({ active: null, connections: [] });
   const [catalog, setCatalog] = useState<AiCompany[]>([]);
   const [error, setError] = useState('');
@@ -310,8 +475,13 @@ export function AiSettings() {
     <div className="space-y-4">
       <Notice kind={data.active ? 'ok' : 'warn'}>
         {data.active
-          ? `Screening uses ${data.active.provider} · ${data.active.model}. You can switch to any other model below at any time; each assessment records the model that produced it.`
-          : 'No model is active. Choose a company, choose a model, add the API key, then press "Use this". Until then uploaded CVs wait in the queue.'}
+          ? t(
+              'Screening uses {provider} · {model}. You can switch to any other model below at any time; each assessment records the model that produced it.',
+              { provider: data.active.provider, model: data.active.model },
+            )
+          : t(
+              'No model is active. Choose a company, choose a model, add the API key, then press "Use this". Until then uploaded CVs wait in the queue.',
+            )}
       </Notice>
       {error && <Notice kind="error">{error}</Notice>}
       {catalog.length > 0 && (
@@ -328,10 +498,9 @@ export function AiSettings() {
         ))}
       </div>
       <Notice kind="info">
-        Each company needs one API key; the key gives access to all of that company&apos;s models.
-        Keys are encrypted on the server and are never shown again or sent to the browser. CV text
-        is sent to the active company for assessment, so choose companies your data-protection
-        review has approved.
+        {t(
+          "Each company needs one API key; the key gives access to all of that company's models. Keys are encrypted on the server and are never shown again or sent to the browser. CV text is sent to the active company for assessment, so choose companies your data-protection review has approved.",
+        )}
       </Notice>
     </div>
   );
@@ -349,6 +518,7 @@ function AddModel({
   onDone: () => void;
   forAssistant?: boolean;
 }) {
+  const t = useT();
   const [companyId, setCompanyId] = useState(catalog[0]!.id);
   const [list, setList] = useState<AiModelChoice[] | null>(null); // live list, once loaded
   const [live, setLive] = useState(false);
@@ -401,8 +571,11 @@ function AddModel({
       setLive(r.live);
       setMsg(
         r.live
-          ? { kind: 'ok', text: `${r.models.length} models available to this key.` }
-          : { kind: 'info', text: r.error ?? 'Showing the documented models.' },
+          ? { kind: 'ok', text: t('{n} models available to this key.', { n: r.models.length }) }
+          : {
+              kind: 'info',
+              text: r.error ? trServer(r.error) : t('Showing the documented models.'),
+            },
       );
     } catch (e) {
       setMsg({ kind: 'error', text: errMsg(e) });
@@ -440,8 +613,12 @@ function AddModel({
       setMsg({
         kind: 'ok',
         text: forAssistant
-          ? 'Saved. It is now chosen as the model for the assistant above. Press "Test connection", then "Save".'
-          : `Saved. Press "Test" on the model below, then "Use this" to make it the screening model.`,
+          ? t(
+              'Saved. It is now chosen as the model for the assistant above. Press "Test connection", then "Save".',
+            )
+          : t(
+              'Saved. Press "Test" on the model below, then "Use this" to make it the screening model.',
+            ),
       });
       onDone();
     } catch (err) {
@@ -452,11 +629,11 @@ function AddModel({
   };
 
   return (
-    <Card title="Add a model">
+    <Card title={t('Add a model')}>
       <form className="space-y-5" onSubmit={submit}>
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-ink">1. Company</h3>
-          <Field label="Company">
+          <h3 className="text-sm font-semibold text-ink">{t('1. Company')}</h3>
+          <Field label={t('Company')}>
             <select
               className={input}
               value={companyId}
@@ -465,36 +642,39 @@ function AddModel({
               {catalog.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
-                  {connections.some((x) => x.company === c.id) ? ' (key added)' : ''}
+                  {connections.some((x) => x.company === c.id) ? ` ${t('(key added)')}` : ''}
                 </option>
               ))}
             </select>
           </Field>
-          <p className="text-xs text-ink-2">{company.dataNote}</p>
+          <p className="text-xs text-ink-2">{t(company.dataNote)}</p>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-ink">2. Model</h3>
+          <h3 className="text-sm font-semibold text-ink">{t('2. Model')}</h3>
           <p className="text-xs text-ink-2">
             {live
-              ? `All ${company.name} models this key can use. Tick one or more.`
-              : `${company.name} models from its documentation. After you add the key, load the full list from ${company.name} itself.`}
+              ? t('All {name} models this key can use. Tick one or more.', { name: company.name })
+              : t(
+                  '{name} models from its documentation. After you add the key, load the full list from {name} itself.',
+                  { name: company.name },
+                )}
           </p>
           {(list ?? company.knownModels).length > 8 && (
             <input
               className={input}
-              placeholder="Filter models"
-              aria-label="Filter models"
+              placeholder={t('Filter models')}
+              aria-label={t('Filter models')}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
           )}
           <ul
             className="max-h-56 divide-y divide-line overflow-auto rounded-md border border-line"
-            aria-label="Models"
+            aria-label={t('Models')}
           >
             {shown.length === 0 && (
-              <li className="px-3 py-2 text-sm text-ink-3">Nothing more to add.</li>
+              <li className="px-3 py-2 text-sm text-ink-3">{t('Nothing more to add.')}</li>
             )}
             {shown.map((m) => (
               <li key={m.id}>
@@ -511,7 +691,7 @@ function AddModel({
                   />
                   <span className="font-mono text-xs">{m.id}</span>
                   {m.label !== m.id && <span className="text-ink-3">{m.label}</span>}
-                  {m.note && <span className="text-xs text-warn-text">({m.note})</span>}
+                  {m.note && <span className="text-xs text-warn-text">({t(m.note)})</span>}
                 </label>
               </li>
             ))}
@@ -521,13 +701,13 @@ function AddModel({
               type="button"
               className={btnSecondary}
               disabled={busy || !canLoad}
-              title={canLoad ? undefined : 'Add the API key first (step 3)'}
+              title={canLoad ? undefined : t('Add the API key first (step 3)')}
               onClick={() => void loadAll()}
             >
-              Load all {company.name} models
+              {t('Load all {name} models', { name: company.name })}
             </button>
             <div className="min-w-48 flex-1">
-              <Field label="Other model ID" hint="For a model that is not in the list.">
+              <Field label={t('Other model ID')} hint={t('For a model that is not in the list.')}>
                 <input
                   className={input}
                   value={typed}
@@ -540,14 +720,16 @@ function AddModel({
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-ink">3. API key</h3>
+          <h3 className="text-sm font-semibold text-ink">{t('3. API key')}</h3>
           <div className="grid gap-3 md:grid-cols-2">
             <Field
-              label="API key"
+              label={t('API key')}
               hint={
                 existing
-                  ? `Key ending …${existing.keyHint} is on file. Leave empty to keep it.`
-                  : company.keyHelp
+                  ? t('Key ending …{keyHint} is on file. Leave empty to keep it.', {
+                      keyHint: existing.keyHint,
+                    })
+                  : t(company.keyHelp)
               }
             >
               <input
@@ -561,17 +743,17 @@ function AddModel({
               />
             </Field>
             {company.extraFields.map((f) => (
-              <Field key={f.key} label={f.label} hint={f.hint}>
+              <Field key={f.key} label={t(f.label)} hint={f.hint ? t(f.hint) : undefined}>
                 <select
                   className={input}
                   value={options[f.key] ?? existing?.settings[f.key] ?? ''}
                   required={f.required && !existing}
                   onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })}
                 >
-                  {!f.required && <option value="">Default</option>}
+                  {!f.required && <option value="">{t('Default')}</option>}
                   {f.options.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {t(o.label)}
                     </option>
                   ))}
                 </select>
@@ -590,11 +772,13 @@ function AddModel({
             }
             type="submit"
           >
-            {existing ? 'Save' : 'Save company and model'}
-            {toAdd.length ? ` (${toAdd.length} model${toAdd.length > 1 ? 's' : ''})` : ''}
+            {existing ? t('Save') : t('Save company and model')}
+            {toAdd.length
+              ? ` (${toAdd.length === 1 ? t('{n} model', { n: 1 }) : t('{n} models', { n: toAdd.length })})`
+              : ''}
           </button>
           <span className="text-xs text-ink-3">
-            The key is sent over HTTPS, encrypted on the server, and never shown again.
+            {t('The key is sent over HTTPS, encrypted on the server, and never shown again.')}
           </span>
         </div>
       </form>
@@ -616,6 +800,7 @@ function CompanyCard({
   company: AiCompany | undefined;
   onChanged: () => void;
 }) {
+  const t = useT();
   const [key, setKey] = useState('');
   const [options, setOptions] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<Msg | null>(null);
@@ -637,12 +822,17 @@ function CompanyCard({
   const changed = Object.entries(options).filter(([k, v]) => v !== (c.settings[k] ?? ''));
 
   return (
-    <Card title={c.name} actions={<span className="text-xs text-ink-3">key …{c.keyHint}</span>}>
+    <Card
+      title={c.name}
+      actions={
+        <span className="text-xs text-ink-3">{t('key …{keyHint}', { keyHint: c.keyHint })}</span>
+      }
+    >
       <div className="space-y-4">
         <div>
-          <h3 className="mb-1 text-sm font-medium text-ink-2">Models you can use</h3>
+          <h3 className="mb-1 text-sm font-medium text-ink-2">{t('Models you can use')}</h3>
           {c.models.length === 0 ? (
-            <p className="text-sm text-ink-3">None yet. Add one above.</p>
+            <p className="text-sm text-ink-3">{t('None yet. Add one above.')}</p>
           ) : (
             <ul className="divide-y divide-line rounded-md border border-line">
               {c.models.map((m) => (
@@ -660,45 +850,64 @@ function CompanyCard({
                         );
                         setMsg(
                           r.ok
-                            ? { kind: 'ok', text: `${m.modelId} works (${r.ms} ms).` }
-                            : { kind: 'error', text: `${m.modelId}: ${r.error ?? 'test failed'}` },
+                            ? {
+                                kind: 'ok',
+                                text: t('{model} works ({ms} ms).', { model: m.modelId, ms: r.ms }),
+                              }
+                            : {
+                                kind: 'error',
+                                text: `${m.modelId}: ${r.error ? trServer(r.error) : t('test failed')}`,
+                              },
                         );
                       })
                     }
                   >
-                    Test
+                    {t('Test')}
                   </button>
                   {m.isActive ? (
                     <span className="rounded bg-ok px-2 py-1 text-xs font-medium text-ok-ink">
-                      Active
+                      {t('Active')}
                     </span>
                   ) : (
                     <button
                       className={btnPrimary}
                       disabled={busy}
-                      title="Runs a test call first and switches only if it works"
+                      title={t('Runs a test call first and switches only if it works')}
                       onClick={() =>
                         run(async () => {
                           const r = await api.post<{ ok: boolean; error?: string }>(
                             `/admin/ai/models/${m.id}/test`,
                           );
-                          if (!r.ok) throw new Error(r.error ?? 'Test failed; not switched.');
+                          if (!r.ok)
+                            throw new Error(
+                              r.error ? trServer(r.error) : t('Test failed; not switched.'),
+                            );
                           await api.put('/admin/ai/active', { modelId: m.id });
                         })
                       }
                     >
-                      Use this
+                      {t('Use this')}
                     </button>
                   )}
                   <button
                     className={btnSecondary}
                     disabled={busy}
-                    aria-label={`Remove ${m.modelId}`}
-                    onClick={() =>
-                      run(async () => void (await api.del(`/admin/ai/models/${m.id}`)))
-                    }
+                    aria-label={t('Remove {model}', { model: m.modelId })}
+                    onClick={() => {
+                      // Removing a model asks first; for the active one it says what follows (SD-38).
+                      const sure = window.confirm(
+                        m.isActive
+                          ? t(
+                              'Remove {model}? It is the active model: no model will be active and new CVs will wait until you choose another.',
+                              { model: m.modelId },
+                            )
+                          : t('Remove {model}?', { model: m.modelId }),
+                      );
+                      if (sure)
+                        void run(async () => void (await api.del(`/admin/ai/models/${m.id}`)));
+                    }}
                   >
-                    Remove
+                    {t('Remove')}
                   </button>
                 </li>
               ))}
@@ -707,9 +916,11 @@ function CompanyCard({
         </div>
 
         <details className="text-sm">
-          <summary className="cursor-pointer font-medium text-ink-2">Key and settings</summary>
+          <summary className="cursor-pointer font-medium text-ink-2">
+            {t('Key and settings')}
+          </summary>
           <div className="mt-2 space-y-2">
-            <Field label="Replace API key" hint="The stored key is never shown.">
+            <Field label={t('Replace API key')} hint={t('The stored key is never shown.')}>
               <input
                 className={input}
                 type="password"
@@ -720,16 +931,16 @@ function CompanyCard({
               />
             </Field>
             {company?.extraFields.map((f) => (
-              <Field key={f.key} label={f.label} hint={f.hint}>
+              <Field key={f.key} label={t(f.label)} hint={f.hint ? t(f.hint) : undefined}>
                 <select
                   className={input}
                   value={options[f.key] ?? c.settings[f.key] ?? ''}
                   onChange={(e) => setOptions({ ...options, [f.key]: e.target.value })}
                 >
-                  {!f.required && <option value="">Default</option>}
+                  {!f.required && <option value="">{t('Default')}</option>}
                   {f.options.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {t(o.label)}
                     </option>
                   ))}
                 </select>
@@ -749,11 +960,11 @@ function CompanyCard({
                     });
                     setKey('');
                     setOptions({});
-                    setMsg({ kind: 'ok', text: 'Saved.' });
+                    setMsg({ kind: 'ok', text: t('Saved.') });
                   })
                 }
               >
-                Save
+                {t('Save')}
               </button>
               <button
                 className={btnDanger}
@@ -761,13 +972,16 @@ function CompanyCard({
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Remove ${c.name}, its key and its models? If one of them is active, no model will be active until you choose another.`,
+                      t(
+                        'Remove {name}, its key and its models? If one of them is active, no model will be active until you choose another.',
+                        { name: c.name },
+                      ),
                     )
                   )
                     void run(async () => void (await api.del(`/admin/ai/connections/${c.id}`)));
                 }}
               >
-                Remove company
+                {t('Remove company')}
               </button>
             </div>
           </div>
@@ -825,22 +1039,106 @@ const LOG_LABEL: Record<string, string> = {
 };
 
 /** On or off, name, model, feature switches, data terms, limits, and who changed what. */
+type AssistantTurn = {
+  at: string;
+  user: string | null;
+  label: string | null;
+  flags: string[];
+  model: string | null;
+  kind: string | null;
+};
+
+function RecentAnswersCard({ turns }: { turns: AssistantTurn[] }) {
+  const t = useT();
+  return (
+    <Card title={t('Recent answers (for review)')}>
+      {turns.length === 0 ? (
+        <p className="text-sm text-ink-3">{t('No questions yet.')}</p>
+      ) : (
+        <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
+          {turns.slice(0, 50).map((turn, i) => (
+            <li key={i}>
+              {when(turn.at)} · {turn.user ?? t('unknown')} · {turn.label ?? ''} · {turn.kind ?? ''}
+              {turn.flags.length > 0 && ` · ${turn.flags.join(', ')}`}
+              {turn.model ? ` · ${turn.model}` : ` · ${t('no model')}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function PayloadCard({ payloads }: { payloads: PayloadLog | null }) {
+  const t = useT();
+  return (
+    <Card title={t('What was sent to the model')}>
+      <p className="mb-2 text-sm text-ink-2">
+        {t(
+          'Only these fields may leave the system, and only as shown here: the field names, their type and longest length, a size and a fingerprint. The text itself is never kept.',
+        )}
+      </p>
+      {!payloads?.calls || payloads.calls.length === 0 ? (
+        <p className="text-sm text-ink-3">{t('No model call yet.')}</p>
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-ink-3">
+            {t('Allowed: {v}', { v: payloads.allowed.join(', ') })}
+          </p>
+          <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
+            {payloads.calls.slice(0, 50).map((c, i) => (
+              <li key={i}>
+                {when(c.at)} · {c.intent} · {c.model ?? ''} ·{' '}
+                {t('{bytes} bytes · {count} fields ·', {
+                  bytes: c.bytes,
+                  count: Object.keys(c.fields).length,
+                })}{' '}
+                {c.violations.length === 0
+                  ? t('all allowed')
+                  : t('NOT ALLOWED: {what}', { what: c.violations.join(', ') })}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Governance reads what the assistant answered and what left the system, and changes nothing. */
+export function AssistantReview() {
+  const [turns, setTurns] = useState<AssistantTurn[]>([]);
+  const [payloads, setPayloads] = useState<PayloadLog | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void (async () => {
+      try {
+        setTurns((await api.get<{ turns: AssistantTurn[] }>('/admin/assistant/audit')).turns);
+        setPayloads(await api.get<PayloadLog>('/admin/assistant/payloads'));
+      } catch (e) {
+        setError(errMsg(e));
+      }
+    })();
+  }, []);
+  return (
+    <div className="space-y-4">
+      {error && <Notice kind="error">{error}</Notice>}
+      <RecentAnswersCard turns={turns} />
+      <PayloadCard payloads={payloads} />
+    </div>
+  );
+}
+
 export function AssistantSettings() {
+  const t = useT();
   const [data, setData] = useState<AssistantOverview | null>(null);
   const [form, setForm] = useState<AssistantSettingsData | null>(null);
   const [attest, setAttest] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
+  /** Which button the message answers: it is shown next to that button (SX-01, SX-12). */
+  const [msgAt, setMsgAt] = useState<'save' | 'test' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [turns, setTurns] = useState<
-    {
-      at: string;
-      user: string | null;
-      label: string | null;
-      flags: string[];
-      model: string | null;
-      kind: string | null;
-    }[]
-  >([]);
+  const [turns, setTurns] = useState<AssistantTurn[]>([]);
   const [catalog, setCatalog] = useState<AiCompany[]>([]);
   const [connections, setConnections] = useState<AiConnection[]>([]);
   const [payloads, setPayloads] = useState<PayloadLog | null>(null);
@@ -851,7 +1149,7 @@ export function AssistantSettings() {
       setData(d);
       setForm(d.settings);
       setAttest(false);
-      setTurns((await api.get<{ turns: typeof turns }>('/admin/assistant/audit')).turns);
+      setTurns((await api.get<{ turns: AssistantTurn[] }>('/admin/assistant/audit')).turns);
     } catch (e) {
       setMsg({ kind: 'error', text: errMsg(e) });
       return;
@@ -891,7 +1189,7 @@ export function AssistantSettings() {
     return msg ? (
       <Notice kind="error">{msg.text}</Notice>
     ) : (
-      <p className="text-sm text-ink-3">Loading…</p>
+      <p className="text-sm text-ink-3">{t('Loading…')}</p>
     );
   const set = <K extends keyof AssistantSettingsData>(k: K, v: AssistantSettingsData[K]) =>
     setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -900,12 +1198,14 @@ export function AssistantSettings() {
   async function test() {
     setBusy(true);
     setMsg(null);
+    setMsgAt('test');
     try {
       const r = await api.post<{ ok: boolean; detail: string }>('/admin/assistant/test', {
         modelRowId: form!.modelRowId,
       });
-      setMsg({ kind: r.ok ? 'ok' : 'error', text: r.detail });
-      await load();
+      setMsg({ kind: r.ok ? 'ok' : 'error', text: trServer(r.detail) });
+      // Only the test stamp is refreshed: what was chosen above and not saved yet stays (SX-01).
+      setData(await api.get<AssistantOverview>('/admin/assistant'));
     } catch (e) {
       setMsg({ kind: 'error', text: errMsg(e) });
     } finally {
@@ -914,17 +1214,27 @@ export function AssistantSettings() {
   }
   async function save(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
+    setMsgAt('save');
+    // The name is on every screen the recruiters see: say what is wrong, in words (SX-02).
+    if (!form!.name.trim()) {
+      setMsg({ kind: 'error', text: t('Give the assistant a name (up to 30 characters).') });
+      return;
+    }
+    setBusy(true);
     try {
       const { attestedByName: _a, attestedAt: _b, ...body } = form!;
       void _a;
       void _b;
-      const d = await api.put<AssistantOverview>('/admin/assistant', { ...body, attest });
+      const d = await api.put<AssistantOverview>('/admin/assistant', {
+        ...body,
+        warnPct: Number.isNaN(body.warnPct) ? 80 : body.warnPct,
+        attest,
+      });
       setData(d);
       setForm(d.settings);
       setAttest(false);
-      setMsg({ kind: 'ok', text: 'Saved.' });
+      setMsg({ kind: 'ok', text: t('Saved.') });
     } catch (err) {
       setMsg({ kind: 'error', text: errMsg(err) });
     } finally {
@@ -933,21 +1243,26 @@ export function AssistantSettings() {
   }
 
   const usageLine = (n: number, cap: number | null) =>
-    cap === null ? `${n} (no limit)` : `${n} of ${cap}`;
+    cap === null ? t('{n} (no limit)', { n }) : t('{n} of {cap}', { n, cap });
   return (
     <div className="space-y-4">
       <form className="space-y-4" onSubmit={save}>
         <Notice kind={data.settings.enabled ? 'ok' : 'info'}>
           {data.settings.enabled
-            ? `${data.settings.name} is on for recruiters.`
-            : `${data.settings.name} is off. Recruiters do not see it. It explains stored matches; it never scores, ranks or decides.`}
+            ? t('{name} is on for recruiters.', { name: data.settings.name })
+            : t(
+                '{name} is off. Recruiters do not see it. It explains stored matches; it never scores, ranks or decides.',
+                { name: data.settings.name },
+              )}
         </Notice>
         {data.warn && (
-          <Notice kind="warn">Usage has passed {data.settings.warnPct}% of a limit.</Notice>
+          <Notice kind="warn">
+            {t('Usage has passed {warnPct}% of a limit.', { warnPct: data.settings.warnPct })}
+          </Notice>
         )}
-        {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+        {msg && !msgAt && <Notice kind={msg.kind}>{msg.text}</Notice>}
 
-        <Card title="Assistant">
+        <Card title={t('Assistant')}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input
@@ -955,9 +1270,9 @@ export function AssistantSettings() {
                 checked={form.enabled}
                 onChange={(e) => set('enabled', e.target.checked)}
               />
-              Turn the assistant on
+              {t('Turn the assistant on')}
             </label>
-            <Field label="Name (working name, can change any time)">
+            <Field label={t('Name (working name, can change any time)')}>
               <input
                 className={input}
                 maxLength={30}
@@ -966,8 +1281,10 @@ export function AssistantSettings() {
               />
             </Field>
             <Field
-              label="Model"
-              hint="Leave on the scoring model, or pick another. A model is only used after a passing test."
+              label={t('Model')}
+              hint={t(
+                'Leave on the scoring model, or pick another. A model is only used after a passing test.',
+              )}
             >
               <select
                 className={input}
@@ -975,7 +1292,7 @@ export function AssistantSettings() {
                 onChange={(e) => set('modelRowId', e.target.value || null)}
               >
                 <option value="">
-                  Same as scoring
+                  {t('Same as scoring')}
                   {data.activeModel
                     ? ` (${data.activeModel.provider} · ${data.activeModel.model})`
                     : ''}
@@ -988,15 +1305,17 @@ export function AssistantSettings() {
               </select>
             </Field>
             <Field
-              label="Faster model for reading questions (optional)"
-              hint="Only reads what the person typed, so it can be a smaller, cheaper model. Leave empty to use the model above. If it fails, the model above reads the question. The data terms you confirm below cover both."
+              label={t('Faster model for reading questions (optional)')}
+              hint={t(
+                'Only reads what the person typed, so it can be a smaller, cheaper model. Leave empty to use the model above. If it fails, the model above reads the question. The data terms you confirm below cover both.',
+              )}
             >
               <select
                 className={input}
                 value={form.understandModelRowId ?? ''}
                 onChange={(e) => set('understandModelRowId', e.target.value || null)}
               >
-                <option value="">Same as the model above</option>
+                <option value="">{t('Same as the model above')}</option>
                 {data.models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.provider} · {m.label}
@@ -1011,13 +1330,20 @@ export function AssistantSettings() {
                 disabled={busy}
                 onClick={() => void test()}
               >
-                Test connection
+                {t('Test connection')}
               </button>
               <span className="text-sm text-ink-3">
-                {data.testFresh ? 'Passed within the last hour.' : 'Not tested in the last hour.'}
+                {data.testFresh
+                  ? t('Passed within the last hour.')
+                  : t('Not tested in the last hour.')}
               </span>
+              {msg && msgAt === 'test' && (
+                <div className="w-full">
+                  <Notice kind={msg.kind}>{msg.text}</Notice>
+                </div>
+              )}
             </div>
-            <Field label="Message when it is unavailable">
+            <Field label={t('Message when it is unavailable')}>
               <input
                 className={input}
                 maxLength={300}
@@ -1028,7 +1354,7 @@ export function AssistantSettings() {
           </div>
         </Card>
 
-        <Card title="Functions">
+        <Card title={t('Functions')}>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             {(
               [
@@ -1053,15 +1379,15 @@ export function AssistantSettings() {
                   checked={form.features[k]}
                   onChange={(e) => set('features', { ...form.features, [k]: e.target.checked })}
                 />
-                {label}
+                {t(label)}
               </label>
             ))}
           </div>
         </Card>
 
-        <Card title="Data terms">
+        <Card title={t('Data terms')}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="What the provider does with the data">
+            <Field label={t('What the provider does with the data')}>
               <select
                 className={input}
                 value={form.dataTerms}
@@ -1071,12 +1397,12 @@ export function AssistantSettings() {
               >
                 {(Object.keys(TERMS_LABEL) as (keyof typeof TERMS_LABEL)[]).map((k) => (
                   <option key={k} value={k}>
-                    {TERMS_LABEL[k]}
+                    {t(TERMS_LABEL[k])}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Region where data may be processed">
+            <Field label={t('Region where data may be processed')}>
               <input
                 className={input}
                 maxLength={200}
@@ -1091,11 +1417,13 @@ export function AssistantSettings() {
                 onChange={(e) => setAttest(e.target.checked)}
               />
               <span>
-                I checked these terms with the provider’s own documentation.
+                {t('I checked these terms with the provider’s own documentation.')}
                 {data.settings.attestedAt && (
                   <span className="block text-xs text-ink-3">
-                    Last confirmed by {data.settings.attestedByName ?? 'an administrator'} ·{' '}
-                    {when(data.settings.attestedAt)}
+                    {t('Last confirmed by {name}', {
+                      name: data.settings.attestedByName ?? t('an administrator'),
+                    })}{' '}
+                    · {when(data.settings.attestedAt)}
                   </span>
                 )}
               </span>
@@ -1103,9 +1431,9 @@ export function AssistantSettings() {
           </div>
         </Card>
 
-        <Card title="Limits and usage">
+        <Card title={t('Limits and usage')}>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Answers per day" hint="Empty means no limit">
+            <Field label={t('Answers per day')} hint={t('Empty means no limit')}>
               <input
                 className={input}
                 inputMode="numeric"
@@ -1113,7 +1441,7 @@ export function AssistantSettings() {
                 onChange={(e) => set('dailyCap', num(e.target.value))}
               />
             </Field>
-            <Field label="Answers per month" hint="Empty means no limit">
+            <Field label={t('Answers per month')} hint={t('Empty means no limit')}>
               <input
                 className={input}
                 inputMode="numeric"
@@ -1121,67 +1449,64 @@ export function AssistantSettings() {
                 onChange={(e) => set('monthlyCap', num(e.target.value))}
               />
             </Field>
-            <Field label="Warn me at (%)">
+            <Field label={t('Warn me at (%)')}>
               <input
                 className={input}
                 inputMode="numeric"
-                value={form.warnPct}
-                onChange={(e) =>
-                  set('warnPct', Math.min(100, Math.max(1, num(e.target.value) ?? 80)))
-                }
+                value={Number.isNaN(form.warnPct) ? '' : form.warnPct}
+                onChange={(e) => {
+                  // The field may be empty while typing; 1-100 is applied to a number (SD-85).
+                  const n = num(e.target.value);
+                  set('warnPct', n === null ? NaN : Math.min(100, Math.max(1, n)));
+                }}
               />
             </Field>
           </div>
           <p className="mt-2 text-sm text-ink-2">
-            Today: {usageLine(data.usage.today, form.dailyCap)} · This month:{' '}
-            {usageLine(data.usage.month, form.monthlyCap)}. Only answers a model wrote are counted.
+            {t('Today: {v} · This month: {v2}. Only answers a model wrote are counted.', {
+              v: usageLine(data.usage.today, form.dailyCap),
+              v2: usageLine(data.usage.month, form.monthlyCap),
+            })}
           </p>
         </Card>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button type="submit" className={btnPrimary} disabled={busy}>
-            Save
+            {t('Save')}
           </button>
+          {msg && msgAt === 'save' && <Notice kind={msg.kind}>{msg.text}</Notice>}
         </div>
 
-        <Card title="Changes">
+        <Card title={t('Changes')}>
           {data.log.length === 0 ? (
-            <p className="text-sm text-ink-3">Nothing yet.</p>
+            <p className="text-sm text-ink-3">{t('Nothing yet.')}</p>
           ) : (
             <ul className="space-y-1 text-sm text-ink-2">
               {data.log.map((l, i) => (
                 <li key={i}>
-                  {LOG_LABEL[l.action] ?? l.action} · {l.by ?? 'unknown'} · {when(l.at)}
+                  {t(LOG_LABEL[l.action] ?? l.action)} · {l.by ?? t('unknown')} · {when(l.at)}
                 </li>
               ))}
             </ul>
           )}
         </Card>
 
-        <Card title="Recent answers (for review)">
-          {turns.length === 0 ? (
-            <p className="text-sm text-ink-3">No questions yet.</p>
-          ) : (
-            <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
-              {turns.slice(0, 50).map((t, i) => (
-                <li key={i}>
-                  {when(t.at)} · {t.user ?? 'unknown'} · {t.label ?? ''} · {t.kind ?? ''}
-                  {t.flags.length > 0 && ` · ${t.flags.join(', ')}`}
-                  {t.model ? ` · ${t.model}` : ' · no model'}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <RecentAnswersCard turns={turns} />
       </form>
 
       {catalog.length > 0 && (
-        <section aria-label={`Add an API for ${data.settings.name}`} className="space-y-2">
-          <h2 className="text-base font-semibold">{`Add an API for ${data.settings.name}`}</h2>
+        <section
+          aria-label={t('Add an API for {name}', { name: data.settings.name })}
+          className="space-y-2"
+        >
+          <h2 className="text-base font-semibold">
+            {t('Add an API for {name}', { name: data.settings.name })}
+          </h2>
           <p className="text-sm text-ink-2">
-            Choose a company and model and paste its API key. The model is then chosen for{' '}
-            {data.settings.name} above; scoring keeps using its own model. Each company has one key,
-            so a company already added keeps its key unless you paste a new one here.
+            {t(
+              'Choose a company and model and paste its API key. The model is then chosen for {name} above; scoring keeps using its own model. Each company has one key, so a company already added keeps its key unless you paste a new one here.',
+              { name: data.settings.name },
+            )}
           </p>
           <AddModel
             catalog={catalog}
@@ -1195,30 +1520,7 @@ export function AssistantSettings() {
       <MonitoringCard assistantName={data.settings.name} />
       <SkillsCard assistantName={data.settings.name} />
 
-      <Card title="What was sent to the model">
-        <p className="mb-2 text-sm text-ink-2">
-          Only these fields may leave the system, and only as shown here: the field names, their
-          type and longest length, a size and a fingerprint. The text itself is never kept.
-        </p>
-        {!payloads?.calls || payloads.calls.length === 0 ? (
-          <p className="text-sm text-ink-3">No model call yet.</p>
-        ) : (
-          <>
-            <p className="mb-2 text-xs text-ink-3">Allowed: {payloads.allowed.join(', ')}</p>
-            <ul className="max-h-72 space-y-1 overflow-y-auto text-sm text-ink-2">
-              {payloads.calls.slice(0, 50).map((c, i) => (
-                <li key={i}>
-                  {when(c.at)} · {c.intent} · {c.model ?? ''} · {c.bytes} bytes ·{' '}
-                  {Object.keys(c.fields).length} fields ·{' '}
-                  {c.violations.length === 0
-                    ? 'all allowed'
-                    : `NOT ALLOWED: ${c.violations.join(', ')}`}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </Card>
+      <PayloadCard payloads={payloads} />
     </div>
   );
 }
@@ -1252,6 +1554,7 @@ interface Monitoring {
 
 /** What the assistant did over the last weeks: counts only, never questions or names (plan E2). */
 function MonitoringCard({ assistantName }: { assistantName: string }) {
+  const t = useT();
   const [days, setDays] = useState(30);
   const [m, setM] = useState<Monitoring | null>(null);
   const [error, setError] = useState('');
@@ -1270,17 +1573,17 @@ function MonitoringCard({ assistantName }: { assistantName: string }) {
     xs.length ? xs.map((x) => `${x.name.replace(/_/g, ' ')} ${x.n}`).join(' · ') : '—';
   return (
     <Card
-      title={`How ${assistantName} is doing`}
+      title={t('How {name} is doing', { name: assistantName })}
       actions={
         <select
           className={`${input} w-auto`}
-          aria-label="Period"
+          aria-label={t('Period')}
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
         >
-          <option value={7}>Last 7 days</option>
-          <option value={30}>Last 30 days</option>
-          <option value={90}>Last 90 days</option>
+          <option value={7}>{t('Last 7 days')}</option>
+          <option value={30}>{t('Last 30 days')}</option>
+          <option value={90}>{t('Last 90 days')}</option>
         </select>
       }
     >
@@ -1289,8 +1592,9 @@ function MonitoringCard({ assistantName }: { assistantName: string }) {
         <div className="space-y-2 text-sm">
           {m.breaker.open && (
             <Notice kind="warn">
-              The AI reader is paused after repeated failures; questions are read by fixed rules
-              until it recovers or you press Test.
+              {t(
+                'The AI reader is paused after repeated failures; questions are read by fixed rules until it recovers or you press Test.',
+              )}
             </Notice>
           )}
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1305,31 +1609,33 @@ function MonitoringCard({ assistantName }: { assistantName: string }) {
               ] as const
             ).map(([k, v]) => (
               <div key={k} className="rounded-xl bg-page p-3">
-                <dt className="text-xs text-ink-3">{k}</dt>
+                <dt className="text-xs text-ink-3">{t(k)}</dt>
                 <dd className="text-lg font-semibold text-ink">{v}</dd>
               </div>
             ))}
           </dl>
           <p className="text-ink-2">
-            <span className="font-medium text-ink">Kinds of answer:</span> {list(m.byKind)}
+            <span className="font-medium text-ink">{t('Kinds of answer:')}</span> {list(m.byKind)}
           </p>
           <p className="text-ink-2">
-            <span className="font-medium text-ink">What people asked for:</span> {list(m.byIntent)}
+            <span className="font-medium text-ink">{t('What people asked for:')}</span>{' '}
+            {list(m.byIntent)}
           </p>
           <p className="text-ink-2">
-            <span className="font-medium text-ink">Notes shown:</span> {list(m.flags)}
+            <span className="font-medium text-ink">{t('Notes shown:')}</span> {list(m.flags)}
           </p>
           <p className="text-xs text-ink-3">
-            Counts only, from the audit trail. No questions and no names are shown here.
+            {t('Counts only, from the audit trail. No questions and no names are shown here.')}
           </p>
         </div>
       )}
-      {!m && !error && <p className="text-sm text-ink-3">Loading…</p>}
+      {!m && !error && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
     </Card>
   );
 }
 
 function SkillsCard({ assistantName }: { assistantName: string }) {
+  const t = useT();
   const [rows, setRows] = useState<SkillRow[] | null>(null);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [label, setLabel] = useState('');
@@ -1365,7 +1671,7 @@ function SkillsCard({ assistantName }: { assistantName: string }) {
       setLabel('');
       setAliases('');
       setExt('');
-      setMsg({ kind: 'ok', text: `${assistantName} reads this word now.` });
+      setMsg({ kind: 'ok', text: t('{name} reads this word now.', { name: assistantName }) });
       await load();
     } catch (er) {
       setMsg({ kind: 'error', text: errMsg(er) });
@@ -1384,15 +1690,16 @@ function SkillsCard({ assistantName }: { assistantName: string }) {
   }
 
   return (
-    <Card title="Words the assistant knows">
+    <Card title={t('Words the assistant knows')}>
       <p className="mb-2 text-sm text-ink-2">
-        {assistantName} comes with about a hundred skills in Azerbaijani, English and Russian. Add
-        your own here, for example a telecom term, or more ways to write a skill it already has.
-        Recruiters can suggest words; nothing is read until you approve it.
+        {t(
+          '{assistantName} comes with about a hundred skills in Azerbaijani, English and Russian. Add your own here, for example a telecom term, or more ways to write a skill it already has. Recruiters can suggest words; nothing is read until you approve it.',
+          { assistantName },
+        )}
       </p>
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
       <form onSubmit={(e) => void add(e)} className="mb-3 grid gap-2 sm:grid-cols-2">
-        <Field label="Skill name">
+        <Field label={t('Skill name')}>
           <input
             className={input}
             value={label}
@@ -1400,40 +1707,51 @@ function SkillsCard({ assistantName }: { assistantName: string }) {
             required
           />
         </Field>
-        <Field label="Kind">
+        <Field label={t('Kind')}>
           <select className={input} value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="tool">Tool</option>
-            <option value="language">Language</option>
-            <option value="domain">Domain</option>
-            <option value="certificate">Certificate</option>
+            <option value="tool">{t('Tool')}</option>
+            <option value="language">{t('Language')}</option>
+            <option value="domain">{t('Domain')}</option>
+            <option value="certificate">{t('Certificate')}</option>
           </select>
         </Field>
-        <Field label="Other ways it is written (separate with commas)">
+        <Field label={t('Other ways it is written (separate with commas)')}>
           <input className={input} value={aliases} onChange={(e) => setAliases(e.target.value)} />
         </Field>
-        <Field label="Only more ways to write a built-in skill? Its id, for example excel (optional)">
+        <Field
+          label={t(
+            'Only more ways to write a built-in skill? Its id, for example excel (optional)',
+          )}
+        >
           <input className={input} value={ext} onChange={(e) => setExt(e.target.value)} />
         </Field>
         <div className="sm:col-span-2">
           <button type="submit" className={btnPrimary} disabled={busy || !label.trim()}>
-            Add word
+            {t('Add word')}
           </button>
         </div>
       </form>
       {rows === null ? (
-        <p className="text-sm text-ink-3">Loading…</p>
+        <p className="text-sm text-ink-3">{t('Loading…')}</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-ink-3">No words added yet.</p>
+        <p className="text-sm text-ink-3">{t('No words added yet.')}</p>
       ) : (
-        <ul className="divide-y divide-line text-sm" aria-label="Added words">
+        <ul className="divide-y divide-line text-sm" aria-label={t('Added words')}>
           {rows.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <span className="min-w-0">
                 <span className="font-medium">{r.label}</span>{' '}
                 <span className="text-ink-3">
-                  ({r.status}
-                  {r.extends ? `, more ways to write ${r.extends}` : ''}) · {r.aliases.join(', ')} ·
-                  by {r.proposedBy}
+                  (
+                  {t(
+                    r.status === 'approved'
+                      ? 'approved'
+                      : r.status === 'rejected'
+                        ? 'rejected'
+                        : 'proposed',
+                  )}
+                  {r.extends ? `, ${t('more ways to write {id}', { id: r.extends })}` : ''}) ·{' '}
+                  {r.aliases.join(', ')} · {t('by {name}', { name: r.proposedBy })}
                 </span>
               </span>
               <span className="flex gap-1">
@@ -1441,20 +1759,20 @@ function SkillsCard({ assistantName }: { assistantName: string }) {
                   <button
                     type="button"
                     className={btnSecondary}
-                    aria-label={`Approve ${r.label}`}
+                    aria-label={`${t('Approve')} ${r.label}`}
                     onClick={() => void decide(r.id, 'approved')}
                   >
-                    Approve
+                    {t('Approve')}
                   </button>
                 )}
                 {r.status !== 'rejected' && (
                   <button
                     type="button"
                     className={btnSecondary}
-                    aria-label={`${r.status === 'approved' ? 'Remove' : 'Reject'} ${r.label}`}
+                    aria-label={`${r.status === 'approved' ? t('Remove') : t('Reject')} ${r.label}`}
                     onClick={() => void decide(r.id, 'rejected')}
                   >
-                    {r.status === 'approved' ? 'Remove' : 'Reject'}
+                    {r.status === 'approved' ? t('Remove') : t('Reject')}
                   </button>
                 )}
               </span>

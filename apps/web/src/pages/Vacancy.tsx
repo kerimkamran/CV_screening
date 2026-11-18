@@ -19,7 +19,49 @@ const blank = (): Requirement => ({
   rule: null,
 });
 
-export function CriteriaTab({ id }: { id: string }) {
+const parseTerms = (text: string) =>
+  text
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean);
+
+/**
+ * The knockout words as one comma-separated field. The text is kept as typed (commas and spaces
+ * included) and only the parsed list goes up; it is reset from the list when the list changes
+ * from outside (a row removed, a draft saved).
+ */
+function TermsInput({
+  terms,
+  disabled,
+  onTerms,
+}: {
+  terms: string[];
+  disabled: boolean;
+  onTerms: (terms: string[]) => void;
+}) {
+  const [text, setText] = useState(() => terms.join(', '));
+  useEffect(() => {
+    setText((cur) => {
+      const now = parseTerms(cur);
+      return now.length === terms.length && now.every((w, k) => w === terms[k])
+        ? cur
+        : terms.join(', ');
+    });
+  }, [terms]);
+  return (
+    <input
+      className={input}
+      disabled={disabled}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onTerms(parseTerms(e.target.value));
+      }}
+    />
+  );
+}
+
+export function CriteriaTab({ id, archived = false }: { id: string; archived?: boolean }) {
   const t = useT();
   const [c, setC] = useState<Criteria | null>(null);
   const [rows, setRows] = useState<Requirement[]>([]);
@@ -59,6 +101,8 @@ export function CriteriaTab({ id }: { id: string }) {
   };
 
   const frozen = c?.current?.frozen ?? false;
+  // A frozen set or an archived vacancy cannot be edited (SD-27).
+  const locked = frozen || archived;
   const edit = (i: number, patch: Partial<Requirement>) => {
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
     setDirty(true);
@@ -87,15 +131,20 @@ export function CriteriaTab({ id }: { id: string }) {
           ': edit, add or remove anything, then freeze. Frozen criteria cannot change, so every score can be traced to exactly what was used.',
         )}
       </Notice>
+      {archived && (
+        <Notice kind="info">{t('This vacancy is archived. Restore it to change it.')}</Notice>
+      )}
       {error && <Notice kind="error">{error}</Notice>}
       {ok && <Notice kind="ok">{ok}</Notice>}
 
       <Card
         title={t('Job description')}
         actions={
-          <button className={btnSecondary} onClick={() => setEditJd((e) => !e)}>
-            {editJd ? t('Close') : t('Edit text')}
-          </button>
+          archived ? undefined : (
+            <button className={btnSecondary} onClick={() => setEditJd((e) => !e)}>
+              {editJd ? t('Close') : t('Edit text')}
+            </button>
+          )
         }
       >
         {editJd ? (
@@ -134,24 +183,26 @@ export function CriteriaTab({ id }: { id: string }) {
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            {!frozen && (
+            {!locked && (
               <button
                 className={btnSecondary}
-                disabled={
-                  !!busy ||
-                  (rows.length > 0 &&
-                    !window.confirm(t('Replace the current draft with new AI suggestions?')))
-                }
-                onClick={() =>
-                  run('extract', async () =>
-                    apply(await api.post<Criteria>(`/vacancies/${id}/criteria/extract`)),
+                disabled={!!busy}
+                onClick={() => {
+                  // Asked when pressed, never while the page draws (SD-25).
+                  if (
+                    rows.length > 0 &&
+                    !window.confirm(t('Replace the current draft with new AI suggestions?'))
                   )
-                }
+                    return;
+                  void run('extract', async () =>
+                    apply(await api.post<Criteria>(`/vacancies/${id}/criteria/extract`)),
+                  );
+                }}
               >
                 {busy === 'extract' ? t('Extracting…') : t('Extract with AI')}
               </button>
             )}
-            {frozen && (
+            {frozen && !archived && (
               <button
                 className={btnSecondary}
                 disabled={!!busy}
@@ -179,7 +230,7 @@ export function CriteriaTab({ id }: { id: string }) {
                 <Field label={t('Criterion')}>
                   <input
                     className={input}
-                    disabled={frozen}
+                    disabled={locked}
                     value={r.text}
                     onChange={(e) => edit(i, { text: e.target.value })}
                   />
@@ -187,7 +238,7 @@ export function CriteriaTab({ id }: { id: string }) {
                 <Field label={t('Type')}>
                   <select
                     className={input}
-                    disabled={frozen}
+                    disabled={locked}
                     value={r.classification}
                     onChange={(e) => setClass(i, e.target.value as Classification)}
                   >
@@ -205,7 +256,7 @@ export function CriteriaTab({ id }: { id: string }) {
                     min={1}
                     max={100}
                     disabled={
-                      frozen ||
+                      locked ||
                       (r.classification !== 'mandatory' && r.classification !== 'preferred')
                     }
                     value={r.weight ?? ''}
@@ -214,7 +265,7 @@ export function CriteriaTab({ id }: { id: string }) {
                     }
                   />
                 </Field>
-                {!frozen && (
+                {!locked && (
                   <div className="flex items-end">
                     <button
                       className={btnSecondary}
@@ -234,7 +285,7 @@ export function CriteriaTab({ id }: { id: string }) {
                   <Field label={t('Rule')}>
                     <select
                       className={input}
-                      disabled={frozen}
+                      disabled={locked}
                       value={r.rule.type}
                       onChange={(e) =>
                         edit(i, {
@@ -256,21 +307,10 @@ export function CriteriaTab({ id }: { id: string }) {
                       'Matched as whole words, ignoring case. Include likely synonyms and languages. A match only sends the CV to human review; nobody is rejected automatically.',
                     )}
                   >
-                    <input
-                      className={input}
-                      disabled={frozen}
-                      value={r.rule.terms.join(', ')}
-                      onChange={(e) =>
-                        edit(i, {
-                          rule: {
-                            ...r.rule!,
-                            terms: e.target.value
-                              .split(',')
-                              .map((w) => w.trim())
-                              .filter(Boolean),
-                          },
-                        })
-                      }
+                    <TermsInput
+                      disabled={locked}
+                      terms={r.rule.terms}
+                      onTerms={(terms) => edit(i, { rule: { ...r.rule!, terms } })}
                     />
                   </Field>
                 </div>
@@ -285,7 +325,7 @@ export function CriteriaTab({ id }: { id: string }) {
             </div>
           ))}
         </div>
-        {!frozen && (
+        {!locked && (
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className={btnSecondary}

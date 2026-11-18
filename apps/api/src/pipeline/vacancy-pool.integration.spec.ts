@@ -196,6 +196,14 @@ describeDb('Vacancy pool (Development Plan WP 1.2 to 1.6; spec 6.7, 6.10)', () =
     expect(dup.json()).toMatchObject({ title: 'Copy of Archive role', status: 'draft' });
     expect(dup.json().counts.documents).toBe(0);
     expect(dup.json().requirements.length).toBe(3);
+    // The page may name the copy in its own language (I18-09); an empty or unknown field is refused.
+    const named = await a.api.post(`/vacancies/${vid}/duplicate`, {
+      title: 'Archive role (surət)',
+    });
+    expect(named.statusCode).toBe(201);
+    expect(named.json().title).toBe('Archive role (surət)');
+    expect((await a.api.post(`/vacancies/${vid}/duplicate`, { title: '' })).statusCode).toBe(400);
+    expect((await a.api.post(`/vacancies/${vid}/duplicate`, { other: 1 })).statusCode).toBe(400);
 
     // A run in progress blocks archiving.
     const busy = await h.scenario(a.api, [], 'Busy role');

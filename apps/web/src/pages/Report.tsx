@@ -17,6 +17,7 @@ import {
   type MatchBand,
 } from '../results-logic';
 import { BRAND_BY, BRAND_NAME, Mark } from '../brand';
+import { day } from '../dates';
 import { locale, useT } from '../i18n';
 import { ShareReport } from './ShareReport';
 import { btnSecondary, errMsg, Notice, OUTCOME, when } from '../ui';
@@ -180,7 +181,8 @@ export function Report({
         })
       : null;
   })();
-  const today = new Date().toISOString().slice(0, 10);
+  // The date in the reader's language, not an ISO string (SD-79).
+  const today = day(new Date());
   const shownRows = showAll ? scored : scored.slice(0, TOP);
   // "3–5 years" comes from the shared helper in English; shown in the viewer's language.
   const expText = (line: string | null) => {
@@ -198,6 +200,7 @@ export function Report({
         style={{ background: 'linear-gradient(160deg,#0C1A3D,#0F2459)' }}
       >
         <p
+          role="img"
           className="mb-3 flex items-center gap-2 text-white"
           aria-label={`${BRAND_NAME} ${BRAND_BY}`}
         >
@@ -246,7 +249,7 @@ export function Report({
       {!data.aiActive && counts.read < counts.total && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.',
           )}
         </Notice>
       )}

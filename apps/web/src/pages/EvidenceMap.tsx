@@ -19,6 +19,12 @@ export interface EvidenceSpot {
  * The dots are buttons with the requirement in words, so the map works with a keyboard and a screen
  * reader; colour is never the only signal (found and partly found differ in shape too).
  */
+/**
+ * How far apart crowded dots are stacked, in px: a dot is 20 px (h-5) and targets keep 24 px between
+ * their centres (WCAG 2.5.8 target spacing).
+ */
+const DOT = 24;
+
 export function EvidenceMap({
   spots,
   requirements,
@@ -35,6 +41,16 @@ export function EvidenceMap({
 }) {
   const t = useT();
   const [view, setView] = useState<{ top: number; height: number } | null>(null);
+  const [strip, setStrip] = useState<HTMLElement | null>(null);
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    if (!strip) return;
+    const read = () => setH(strip.clientHeight);
+    read();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
+    ro?.observe(strip);
+    return () => ro?.disconnect();
+  }, [strip]);
 
   useEffect(() => {
     if (!scroller) return;
@@ -46,31 +62,60 @@ export function EvidenceMap({
     read();
     scroller.addEventListener('scroll', read, { passive: true });
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
-    ro?.observe(scroller);
+    // The box also has to follow the content: zooming or a page that finishes drawing changes
+    // scrollHeight without the scroller itself changing size (EM-03).
+    const watch = () => {
+      ro?.disconnect();
+      ro?.observe(scroller);
+      for (const c of Array.from(scroller.children)) ro?.observe(c);
+      read();
+    };
+    watch();
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => watch());
+    mo?.observe(scroller, { childList: true });
     return () => {
       scroller.removeEventListener('scroll', read);
       ro?.disconnect();
+      mo?.disconnect();
     };
   }, [scroller]);
 
   const byId = new Map(requirements.map((r) => [r.requirementId, r]));
   const shown = spots.filter((s) => byId.has(s.id));
-  // Spots on the same line would hide each other: they step aside a little, left and right.
-  const nudge = new Map<number, number>();
+  // Spots that sit close together would hide each other. They are stacked along the strip, one dot
+  // apart, and never pushed sideways out of it (SD-05): the strip is as wide as a dot.
+  const top = new Map<number, string>();
   const order = shown.map((s, i) => [s.at, i] as const).sort((x, y) => x[0] - y[0]);
-  let run = 0;
-  order.forEach(([at, i], k) => {
-    run = k > 0 && at - order[k - 1]![0] < 0.02 ? run + 1 : 0;
-    nudge.set(i, run === 0 ? 0 : (run % 2 ? 1 : -1) * Math.ceil(run / 2) * 6);
-  });
+  if (h > DOT) {
+    const ys = order.map(([at]) => Math.min(h - DOT / 2, Math.max(DOT / 2, at * h)));
+    for (let k = 1; k < ys.length; k++) ys[k] = Math.max(ys[k]!, ys[k - 1]! + DOT);
+    // Too low at the end: push the run back up, keeping the spacing while there is room.
+    for (let k = ys.length - 1; k >= 0; k--) {
+      const limit = h - DOT / 2 - (ys.length - 1 - k) * DOT;
+      ys[k] = Math.max(DOT / 2, Math.min(ys[k]!, limit));
+    }
+    order.forEach(([, i], k) => top.set(i, `${ys[k]}px`));
+  } else order.forEach(([at, i]) => top.set(i, `${Math.min(98, Math.max(2, at * 100))}%`));
   const missing = requirements.filter(
     (r) =>
       r.kind === 'must' && r.state === 'missing' && !shown.some((s) => s.id === r.requirementId),
   ).length;
-  if (shown.length === 0) return null;
+  const missingNote =
+    missing > 0 ? (
+      <span className="sr-only">
+        {missing === 1
+          ? t('1 must-have was not found in the CV.')
+          : t('{n} must-haves were not found in the CV.', { n: missing })}
+      </span>
+    ) : null;
+  // No dots: the strip is not drawn, but the missing must-haves are still said (EM-04).
+  if (shown.length === 0) return missingNote;
+  // Dots are in the page in reading order (top to bottom), so Tab meets them in that order.
+  const reading = order.map(([, i]) => i);
 
   return (
     <nav
+      ref={setStrip}
       aria-label={t('Where the requirements are in the CV')}
       className="relative w-5 shrink-0 self-stretch rounded-full bg-neutral/60"
       data-testid="evidence-map"
@@ -78,11 +123,12 @@ export function EvidenceMap({
       {view && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 rounded-full border border-edge/70 bg-card/50 transition-[top] duration-150"
-          style={{ top: `${view.top * 100}%`, height: `${Math.max(view.height * 100, 4)}%` }}
+          className="pointer-events-none absolute inset-x-0 rounded-full border border-edge/70 bg-card/50 transition-[top] duration-150 motion-reduce:transition-none"
+          style={{ top: `${view.top * 100}%`, height: `${view.height * 100}%`, minHeight: 6 }}
         />
       )}
-      {shown.map((s, i) => {
+      {reading.map((i) => {
+        const s = shown[i]!;
         const r = byId.get(s.id)!;
         const on = s.id === activeId;
         const partly = r.state === 'partly';
@@ -93,22 +139,17 @@ export function EvidenceMap({
           <button
             key={`${s.id}-${i}`}
             type="button"
+            data-tgt="small"
             title={label}
             aria-label={label}
             aria-pressed={on}
             onClick={() => onPick(s.id)}
             className="m-pop absolute left-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-            style={
-              {
-                top: `${Math.min(98, Math.max(2, s.at * 100))}%`,
-                marginLeft: nudge.get(i) ?? 0,
-                '--i': i,
-              } as CSSProperties
-            }
+            style={{ top: top.get(i), '--i': Math.min(i, 12) } as CSSProperties}
           >
             <span
               aria-hidden="true"
-              className={`block transition-transform ${on ? 'scale-150' : ''} ${
+              className={`block transition-transform motion-reduce:transition-none ${on ? 'scale-150' : ''} ${
                 partly
                   ? 'h-2.5 w-2.5 rotate-45 rounded-[2px] bg-warn-text'
                   : 'h-2.5 w-2.5 rounded-full bg-ok-text'
@@ -117,13 +158,7 @@ export function EvidenceMap({
           </button>
         );
       })}
-      {missing > 0 && (
-        <span className="sr-only">
-          {missing === 1
-            ? t('1 must-have was not found in the CV.')
-            : t('{n} must-haves were not found in the CV.', { n: missing })}
-        </span>
-      )}
+      {missingNote}
     </nav>
   );
 }

@@ -13,13 +13,13 @@ export const MID = '01K0000000000000000000000M';
 export const MID2 = '01K0000000000000000000000N';
 export const PDF = readFileSync(new URL('./cv.pdf', import.meta.url));
 
-const ME = {
+export const ME = {
   userId: '01K000000000000000000000AB',
   displayName: 'Ayla Karimova',
   email: 'ayla@example.az',
   roles: ['TA_PARTNER'],
 };
-const vacancy = { id: VID, title: 'Network Engineer', status: 'open', archived: false };
+export const vacancy = { id: VID, title: 'Network Engineer', status: 'open', archived: false };
 const req = (id: string, text: string, state: string, page: number | null, quote: string) => ({
   requirementId: id,
   text,
@@ -31,8 +31,8 @@ const req = (id: string, text: string, state: string, page: number | null, quote
   rationale: 'Stated in the work history with dates.',
   anchors: state === 'missing' ? [] : [{ start: 0, end: 10, quote, page, block: 0 }],
 });
-const decision = { mark: 'new', note: null, version: 0, decidedAt: null, decidedBy: null };
-const analysis = (documentId: string, matchId: string, name: string, score: number) => ({
+export const decision = { mark: 'new', note: null, version: 0, decidedAt: null, decidedBy: null };
+export const analysis = (documentId: string, matchId: string, name: string, score: number) => ({
   matchId,
   documentId,
   label: name,
@@ -98,13 +98,13 @@ export const DOCS: Record<string, object> = {
     analysis: analysis(DID2, MID2, 'Rauf Əliyev', 71),
   },
 };
-const TEXT = {
+export const TEXT = {
   text: 'Rauf Əliyev\nNetwork Engineer, Bakı\n\nBGP route reflectors and OSPF areas across a carrier backbone.\n\n5G transport rollout, 2021 to 2023.',
   truncated: false,
   pageStarts: [0],
   blocks: [],
 };
-const row = (
+export const row = (
   documentId: string,
   matchId: string,
   label: string,
@@ -143,7 +143,29 @@ export const ROWS = [
 
 export interface Seen {
   posts: { url: string; body: unknown }[];
+  /** Every API request the page made: method, path with query, body and headers. */
+  requests: { method: string; url: string; body: unknown; headers: Record<string, string> }[];
 }
+
+/** SenAI switched on with every feature (the plan's "features all true"). */
+export const SENAI_ON = {
+  enabled: true,
+  name: 'SenAI',
+  unavailableMessage: '',
+  features: {
+    challenge: true,
+    compare: true,
+    interview: true,
+    challengeRecruiter: true,
+    understand: true,
+    rediscovery: true,
+    linkReview: true,
+  },
+};
+
+/** Static files of the built app that the mock lets through to the real server (SD-53). */
+const STATIC =
+  /^\/(assets\/|theme-init\.js$|favicon\.svg$|favicon\.ico$|manifest|robots\.txt$|healthz$|$)/;
 
 /** Signs in (the session lives in this tab only) and answers the API. */
 export async function mockApi(
@@ -151,22 +173,48 @@ export async function mockApi(
   opts: {
     signedIn?: boolean;
     total?: number;
+    /** Changes to the signed-in person (roles, displayName, language, background…). */
+    me?: Partial<typeof ME> & Record<string, unknown>;
+    /** The SenAI config answer (default: off). */
+    assistant?: Record<string, unknown>;
+    /** The vacancy list answer (default: []). */
+    vacancies?: unknown[];
     extra?: (route: Route, url: URL) => Promise<boolean> | boolean;
   } = {},
 ): Promise<Seen> {
-  const seen: Seen = { posts: [] };
+  const seen: Seen = { posts: [], requests: [] };
   const signedIn = opts.signedIn ?? true;
-  if (signedIn) await page.addInitScript(() => sessionStorage.setItem('cv.session', 'e2e-token'));
+  const me = { ...ME, ...(opts.me ?? {}) };
+  if (signedIn)
+    await page.addInitScript(() => {
+      try {
+        sessionStorage.setItem('cv.session', 'e2e-token');
+      } catch {
+        /* about:blank has no storage */
+      }
+    });
   await page.route(
-    (u) => !(u.pathname === '/' || u.pathname.startsWith('/assets/') || u.pathname === '/healthz'),
+    (u) => !STATIC.test(u.pathname),
     async (route) => {
       const url = new URL(route.request().url());
       const p = url.pathname;
       const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
-      if (route.request().method() === 'POST')
-        seen.posts.push({ url: p, body: route.request().postDataJSON() as unknown });
+      const req = route.request();
+      let body: unknown;
+      try {
+        body = req.postDataJSON() as unknown;
+      } catch {
+        body = req.postData();
+      }
+      seen.requests.push({
+        method: req.method(),
+        url: p + url.search,
+        body,
+        headers: req.headers(),
+      });
+      if (req.method() === 'POST') seen.posts.push({ url: p, body });
       if (opts.extra && (await opts.extra(route, url))) return;
-      if (p === '/me') return signedIn ? json(ME) : json({ message: 'Sign in' }, 401);
+      if (p === '/me') return signedIn ? json(me) : json({ message: 'Sign in' }, 401);
       const put = /^\/candidates\/(\w{26})\/decision$/.exec(p);
       if (put && route.request().method() === 'PUT') {
         const body = route.request().postDataJSON() as { mark: string; expectedVersion: number };
@@ -178,8 +226,8 @@ export async function mockApi(
         });
       }
       if (p === '/readyz') return json({ status: 'ok' });
-      if (p === '/assistant/config') return json({ enabled: false });
-      if (p === '/vacancies') return json([]);
+      if (p === '/assistant/config') return json(opts.assistant ?? { enabled: false });
+      if (p === '/vacancies') return json(opts.vacancies ?? []);
       if (p === `/documents/${DID}/view`)
         return route.fulfill({ body: PDF, contentType: 'application/pdf' });
       if (p.endsWith('/text')) return json(TEXT);

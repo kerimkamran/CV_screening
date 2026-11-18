@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { CV_STATUS_LABEL, type CvStatus, type Mark } from '@cv/shared';
 import { api, ApiError } from '../api';
 import { go } from '../route';
+import { clock } from '../dates';
 import { tr, useT } from '../i18n';
 import {
   ago,
@@ -80,6 +81,8 @@ interface State {
   sort: SortKey;
   order: Order;
   scroll: number;
+  /** How many rows were on screen, so coming back from a CV brings them all back (CP-24). */
+  loaded: number;
 }
 const DEFAULT: State = {
   active: '',
@@ -93,6 +96,7 @@ const DEFAULT: State = {
   sort: 'match',
   order: 'desc',
   scroll: 0,
+  loaded: 0,
 };
 const stateKey = (vacancyId?: string) => `cv-pool:${vacancyId ?? 'all'}`;
 function remembered(vacancyId?: string): State {
@@ -114,6 +118,10 @@ function remembered(vacancyId?: string): State {
         : 'match',
       order: j.order === 'asc' ? 'asc' : 'desc',
       scroll: typeof j.scroll === 'number' ? j.scroll : 0,
+      loaded:
+        typeof j.loaded === 'number' && Number.isFinite(j.loaded)
+          ? Math.min(Math.max(Math.floor(j.loaded), 0), 1000)
+          : 0,
     };
   } catch {
     return DEFAULT;
@@ -124,6 +132,8 @@ const params = (s: State, vacancyId?: string) => {
   const p = new URLSearchParams();
   const v = vacancyId ?? s.vacancy;
   if (v) p.set('vacancy', v);
+  // The page of one vacancy shows its CVs even when the vacancy is archived (read-only there).
+  if (vacancyId) p.set('archived', 'true');
   if (s.batch) p.set('batch', s.batch);
   if (s.show === 'all') p.set('status', 'all');
   else if (s.show) p.set('status', SHOW_STATUSES[s.show].join(','));
@@ -143,6 +153,10 @@ const SORT_LABEL: Record<SortKey, string> = {
   vacancy: 'Vacancy',
   decision: 'Decision',
 };
+
+/** The sort order in words, for screen readers (the arrows are not read well). */
+const sortSaid = (order: string) =>
+  tr(order === 'asc' ? ', sorted ascending' : ', sorted descending');
 
 export function CandidatePool({
   vacancyId,
@@ -172,9 +186,10 @@ export function CandidatePool({
   const [summary, setSummary] = useState<{ subject: string; body: string; count: number } | null>(
     null,
   );
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'yes' | 'no' | ''>('');
   const { toast, show, dismiss } = useUndoToast();
   const restored = useRef(false);
+  const wantRows = useRef(s.loaded);
   const wide = useWide();
   const [activeId, setActiveId] = useState<string | null>(() => s.active || null);
   // The whole ordered list as ids, for Previous and Next on the review screen (S2-FE5).
@@ -191,6 +206,10 @@ export function CandidatePool({
       /* a convenience only */
     }
   }, [s, vacancyId]);
+  useEffect(() => {
+    if (rows.length === 0) return;
+    setS((cur) => (cur.loaded === rows.length ? cur : { ...cur, loaded: rows.length }));
+  }, [rows.length]);
   useEffect(() => {
     const keep = () => setS((cur) => ({ ...cur, scroll: window.scrollY }));
     window.addEventListener('pagehide', keep);
@@ -224,32 +243,58 @@ export function CandidatePool({
   }, [vacancyId]);
 
   const query = params(s, vacancyId).toString();
-  const load = useCallback(async () => {
-    setError('');
-    setExpired(false);
-    try {
-      const r = await api.get<PoolPage>(`/candidates?${query}&limit=${PAGE}`);
-      setPage(r);
-      setRows(r.rows);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, [query]);
+  // A reload after a failed action keeps that action's message on screen (CP-13).
+  const load = useCallback(
+    async (keepError = false) => {
+      if (!keepError) setError('');
+      setExpired(false);
+      // Only the first load after arriving brings back the rows that were on screen when the person
+      // left (the next pages, by cursor); a new filter or search starts again from the top.
+      const want = wantRows.current;
+      wantRows.current = 0;
+      try {
+        const r = await api.get<PoolPage>(`/candidates?${query}&limit=${PAGE}`);
+        let last = r;
+        const all = [...r.rows];
+        while (all.length < want && last.nextCursor) {
+          try {
+            last = await api.get<PoolPage>(
+              `/candidates?${query}&limit=${PAGE}&cursor=${encodeURIComponent(last.nextCursor)}`,
+            );
+          } catch {
+            break; // an expired list: what was loaded is shown, 'Show more' reports it
+          }
+          all.push(...last.rows);
+        }
+        setPage(last === r ? r : { ...last, rows: [] });
+        setRows(all);
+      } catch (e) {
+        setError(errMsg(e));
+      }
+    },
+    [query],
+  );
   // The full ordered list, as ids only, so the review screen can walk all of it (S2-BE5).
+  // Fetched after the same pause as the list, never on each key press (SD-98).
   useEffect(() => {
     let dead = false;
     allIds.current = null;
-    api.get<{ items: [string, string | null][] }>(`/candidates/ids?${query}`).then(
-      (r) => {
-        if (!dead && Array.isArray(r?.items))
-          allIds.current = { key: query, ids: r.items.map((i) => i[0]), items: r.items };
-      },
-      () => undefined,
+    const h = setTimeout(
+      () =>
+        api.get<{ items: [string, string | null][] }>(`/candidates/ids?${query}`).then(
+          (r) => {
+            if (!dead && Array.isArray(r?.items))
+              allIds.current = { key: query, ids: r.items.map((i) => i[0]), items: r.items };
+          },
+          () => undefined,
+        ),
+      s.q ? 250 : 0,
     );
     return () => {
       dead = true;
+      clearTimeout(h);
     };
-  }, [query]);
+  }, [query, s.q]);
   // A new filter or search starts a new selection; a new sort keeps it. It is kept for the tab, so
   // a trip to a CV and back finds it again.
   const fk = filterKey(query);
@@ -301,6 +346,9 @@ export function CandidatePool({
         : { sort: k, order: k === 'match' || k === 'updated' ? 'desc' : 'asc' },
     );
 
+  const ariaSort = (k: SortKey): 'ascending' | 'descending' | 'none' =>
+    s.sort !== k ? 'none' : s.order === 'asc' ? 'ascending' : 'descending';
+
   // ---------------------------------------------------------------- marks
   const setRow = (documentId: string, f: (r: PoolRow) => PoolRow) =>
     setRows((cur) => cur.map((r) => (isRanked(r) && r.documentId === documentId ? f(r) : r)));
@@ -336,7 +384,7 @@ export function CandidatePool({
           }));
         } catch (e) {
           setError(errMsg(e));
-          void load();
+          void load(true);
         }
       });
     } catch (e) {
@@ -346,62 +394,74 @@ export function CandidatePool({
         decisionVersion: before.version,
       }));
       setError(errMsg(e));
-      if (e instanceof ApiError && e.code === 'STALE_VERSION') void load();
+      if (e instanceof ApiError && e.code === 'STALE_VERSION') void load(true);
     }
   }
 
   async function bulk(to: Mark) {
-    // Only CVs with a result can be marked from the list; the others open on their own page.
-    const ids = [...selected.values()].flatMap((m) => (m ? [m] : [])).slice(0, BULK_MAX);
+    // Only CVs with a result can be marked from the list; the others open on their own page. More
+    // than BULK_MAX are sent in parts, so no CV is ever dropped silently (CP-17, SD-10).
+    const ids = [...selected.values()].flatMap((m) => (m ? [m] : []));
     if (!ids.length) return;
-    try {
-      const r = await api.post<{
-        results: {
-          matchId: string;
-          ok: boolean;
-          version?: number;
-          previous?: { mark: Mark; note: string | null; version: number };
-          error?: string;
-        }[];
-        changed: number;
-      }>('/candidates/decisions', { matchIds: ids, mark: to });
-      const done = r.results.filter((x) => x.ok);
-      setRows((cur) =>
-        cur.map((row) => {
-          if (!isRanked(row)) return row;
-          const hit = done.find((x) => x.matchId === row.matchId);
-          return hit
-            ? { ...row, decision: to, decisionVersion: hit.version ?? row.decisionVersion }
-            : row;
-        }),
-      );
-      setSelected(new Map());
-      const failed = r.results.length - done.length;
-      if (failed)
-        setError(
-          t('{n} could not be changed: {why}', {
-            n: failed,
-            why: r.results.find((x) => !x.ok)?.error ?? '',
-          }),
-        );
-      if (done.length)
-        show(t('{n} marked {mark}.', { n: done.length, mark: markName(to) }), async () => {
-          for (const x of done) {
-            try {
-              await api.put(`/candidates/${x.matchId}/decision`, {
-                mark: x.previous!.mark,
-                note: x.previous!.note,
-                expectedVersion: x.version,
-              });
-            } catch {
-              /* a row someone else changed meanwhile stays as it is */
-            }
-          }
-          void load();
+    type Result = {
+      matchId: string;
+      ok: boolean;
+      version?: number;
+      previous?: { mark: Mark; note: string | null; version: number };
+      error?: string;
+    };
+    const results: Result[] = [];
+    let stopped: unknown = null;
+    for (let at = 0; at < ids.length; at += BULK_MAX) {
+      try {
+        const r = await api.post<{ results: Result[]; changed: number }>('/candidates/decisions', {
+          matchIds: ids.slice(at, at + BULK_MAX),
+          mark: to,
         });
-    } catch (e) {
-      setError(errMsg(e));
+        results.push(...r.results);
+      } catch (e) {
+        stopped = e;
+        break;
+      }
     }
+    const done = results.filter((x) => x.ok);
+    const doneIds = new Set(done.map((x) => x.matchId));
+    setRows((cur) =>
+      cur.map((row) => {
+        if (!isRanked(row)) return row;
+        const hit = done.find((x) => x.matchId === row.matchId);
+        return hit
+          ? { ...row, decision: to, decisionVersion: hit.version ?? row.decisionVersion }
+          : row;
+      }),
+    );
+    // The CVs that were marked leave the selection; the rest stay selected to try again.
+    setSelected((cur) => {
+      const n = new Map(cur);
+      for (const [doc, m] of cur) if (m && doneIds.has(m)) n.delete(doc);
+      return n;
+    });
+    const failed = results.filter((x) => !x.ok);
+    if (stopped) setError(errMsg(stopped));
+    else if (failed.length)
+      setError(
+        t('{n} could not be changed: {why}', { n: failed.length, why: failed[0]?.error ?? '' }),
+      );
+    if (done.length)
+      show(t('{n} marked {mark}.', { n: done.length, mark: markName(to) }), async () => {
+        for (const x of done) {
+          try {
+            await api.put(`/candidates/${x.matchId}/decision`, {
+              mark: x.previous!.mark,
+              note: x.previous!.note,
+              expectedVersion: x.version,
+            });
+          } catch {
+            /* a row someone else changed meanwhile stays as it is */
+          }
+        }
+        void load();
+      });
   }
 
   // ---------------------------------------------------------------- selection and download
@@ -469,7 +529,7 @@ export function CandidatePool({
           `/candidates/shortlist-summary?vacancy=${encodeURIComponent(summaryVacancy)}`,
         ),
       );
-      setCopied(false);
+      setCopied('');
     } catch (e) {
       setError(errMsg(e));
     }
@@ -512,9 +572,15 @@ export function CandidatePool({
   const onKey = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey || summary) return;
     const el = e.target as HTMLElement | null;
-    if (el && /^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(el.tagName)) return;
+    // Text fields and selects keep their keys; after a click on a chip, a pill, a checkbox or a
+    // button the list keys still work (CP-12, SD-12). Enter on a focused control is that control's.
+    if (el && /^(SELECT|TEXTAREA)$/.test(el.tagName)) return;
+    if (el instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(el.type))
+      return;
     if (el?.isContentEditable) return;
-    const k = e.key.toLowerCase();
+    const control = !!el && /^(BUTTON|A|INPUT)$/.test(el.tagName);
+    const k = e.key === 'ArrowDown' ? 'j' : e.key === 'ArrowUp' ? 'k' : e.key.toLowerCase();
+    if (control && (k === 'enter' || k === ' ')) return;
     const i = shown.findIndex((r) => r.documentId === activeId);
     if (k === 'j' || k === 'k') {
       if (!shown.length) return;
@@ -624,10 +690,10 @@ export function CandidatePool({
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <label className="flex items-center gap-2">
+          <label className="flex max-w-full min-w-0 items-center gap-2">
             <span className="text-ink-3">{t('Show')}</span>
             <select
-              className={`${input} w-auto!`}
+              className={`${input} w-auto! max-w-full min-w-0`}
               aria-label={t('Show')}
               value={s.show}
               onChange={(e) => patch({ show: e.target.value as ShowKey })}
@@ -703,24 +769,24 @@ export function CandidatePool({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-2">
-        <p role="status">
-          {page
-            ? [
-                tr(page.total === 1 ? '{n} candidate' : '{n} candidates', { n: page.total }),
-                t('{n} strong', { n: page.counts.strong }),
-                page.counts.outOfDate ? t('{n} out of date', { n: page.counts.outOfDate }) : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            : ''}
+        <p>
+          {/* Only the counts are announced; the time changes on every refresh and would repeat them (A11-08). */}
+          <span role="status">
+            {page
+              ? [
+                  tr(page.total === 1 ? '{n} candidate' : '{n} candidates', { n: page.total }),
+                  t('{n} strong', { n: page.counts.strong }),
+                  page.counts.outOfDate ? t('{n} out of date', { n: page.counts.outOfDate }) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : ''}
+          </span>
           {page && (
             <span className="text-ink-3">
               {' · '}
               {t('As of {time}', {
-                time: new Date(page.asOf).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
+                time: clock(new Date(page.asOf)),
               })}
             </span>
           )}
@@ -740,9 +806,16 @@ export function CandidatePool({
             onClick={() => void openSummary()}
             disabled={!summaryVacancy}
             title={summaryVacancy ? undefined : t('Choose a vacancy first')}
+            aria-describedby={summaryVacancy ? undefined : 'summary-why'}
           >
             {t('Shortlist summary')}
           </button>
+          {/* The reason is visible text too, so keyboard and touch users get it (SD-95). */}
+          {!summaryVacancy && (
+            <span id="summary-why" className="text-xs text-ink-3">
+              {t('Choose a vacancy first')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -775,9 +848,12 @@ export function CandidatePool({
               type="button"
               className={btnPrimary}
               onClick={() => {
-                void navigator.clipboard?.writeText(summary.body).then(
-                  () => setCopied(true),
-                  () => undefined,
+                // A blocked clipboard is said, so the person copies from the box instead (SD-101).
+                const done = navigator.clipboard?.writeText(summary.body);
+                if (!done) return setCopied('no');
+                void done.then(
+                  () => setCopied('yes'),
+                  () => setCopied('no'),
                 );
               }}
             >
@@ -789,11 +865,16 @@ export function CandidatePool({
             >
               {t('Open in e-mail')}
             </a>
-            {copied && (
-              <span role="status" className="text-sm text-ok-ink">
-                {t('Copied.')}
-              </span>
-            )}
+            <span
+              role="status"
+              className={`text-sm ${copied === 'no' ? 'text-err-ink' : 'text-ok-ink'}`}
+            >
+              {copied === 'yes'
+                ? t('Copied.')
+                : copied === 'no'
+                  ? t('Copying did not work. Select the text in the box and copy it.')
+                  : ''}
+            </span>
             <span className="text-xs text-ink-3">
               {t('Nothing is sent from here. You send it yourself.')}
             </span>
@@ -924,62 +1005,75 @@ export function CandidatePool({
           }
         >
           <div className="min-w-0 rounded-2xl border border-line bg-card">
-            <div
-              role="row"
-              className="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3 lg:grid"
-            >
-              <span>
-                {canMark && (
-                  <input
-                    type="checkbox"
-                    aria-label={t('Select all shown')}
-                    checked={allSelected}
-                    onChange={(e) =>
-                      setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
-                    }
-                  />
-                )}
-              </span>
-              {(
-                [
-                  ['candidate', 'Candidate'],
-                  ['vacancy', 'Vacancy'],
-                  ['match', 'Match'],
-                ] as [SortKey, string][]
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => sortBy(k)}
-                  aria-sort={
-                    s.sort === k ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
-                  }
-                  className="text-left uppercase hover:text-ink"
+            {/* Column labels and sort buttons. The rows below are a list, not a table, so this is a
+                labelled group; each sort button says its state in words (SD-63). */}
+            <div role="table" aria-label={t('Sort the list')} className="hidden lg:block">
+              <div role="rowgroup">
+                <div
+                  role="row"
+                  className="grid grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem] items-center gap-3 border-b border-line px-4 py-2 text-xs font-medium uppercase tracking-wide text-ink-3"
                 >
-                  {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
-                </button>
-              ))}
-              <span>{t('Must-haves')}</span>
-              <button
-                type="button"
-                onClick={() => sortBy('decision')}
-                aria-sort={
-                  s.sort === 'decision' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
-                }
-                className="text-left uppercase hover:text-ink"
-              >
-                {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-              </button>
-              <button
-                type="button"
-                onClick={() => sortBy('updated')}
-                aria-sort={
-                  s.sort === 'updated' ? (s.order === 'asc' ? 'ascending' : 'descending') : 'none'
-                }
-                className="text-left uppercase hover:text-ink"
-              >
-                {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
-              </button>
+                  <span role="columnheader" aria-hidden={canMark ? undefined : true}>
+                    {canMark && (
+                      // A label, so the whole 44 px square toggles the box (WCAG 2.5.5).
+                      <label className="-m-3 flex h-11 w-11 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          aria-label={t('Select all shown')}
+                          checked={allSelected}
+                          onChange={(e) =>
+                            setSelected(e.target.checked ? new Map(shown.map(pick)) : new Map())
+                          }
+                        />
+                      </label>
+                    )}
+                  </span>
+                  {(
+                    [
+                      ['candidate', 'Candidate'],
+                      ['vacancy', 'Vacancy'],
+                      ['match', 'Match'],
+                    ] as [SortKey, string][]
+                  ).map(([k, label]) => (
+                    <span key={k} role="columnheader" aria-sort={ariaSort(k)}>
+                      <button
+                        type="button"
+                        onClick={() => sortBy(k)}
+                        aria-pressed={s.sort === k}
+                        className="text-left uppercase hover:text-ink"
+                      >
+                        {t(label)} {s.sort === k ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                        {s.sort === k && <span className="sr-only">{sortSaid(s.order)}</span>}
+                      </button>
+                    </span>
+                  ))}
+                  <span role="columnheader">{t('Must-haves')}</span>
+                  <span role="columnheader" aria-sort={ariaSort('decision')}>
+                    <button
+                      type="button"
+                      onClick={() => sortBy('decision')}
+                      aria-pressed={s.sort === 'decision'}
+                      className="text-left uppercase hover:text-ink"
+                    >
+                      {t('Decision')} {s.sort === 'decision' ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                      {s.sort === 'decision' && (
+                        <span className="sr-only">{sortSaid(s.order)}</span>
+                      )}
+                    </button>
+                  </span>
+                  <span role="columnheader" aria-sort={ariaSort('updated')}>
+                    <button
+                      type="button"
+                      onClick={() => sortBy('updated')}
+                      aria-pressed={s.sort === 'updated'}
+                      className="text-left uppercase hover:text-ink"
+                    >
+                      {t('Updated')} {s.sort === 'updated' ? (s.order === 'asc' ? '↑' : '↓') : ''}
+                      {s.sort === 'updated' && <span className="sr-only">{sortSaid(s.order)}</span>}
+                    </button>
+                  </span>
+                </div>
+              </div>
             </div>
             {canMark && (
               <label className="flex min-h-11 items-center gap-3 border-b border-line px-4 text-sm lg:hidden">
@@ -1002,6 +1096,8 @@ export function CandidatePool({
                     key={r.documentId}
                     id={`cand-${r.documentId}`}
                     data-active={on ? 'true' : undefined}
+                    tabIndex={-1}
+                    aria-current={on ? 'true' : undefined}
                     style={{ '--i': Math.min(i % 50, 12) } as CSSProperties}
                     className={`${on ? 'bg-sel ' : ''}m-rise grid cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 px-4 py-3 text-sm hover:bg-hover lg:grid-cols-[2rem_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_6rem_8rem_6rem]`}
                     onClick={() => {
@@ -1010,7 +1106,8 @@ export function CandidatePool({
                       else leave(r);
                     }}
                   >
-                    <span
+                    {/* A label, so the whole 44 px square toggles the box (a touch target, WCAG 2.5.5). */}
+                    <label
                       onClick={(e) => e.stopPropagation()}
                       className="-m-3 flex h-11 w-11 items-center justify-center"
                     >
@@ -1023,7 +1120,7 @@ export function CandidatePool({
                           onChange={(e) => toggleOne(r, e.target.checked)}
                         />
                       )}
-                    </span>
+                    </label>
                     <span className="min-w-0">
                       <a
                         href={reviewHref(r.documentId)}

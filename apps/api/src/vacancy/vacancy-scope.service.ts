@@ -1,4 +1,10 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { VacancyStatus } from '@cv/shared';
 import { ENV, type Env } from '../config/env';
 import { DbService } from '../db/db.service';
@@ -66,6 +72,25 @@ export class VacancyScope {
       throw new ForbiddenException('Only the owner or a recruiting lead can change this vacancy.');
     }
     return v;
+  }
+
+  /**
+   * assert() for a change: a vacancy in the archive is read-only until it is restored, whatever the
+   * caller's role (SD-27, VP-06). Reads keep using assert().
+   */
+  async assertActive(p: Principal, vacancyId: string): Promise<VacancyRow> {
+    const v = await this.assert(p, vacancyId);
+    if (v.archivedAt) {
+      throw new ConflictException('This vacancy is archived. Restore it to change it.');
+    }
+    return v;
+  }
+
+  /** assertScreening() for a change, with the same archive rule. */
+  async assertScreeningActive(p: Principal, screeningId: string): Promise<{ vacancyId: string }> {
+    const r = await this.assertScreening(p, screeningId);
+    await this.assertActive(p, r.vacancyId);
+    return r;
   }
 
   /** Resolve a screening to its vacancy, applying the same scope. */

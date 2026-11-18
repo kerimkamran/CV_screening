@@ -5,7 +5,7 @@ export const AZ_ASSISTANT: Record<string, string> = {
   Assistant: 'Köməkçi',
   'Discussing: {label} · {band}': 'Müzakirə: {label} · {band}',
   'Select a candidate to talk about.': 'Müzakirə üçün namizəd seçin.',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   'Chats are saved to this run and may be reviewed for compliance.':
     'Söhbətlər bu işə qoşulub saxlanılır və uyğunluq üçün yoxlanıla bilər.',
   Conversation: 'Söhbət',
@@ -21,37 +21,42 @@ export const AZ_ASSISTANT: Record<string, string> = {
 
   // Progress, stop, errors
   '{name} is reading the record…': '{name} qeydi oxuyur…',
-  Stop: 'Dayandır',
+  Stop: 'Dayandırın',
   '{name} has answered.': '{name} cavab verdi.',
   'Stopped. Nothing was changed.': 'Dayandırıldı. Heç nə dəyişdirilmədi.',
 
   // Compare
   'Compare {label} with (up to 2)': '{label} namizədini müqayisə edin (ən çox 2 namizədlə)',
   'No other scored candidates.': 'Qiymətləndirilmiş başqa namizəd yoxdur.',
-  Compare: 'Müqayisə et',
-  Cancel: 'Ləğv et',
+  Compare: 'Müqayisə edin',
+  Cancel: 'Ləğv edin',
+  '{n} of {total} with this name': 'bu adla {total} nəfərdən {n}-ci',
 
   // Challenge
   'Your own read (optional)': 'Öz qənaətiniz (istəyə görə)',
-  'Challenge this match': 'Bu uyğunluğa etiraz et',
+  'Challenge this match': 'Bu uyğunluğa etiraz edin',
 
   // Starter chips (English constants in assistant.ts)
   'Suggested questions': 'Təklif olunan suallar',
+  'Explain more': 'Ətraflı izah edin',
+  'Deeper evaluation': 'Daha dərin qiymətləndirmə',
+  'Weakest point': 'Ən zəif cəhət',
+  'Interview questions': 'Müsahibə sualları',
   'Why this band?': 'Niyə bu səviyyə?',
   'What is the weakest point?': 'Ən zəif cəhət nədir?',
   'What would change the band?': 'Səviyyəni nə dəyişə bilər?',
   'What should I ask in the interview?': 'Müsahibədə nə soruşmalıyam?',
-  'Compare with…': 'Müqayisə et…',
+  'Compare with…': 'Müqayisə edin…',
   'What could I be missing?': 'Nəyi gözdən qaçıra bilərəm?',
   'What is the strongest case for this one?': 'Bu namizəd üçün ən güclü dəlil nədir?',
   'What should I check by hand?': 'Nəyi əl ilə yoxlamalıyam?',
-  'Compare these candidates': 'Bu namizədləri müqayisə et',
+  'Compare these candidates': 'Bu namizədləri müqayisə edin',
 
   // Ask form
   'Ask {name} about {label}': '{name} adlı köməkçidən {label} haqqında soruşun',
   'Ask about {label}…': '{label} haqqında soruşun…',
-  Send: 'Göndər',
-  'Delete this chat': 'Bu söhbəti sil',
+  Send: 'Göndərin',
+  'Delete this chat': 'Bu söhbəti silin',
 
   // Answer card
   'Written by an AI from the stored match':
@@ -67,7 +72,7 @@ export const AZ_ASSISTANT: Record<string, string> = {
   'Match tally': 'Uyğunluq hesabı',
   'From the record: {facts}': 'Qeyddən: {facts}',
   'What I can’t see:': 'Görə bilmədiklərim:',
-  'Show less': 'Daha az göstər',
-  'Show more': 'Daha çox göstər',
-  'Edit requirement: {text}': 'Tələbi redaktə et: {text}',
+  'Show less': 'Daha az göstərin',
+  'Show more': 'Daha çox göstərin',
+  'Edit requirement: {text}': 'Tələbi redaktə edin: {text}',
 };

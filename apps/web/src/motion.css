@@ -57,21 +57,27 @@
       transition-duration: var(--m-instant);
     }
 
+    /*
+     * Entrances fill `backwards` (the start state during the delay), never `both`: an animation that
+     * holds its end state keeps the element a stacking group for good, and a list of such cards then
+     * paints over overlays that come earlier in the page (UAT-BUG-001). The end state of every
+     * entrance is the element's own style, so nothing changes visually.
+     */
     /* Arriving: content rises a little and fades in. `--i` staggers a list (capped by the caller). */
     .m-rise {
-      animation: m-rise var(--m-slow) var(--ease-emph) both;
+      animation: m-rise var(--m-slow) var(--ease-emph) backwards;
       animation-delay: calc(var(--i, 0) * var(--m-stagger));
     }
     .m-fade {
-      animation: m-fade var(--m-med) var(--ease-standard) both;
+      animation: m-fade var(--m-med) var(--ease-standard) backwards;
     }
     /* Something new and important: a badge, a saved decision. */
     .m-pop {
-      animation: m-pop var(--m-slow) var(--ease-spring) both;
+      animation: m-pop var(--m-slow) var(--ease-spring) backwards;
     }
     /* A toast slides up from the bottom edge. */
     .m-toast {
-      animation: m-toast var(--m-med) var(--ease-emph) both;
+      animation: m-toast var(--m-med) var(--ease-emph) backwards;
     }
 
     /* The highlight of a segmented control glides to the chosen tab. */
@@ -120,25 +126,25 @@
 
     /* "Show in CV": the found line lights up, then settles to the usual highlight. */
     .m-spot {
-      animation: m-spot 1400ms var(--ease-standard) both;
+      animation: m-spot 1400ms var(--ease-standard) backwards;
     }
     /* The found lines on a PDF page: a highlighter stroke sweeps across from the left. */
     .m-highlight {
       transform-origin: left center;
-      animation: m-swipe var(--m-slow) var(--ease-emph) both;
+      animation: m-swipe var(--m-slow) var(--ease-emph) backwards;
       animation-delay: calc(140ms + var(--i, 0) * 90ms);
     }
 
     /* Ticks draw themselves (SVG paths with pathLength="1"). */
     .m-draw {
       stroke-dasharray: 1;
-      animation: m-draw var(--m-slow) var(--ease-emph) both;
+      animation: m-draw var(--m-slow) var(--ease-emph) backwards;
       animation-delay: calc(120ms + var(--i, 0) * var(--m-stagger));
     }
 
     /* The score ring fills to its value (stroke-dashoffset is set inline). */
     .m-ring {
-      animation: m-ring 900ms var(--ease-emph) both;
+      animation: m-ring 900ms var(--ease-emph) backwards;
       animation-delay: 80ms;
     }
 

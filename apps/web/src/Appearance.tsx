@@ -9,30 +9,56 @@ import {
   type BackgroundChoice,
 } from './theme';
 
+/**
+ * Saves go out one after the other, in the order the person made them: two quick changes (language
+ * twice, say) must not reach the server the other way round and leave the older choice stored (AC-04).
+ */
+let saving: Promise<unknown> = Promise.resolve();
+function savePreference(patch: { language: Lang } | { background: BackgroundChoice }) {
+  const run = saving.then(() => api.put('/me/preferences', patch));
+  saving = run.catch(() => undefined);
+  return run;
+}
+
 /** Language switch (spec 13). Saved per person when signed in; kept in the browser either way. */
 export function LanguageSwitch({ signedIn }: { signedIn: boolean }) {
   const t = useT();
   const lang = useLang();
-  function choose(next: Lang) {
+  const [failed, setFailed] = useState(false);
+  async function choose(next: Lang) {
     applyLang(next);
-    if (signedIn) void api.put('/me/preferences', { language: next }).catch(() => undefined);
+    if (!signedIn) return;
+    // The language applies at once; when the account could not keep it, say so (SD-133).
+    try {
+      await savePreference({ language: next });
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
   }
   return (
-    <label className="flex items-center gap-1 text-sm">
-      <span className="sr-only">{t('Language')}</span>
-      <select
-        aria-label={t('Language')}
-        className="rounded border border-edge bg-card px-1.5 py-0.5 text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-        value={lang}
-        onChange={(e) => choose(e.target.value as Lang)}
-      >
-        {LANGS.map((l) => (
-          <option key={l} value={l} lang={l}>
-            {LANG_NAME[l]}
-          </option>
-        ))}
-      </select>
-    </label>
+    <>
+      <label className="flex items-center gap-1 text-sm">
+        <span className="sr-only">{t('Language')}</span>
+        <select
+          aria-label={t('Language')}
+          className="rounded border border-edge bg-card px-1.5 py-0.5 text-ink pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+          value={lang}
+          onChange={(e) => void choose(e.target.value as Lang)}
+        >
+          {LANGS.map((l) => (
+            <option key={l} value={l} lang={l}>
+              {LANG_NAME[l]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {failed && (
+        <p role="alert" className="basis-full text-xs text-warn-text">
+          {t('Could not save your choice. It applies on this device only for now.')}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -51,7 +77,7 @@ export function Appearance({
     onChange(next);
     applyBackground(next);
     try {
-      await api.put('/me/preferences', { background: next });
+      await savePreference({ background: next });
       setFailed(false);
     } catch {
       setFailed(true);
@@ -59,16 +85,27 @@ export function Appearance({
   }
 
   return (
-    <details className="relative">
-      <summary className="cursor-pointer list-none rounded px-1 text-ink hover:underline focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none">
+    // The picker opens in place (it pushes the rest of the menu down), so it never covers
+    // 'Sign out' and never leaves the screen (SD-37).
+    <details
+      className="open:basis-full"
+      onToggle={(e) => {
+        const d = e.currentTarget;
+        // In a short window the menu scrolls: bring the opened picker fully into view.
+        if (d.open) d.querySelector('fieldset')?.scrollIntoView?.({ block: 'nearest' });
+      }}
+    >
+      <summary className="flex cursor-pointer list-none items-center rounded px-1 text-ink hover:underline pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none">
         {t('Background')}
       </summary>
-      <fieldset className="absolute right-0 z-10 mt-2 w-56 rounded-2xl border border-line bg-card p-3 shadow-lg">
+      <fieldset className="mt-2 w-full rounded-2xl border border-line bg-card p-3">
         <legend className="sr-only">{t('Page background')}</legend>
-        <div className="space-y-1">
-          <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover">
+        {/* Two columns on touch screens, so the taller choices still fit a short window. */}
+        <div className="space-y-1 pointer-coarse:grid pointer-coarse:grid-cols-2 pointer-coarse:gap-1 pointer-coarse:space-y-0">
+          <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover pointer-coarse:min-h-11">
             <input
               type="radio"
+              className="shrink-0 pointer-coarse:h-11 pointer-coarse:w-5"
               name="background"
               checked={value === 'auto'}
               onChange={() => void choose('auto')}
@@ -83,10 +120,11 @@ export function Appearance({
           {BACKGROUNDS.map((b) => (
             <label
               key={b}
-              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover"
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-hover pointer-coarse:min-h-11"
             >
               <input
                 type="radio"
+                className="shrink-0 pointer-coarse:h-11 pointer-coarse:w-5"
                 name="background"
                 checked={value === b || (value === null && b === 'grey')}
                 onChange={() => void choose(b)}

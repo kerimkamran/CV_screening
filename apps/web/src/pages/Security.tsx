@@ -66,8 +66,9 @@ export function Security() {
 
   return (
     <div className="mx-auto mt-8 max-w-lg space-y-4">
-      <Card title={t('Two-step sign-in')}>
+      <Card page title={t('Security')}>
         <div className="space-y-3 text-sm">
+          <h2 className="text-base font-semibold">{t('Two-step sign-in')}</h2>
           <p>
             {t(
               'After your password, you enter a six-digit code from an authenticator app on your phone. It protects your account if your password is stolen.',

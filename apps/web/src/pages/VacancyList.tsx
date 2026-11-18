@@ -2,9 +2,17 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import type { VacancyStatus } from '@cv/shared';
 import { api } from '../api';
 import { go } from '../route';
-import { useT } from '../i18n';
-import { ago, MARK_STYLE, markName, STATUS_STYLE, statusName, type VacancyListItem } from '../pool';
-import { btnPrimary, errMsg, input, Notice, UndoBar, useUndoToast } from '../ui';
+import { tr, useT } from '../i18n';
+import {
+  ago,
+  MARK_STYLE,
+  markName,
+  STATUS_STYLE,
+  stateWord,
+  statusName,
+  type VacancyListItem,
+} from '../pool';
+import { btnPrimary, errMsg, input, Notice, UndoBar, useDetailsMenu, useUndoToast } from '../ui';
 
 /**
  * The Vacancy pool (Development Plan, Phase 1; UAT-01): every vacancy the person may see, with the
@@ -57,19 +65,16 @@ function RowMenu({
   const t = useT();
   const ref = useRef<HTMLDetailsElement>(null);
   const item = 'block w-full rounded px-2 py-1.5 text-left hover:bg-hover';
-  const close = () => ref.current?.removeAttribute('open');
+  const { close, onToggle } = useDetailsMenu(ref);
   return (
-    <details ref={ref} className="relative">
+    <details ref={ref} className="relative" onToggle={onToggle}>
       <summary
         aria-label={t('Actions for {title}', { title: v.title })}
         className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded text-ink-2 hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
       >
         <span aria-hidden="true">⋯</span>
       </summary>
-      <div
-        className="absolute right-0 z-10 mt-1 w-44 rounded-2xl border border-line bg-card p-1 text-sm shadow-lg"
-        onKeyDown={(e) => e.key === 'Escape' && close()}
-      >
+      <div className="absolute top-full left-0 z-30 mt-1 w-44 rounded-2xl border border-line bg-card p-1 text-sm shadow-lg lg:top-0 lg:right-full lg:left-auto lg:mt-0 lg:mr-1">
         <a className={item} href={`#/vacancies/${v.id}`}>
           {t('Open')}
         </a>
@@ -189,7 +194,11 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
   }
   async function duplicate(v: VacancyListItem) {
     try {
-      const r = await api.post<{ id: string }>(`/vacancies/${v.id}/duplicate`);
+      // Named in the page's language: "Copy of X", or "X (surət)" in Azerbaijani.
+      const base = v.title.replace(/^Copy of /, '').replace(/ \(surət\)$/, '');
+      const r = await api.post<{ id: string }>(`/vacancies/${v.id}/duplicate`, {
+        title: tr('Copy of {title}', { title: base }).slice(0, 200),
+      });
       go(`/vacancies/${r.id}`);
     } catch (e) {
       setError(errMsg(e));
@@ -220,7 +229,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
               onClick={() => setChip(c)}
               className={`rounded-full border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${chip === c ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-card text-ink hover:bg-hover'}`}
             >
-              {t(label)}
+              {stateWord(label)}
             </button>
           ))}
         </div>
@@ -297,7 +306,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
               <li
                 key={v.id}
                 style={{ '--i': Math.min(i, 12) } as CSSProperties}
-                className="m-rise grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
+                className="m-rise relative grid grid-cols-2 items-center gap-x-3 has-[details[open]]:z-30 gap-y-1 px-4 py-3.5 text-sm transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.4fr)_6rem_minmax(0,1.6fr)_5rem_minmax(0,1.6fr)_minmax(0,1.2fr)_6rem_2rem]"
               >
                 <div className="col-span-2 min-w-0 lg:col-span-1">
                   <a

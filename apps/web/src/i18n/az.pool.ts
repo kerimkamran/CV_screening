@@ -16,7 +16,7 @@ export const AZ_POOL: Record<string, string> = {
   'On hold': 'Gözləmədə',
   Closed: 'Bağlı',
   Archived: 'Arxivdə',
-  Archive: 'Arxivə at',
+  Archive: 'Arxivə atın',
   Restore: 'Bərpa edin',
   Duplicate: 'Kopyasını yaradın',
   Delete: 'Silin',
@@ -38,6 +38,7 @@ export const AZ_POOL: Record<string, string> = {
   Undo: 'Geri qaytarın',
   'Actions for {title}': '{title} üçün əməliyyatlar',
   'Archived “{title}”.': '“{title}” arxivə atıldı.',
+  'Copy of {title}': '{title} (surət)',
   '{n} analyzed': '{n} təhlil olunub',
   '{n} analyzed, {m} running': '{n} təhlil olunub, {m} davam edir',
   '{n} out of date': '{n} köhnəlib',
@@ -105,6 +106,8 @@ export const AZ_POOL: Record<string, string> = {
   'You have unsaved changes from {when}.': 'Yadda saxlanılmamış dəyişiklikləriniz var ({when}).',
   'Restore them': 'Bərpa edin',
   Discard: 'Ləğv edin',
+  'Changed by {name} at {time}. Reload to see their version.':
+    '{name} dəyişiklik edib ({time}). Onun versiyasını görmək üçün yeniləyin.',
   'Reload their version': 'Onların versiyasını yükləyin',
   'Create a new one anyway': 'Yenə də yenisini yaradın',
   'A vacancy like this is already in the system. Use that one?':
@@ -149,7 +152,7 @@ export const AZ_POOL: Record<string, string> = {
   'This list was opened a while ago. Reload it to continue.':
     'Bu siyahı bir müddət əvvəl açılıb. Davam etmək üçün yenidən yükləyin.',
   Reload: 'Yenidən yükləyin',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   Copy: 'Kopyalayın',
   'Copied.': 'Köçürüldü.',
   'Open in e-mail': 'E-poçtda açın',
@@ -191,6 +194,7 @@ export const AZ_POOL: Record<string, string> = {
   // Report
   '← Back': '← Geri',
   '← Back to {list}': '← {list} siyahısına qayıdın',
+  'SenAI answer': 'SenAI cavabı',
   'Previous and next': 'Əvvəlki və sonrakı',
   Previous: 'Əvvəlki',
   'Previous (K)': 'Əvvəlki (K)',
@@ -214,7 +218,7 @@ export const AZ_POOL: Record<string, string> = {
   'Same must-have evidence as {name}, who is marked {mark}. Look again?':
     '{name} ilə eyni vacib tələb sübutu var, o isə "{mark}" kimi qeyd olunub. Yenidən baxaq?',
   'another candidate': 'başqa namizəd',
-  'Remove filter {name}': '{name} filtrini götür',
+  'Remove filter {name}': '{name} filtrini götürün',
   'How I got this': 'Bunu necə tapdım',
   'Read as': 'Belə oxundu',
   'A model read the question': 'Sualı model oxudu',
@@ -246,6 +250,44 @@ export const AZ_POOL: Record<string, string> = {
   'No earlier chats.': 'Əvvəlki söhbət yoxdur.',
   'New chat': 'Yeni söhbət',
   'Delete chat: {title}': 'Söhbəti silin: {title}',
+  'Delete this chat?': 'Bu söhbət silinsin?',
+  'This adds the CV of {name} to {vacancy} and analyzes it against its requirements. Continue?':
+    '{name} namizədinin CV-si {vacancy} vakansiyasına əlavə olunacaq və onun tələbləri ilə təhlil ediləcək. Davam edilsin?',
+  'Add and analyze': 'Əlavə edin və təhlil edin',
+  'Your account cannot use {name}.': 'Hesabınız {name} köməkçisindən istifadə edə bilməz.',
+  '{name} could not answer right now. Try again in a moment.':
+    '{name} hazırda cavab verə bilmədi. Bir az sonra yenidən cəhd edin.',
+  'The assistant is off': 'Köməkçi söndürülüb',
+  // "How I got this" (SA-28)
+  'Find candidates': 'Namizəd axtarışı',
+  'Count candidates': 'Namizədləri saymaq',
+  'Show the Shortlist': 'Qısa siyahını göstərmək',
+  'Search the CVs for skills': 'CV-lərdə bacarıq axtarışı',
+  'Compare candidates': 'Namizədləri müqayisə etmək',
+  'Why so few Strong': 'Niyə güclü namizəd azdır',
+  'What changed': 'Nə dəyişib',
+  'What if': 'Əgər belə olsaydı',
+  'Earlier conversations': 'Əvvəlki söhbətlər',
+  'What I can see': 'Nəyi görürəm',
+  Help: 'Kömək',
+  Preferences: 'Seçimlər',
+  'Check the job description': 'Vakansiya mətnini yoxlamaq',
+  'Check my decisions': 'Qərarlarımı yoxlamaq',
+  'Similar vacancies': 'Oxşar vakansiyalar',
+  'Candidates from other vacancies': 'Digər vakansiyalardan namizədlər',
+  'Check what the CV says': 'CV-də yazılanı yoxlamaq',
+  'Not clear': 'Aydın deyil',
+  'Stored results': 'Saxlanmış nəticələr',
+  'CV text': 'CV mətni',
+  'Stored assessments': 'Saxlanmış qiymətləndirmələr',
+  Bands: 'Səviyyələr',
+  Marks: 'Qeydlər',
+  'Top {n}': 'İlk {n}',
+  'all vacancies': 'bütün vakansiyalar',
+  'Could not copy. Select the table and copy it by hand.':
+    'Kopyalamaq alınmadı. Cədvəli seçib əl ilə kopyalayın.',
+  'Ask the question again to use these buttons.':
+    'Bu düymələrdən istifadə etmək üçün sualı yenidən verin.',
   'Searching in: {title}': 'Axtarış: {title}',
   'Searching in: all vacancies': 'Axtarış: bütün vakansiyalar',
   'Find the right candidate for…': 'Bunun üçün uyğun namizədi tapın…',
@@ -296,17 +338,17 @@ export const AZ_POOL: Record<string, string> = {
   'Nothing saved. Ask "always show top 5" or set it here.':
     'Heç nə saxlanmayıb. "həmişə ilk 5-i göstər" yazın və ya burada təyin edin.',
   'How many to show': 'Neçəsini göstərmək',
-  Clear: 'Təmizlə',
+  Clear: 'Təmizləyin',
   '{n} CVs mention it': '{n} CV bunu qeyd edir',
   'Mentioned in the CV, not assessed': 'CV-də qeyd olunub, qiymətləndirilməyib',
   'Requirements from a similar vacancy': 'Oxşar vakansiyanın tələbləri',
   'Add {n} requirements from “{title}” that this vacancy does not have yet?':
     '“{title}” vakansiyasından bu vakansiyada hələ olmayan {n} tələbi əlavə edək?',
   'Everything in “{title}” is already here.': '“{title}” vakansiyasındakı hər şey artıq buradadır.',
-  'Add them to the form': 'Formaya əlavə et',
+  'Add them to the form': 'Formaya əlavə edin',
   'Added. Read them, then save.': 'Əlavə olundu. Oxuyun, sonra yadda saxlayın.',
   'No thanks': 'Xeyr, sağ olun',
-  'Copy requirements': 'Tələbləri köçür',
+  'Copy requirements': 'Tələbləri köçürün',
   'Review the requirements of {title} to copy':
     '{title} vakansiyasının tələblərinə baxın və köçürün',
 
@@ -316,7 +358,7 @@ export const AZ_POOL: Record<string, string> = {
   'No must-haves in this vacancy.': 'Bu vakansiyada mütləq tələb yoxdur.',
   'Keys: S shortlist, M maybe, N not now. Press again to clear it.':
     'Düymələr: S qısa siyahı, M bəlkə, N indi yox. Qərarı silmək üçün yenidən basın.',
-  'Open the full report': 'Tam hesabata keçin',
+  'Open the CV review': 'CV baxışını açın',
   'Keys: J and K move, S shortlist, M maybe, N not now, Enter opens the report.':
     'Düymələr: J və K keçid, S qısa siyahı, M bəlkə, N indi yox, Enter hesabatı açır.',
 
@@ -333,8 +375,8 @@ export const AZ_POOL: Record<string, string> = {
   // Sign-in (Oct 2026)
   'Show password': 'Parolu göstərin',
   'Hide password': 'Parolu gizlədin',
-  Show: 'Göstər',
-  Hide: 'Gizlət',
+  Show: 'Göstərin',
+  Hide: 'Gizlədin',
 
   // Role card (Oct 2026)
   'No skills could be read from this text. Add the skills yourself below, or write a fuller description of the role.':

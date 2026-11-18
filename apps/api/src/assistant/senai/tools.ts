@@ -75,6 +75,31 @@ const bakuDate = (d: Date): string =>
     day: '2-digit',
   }).format(d);
 
+/** Words of a what-if question that never name a requirement. */
+const WHAT_IF_FILLER = new Set([
+  'were',
+  'was',
+  'are',
+  'would',
+  'could',
+  'should',
+  'this',
+  'that',
+  'its',
+  'one',
+  'they',
+  'them',
+  'the',
+  'and',
+  'instead',
+  'requirement',
+  'olsa',
+  'olsaydı',
+  'олсун',
+  'было',
+  'это',
+]);
+
 @Injectable()
 export class PoolTools {
   constructor(
@@ -400,7 +425,8 @@ export class PoolTools {
     const set = (await this.adj.currentSet(v.id)).filter(
       (r) => r.classification !== 'disqualifier',
     );
-    const want = tokens(w.text).filter((t) => t.length >= 3);
+    // "what if it were nice to have": the pronoun and the verb name no requirement (SA-14).
+    const want = tokens(w.text).filter((t) => t.length >= 3 && !WHAT_IF_FILLER.has(t));
     const scored = set
       .map((r) => {
         const have = new Set(tokens(r.text));

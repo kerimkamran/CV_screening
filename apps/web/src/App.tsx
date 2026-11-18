@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import {
   api,
   ApiError,
+  BASE,
   fetchReadiness,
   session,
   subscribeUnauthorized,
@@ -11,25 +12,45 @@ import {
 } from './api';
 import { LanguageSwitch } from './Appearance';
 import { applyLang, tr, useT, type Lang } from './i18n';
-import { AiSettings, AssistantSettings, Users } from './pages/Admin';
-import { rememberUser } from './assistant';
-import { CandidatePool } from './pages/CandidatePool';
-import { CvReview } from './pages/CvReview';
-import { Monitoring } from './pages/Monitoring';
+import { keepPoolThread, rememberUser, useAssistantConfig } from './assistant';
+import { personSignedIn } from './intake';
+import { CandidatePool, CvReview, Home } from './pages/lazy';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
-import { Retention } from './pages/Retention';
-import { Security } from './pages/Security';
-import { SharedList, SharedReport } from './pages/SharedReport';
 import { VacancyList } from './pages/VacancyList';
 import { TABS, VacancyPage, type Tab } from './pages/VacancyPage';
 import { Shell } from './Shell';
 import { parseReviewRoute, reviewRoute } from './review';
 import { useRoute } from './route';
 import { applyBackground, isBackground } from './theme';
-import { Notice } from './ui';
+import { Notice, SkipLink } from './ui';
+import { trackPageTitle } from './title';
+import { Boundary, ReloadNote } from './Boundary';
+
+// Screens a recruiter does not open first load on demand, so the first page carries less script
+// (PF-07). A file that is gone after a new deployment shows a reload note instead of a blank page.
+const AiSettings = lazy(() => import('./pages/Admin').then((m) => ({ default: m.AiSettings })));
+const AssistantReview = lazy(() =>
+  import('./pages/Admin').then((m) => ({ default: m.AssistantReview })),
+);
+const AssistantSettings = lazy(() =>
+  import('./pages/Admin').then((m) => ({ default: m.AssistantSettings })),
+);
+const Users = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Users })));
+const Monitoring = lazy(() =>
+  import('./pages/Monitoring').then((m) => ({ default: m.Monitoring })),
+);
+const Retention = lazy(() => import('./pages/Retention').then((m) => ({ default: m.Retention })));
+const Security = lazy(() => import('./pages/Security').then((m) => ({ default: m.Security })));
+const SharedList = lazy(() =>
+  import('./pages/SharedReport').then((m) => ({ default: m.SharedList })),
+);
+const SharedReport = lazy(() =>
+  import('./pages/SharedReport').then((m) => ({ default: m.SharedReport })),
+);
 
 const REFRESH_MS = 20 * 60 * 1000;
+const HEALTH_MS = 30_000;
 
 const HEALTH_LABEL: Record<ApiHealth['state'], string> = {
   checking: 'Checking service…',
@@ -40,11 +61,13 @@ const isLang = (v: unknown): v is Lang => v === 'en' || v === 'az';
 
 function AdminNav({ route }: { route: string }) {
   const t = useT();
+  // The assistant's tab carries its name (the product name until it is renamed), like its panels do.
+  const assistantName = useAssistantConfig()?.name ?? 'SenAI';
   const tabs: [string, string][] = [
     ['/admin', 'Users'],
     ['/admin/ai', 'AI models'],
-    ['/admin/assistant', 'Assistant'],
-    ['/admin/monitoring', 'Monitoring'],
+    ['/admin/assistant', '{name}'],
+    ['/admin/monitoring', 'Fairness monitoring'],
     ['/admin/retention', 'Data retention'],
   ];
   return (
@@ -55,7 +78,7 @@ function AdminNav({ route }: { route: string }) {
           className={`rounded px-3 py-1.5 ${route === href ? 'bg-accent text-on-accent' : 'bg-card border'}`}
           href={`#${href}`}
         >
-          {t(label)}
+          {t(label, { name: assistantName })}
         </a>
       ))}
     </nav>
@@ -96,9 +119,27 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   const signOut = useCallback((why = '') => {
     session.set(null);
+    keepPoolThread(null);
     setMe(null);
     setNote(why);
   }, []);
+  /**
+   * Signing out on purpose (SD-51): the server withdraws the token, and this browser forgets the
+   * person's background, language and place, so the next person starts clean on #/.
+   */
+  const leave = useCallback(() => {
+    const token = session.get();
+    if (token)
+      void fetch(`${BASE}/auth/logout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => undefined);
+    signOut();
+    applyBackground(null);
+    applyLang(null);
+    if (window.location.hash && window.location.hash !== '#/') window.location.hash = '/';
+  }, [signOut]);
 
   const loadMe = useCallback(async () => {
     if (!session.get()) return setBooting(false);
@@ -106,6 +147,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       const m = await api.get<Me>('/me');
       setMe(m);
       rememberUser(m.userId);
+      personSignedIn(m.userId);
       applyBackground(isBackground(m.background) ? m.background : null);
       // A saved language follows the person across devices; none saved follows the browser.
       if (isLang(m.language)) applyLang(m.language);
@@ -116,11 +158,27 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     }
   }, []);
 
+  // Each screen names itself in the browser tab (A11-02).
+  useEffect(() => trackPageTitle(), []);
   useEffect(() => {
     void loadMe();
     void check().then(setHealth);
     return subscribeUnauthorized(() => signOut(tr('Your session ended. Please sign in again.')));
   }, [check, loadMe, signOut]);
+
+  // The footer's service line follows the service: checked every 30 s while the tab is in front,
+  // so an outage shows within a minute and clears within a minute of recovery (SD-88).
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === 'visible') void check().then(setHealth);
+    };
+    const id = setInterval(tick, HEALTH_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [check]);
 
   // S2-FE16: the sign-in stays open for as long as the tab is open. There is no idle sign-out; the
   // token is renewed on a timer (and when the tab comes back to the front), never lengthened.
@@ -194,6 +252,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   else if (/^\/reports\/[0-9A-Z]{26}$/.test(route))
     body = <SharedReport id={route.split('/')[2]!} key={route} />;
   else if (route === '/reports') body = <SharedList />;
+  else if (route === '/' && (isTa || isAdmin || isGov))
+    // Home: the menu of what this person can do (design, November 2026).
+    body = <Home me={me} isTa={isTa} isAdmin={isAdmin} isGov={isGov} />;
   else if (route === '/admin/monitoring' && (isAdmin || isGov))
     body = isAdmin ? (
       <div className="space-y-4">
@@ -202,6 +263,13 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       </div>
     ) : (
       <Monitoring canRun={false} />
+    );
+  else if (route === '/admin/assistant' && isGov && !isAdmin)
+    body = (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold">{t('Administration')}</h1>
+        <AssistantReview />
+      </div>
     );
   else if (route.startsWith('/admin')) {
     body = isAdmin ? (
@@ -231,7 +299,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     body = (
       <Notice kind="info">
         {t(
-          'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+          'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.',
         )}
       </Notice>
     );
@@ -256,6 +324,23 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     );
   }
 
+  body = (
+    <Boundary
+      name="page"
+      fallback={<ReloadNote text="parallax was updated. Reload to see this page." />}
+    >
+      <Suspense
+        fallback={
+          <p role="status" className="p-4 text-sm text-ink-2">
+            {t('Loading…')}
+          </p>
+        }
+      >
+        {body}
+      </Suspense>
+    </Boundary>
+  );
+
   const footer = (
     <>
       <p>
@@ -279,7 +364,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
         isGov={isGov}
         route={route}
         footer={footer}
-        onSignOut={() => signOut()}
+        onSignOut={leave}
         onMe={setMe}
       >
         {body}
@@ -288,6 +373,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
 
   return (
     <div className="min-h-screen bg-page text-ink">
+      <SkipLink />
       <header className="bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <a
@@ -297,15 +383,37 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           >
             <Brand onBrand />
           </a>
-          {!me && <LanguageSwitch signedIn={false} />}
+          {/* The forced change and the invitation pages also let a person switch language or
+              leave: someone without the temporary password must not be stuck (SD-41). */}
+          <div className="flex items-center gap-2">
+            <LanguageSwitch signedIn={!!me && !me.mustChangePassword} />
+            {me && (
+              <button
+                type="button"
+                className="rounded-full border border-white/40 px-3 py-1 text-sm font-semibold hover:bg-white/10 pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                onClick={() => {
+                  if (setupToken) window.location.hash = '/';
+                  leave();
+                }}
+              >
+                {t('Sign out')}
+              </button>
+            )}
+          </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{body}</main>
-      <footer
-        className={`mx-auto px-4 pb-8 text-xs text-ink-3 ${me ? 'max-w-6xl' : 'max-w-xl text-center'}`}
-      >
-        {footer}
-      </footer>
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 py-6 focus:outline-none">
+        {body}
+      </main>
+      {/* Not while the session is being checked: that footer would be thrown away when the page
+          arrives, which counts as a layout shift (PF-01). */}
+      {!booting && (
+        <footer
+          className={`mx-auto px-4 mb-8 text-xs text-ink-3 ${me ? 'max-w-6xl' : 'max-w-xl text-center'}`}
+        >
+          {footer}
+        </footer>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 import {
   btnDanger,
   btnPrimary,
@@ -49,6 +50,7 @@ interface Run {
 
 /** Retention period, legal hold and deletion certificates (administrators). */
 export function Retention() {
+  const t = useT();
   const [st, setSt] = useState<Status | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [days, setDays] = useState(180);
@@ -69,6 +71,12 @@ export function Retention() {
     }
   }, []);
   useEffect(() => void load(), [load]);
+  // The armed confirmation does not linger: it ends by itself after 20 s (AD-18).
+  useEffect(() => {
+    if (!confirm) return;
+    const h = setTimeout(() => setConfirm(false), 20_000);
+    return () => clearTimeout(h);
+  }, [confirm]);
 
   async function act(fn: () => Promise<void>) {
     setBusy(true);
@@ -87,7 +95,7 @@ export function Retention() {
   const save = () =>
     act(async () => {
       await api.put('/admin/retention', { enabled, days });
-      setMsg('Saved.');
+      setMsg(t('Saved.'));
     });
   const run = (dryRun: boolean) =>
     act(async () => {
@@ -95,13 +103,24 @@ export function Retention() {
       setConfirm(false);
       setMsg(
         dryRun
-          ? `Preview: ${r.documents} file(s) would be erased; ${r.heldBack} kept because of a legal hold.`
-          : `Done: ${r.documents} file(s) erased; ${r.heldBack} kept because of a legal hold.`,
+          ? t('Preview: {n} file(s) would be erased; {held} kept because of a legal hold.', {
+              n: r.documents,
+              held: r.heldBack,
+            })
+          : t('Done: {n} file(s) erased; {held} kept because of a legal hold.', {
+              n: r.documents,
+              held: r.heldBack,
+            }),
       );
     });
   const hold = (v: Vac, on: boolean) =>
     act(async () => {
-      await api.put(`/admin/vacancies/${v.id}/legal-hold`, { hold: on, matter: matter[v.id] });
+      // Only a new hold carries a matter: the box is emptied after a hold is placed, and lifting that
+      // hold in the same visit must not send the empty text (the API rejects a matter under 3 characters).
+      await api.put(
+        `/admin/vacancies/${v.id}/legal-hold`,
+        on ? { hold: true, matter: matter[v.id] } : { hold: false },
+      );
       setMatter((m) => ({ ...m, [v.id]: '' }));
     });
 
@@ -109,20 +128,18 @@ export function Retention() {
     return error ? (
       <Notice kind="error">{error}</Notice>
     ) : (
-      <p className="text-sm text-ink-3">Loading…</p>
+      <p className="text-sm text-ink-3">{t('Loading…')}</p>
     );
   return (
     <div className="space-y-4">
       {error && <Notice kind="error">{error}</Notice>}
       {msg && <Notice kind="ok">{msg}</Notice>}
-      <Card title="Retention period">
+      <Card title={t('Retention period')}>
         <div className="space-y-3 text-sm">
           <p>
-            When this is on, CV files and everything extracted from them (text, name, e-mail,
-            summary, quotes, shared-report copies, assistant chats) are erased automatically once
-            they are older than the period below, unless the vacancy is under legal hold. Decisions
-            and the audit trail are kept. A run happens about once an hour and every run leaves a
-            deletion certificate.
+            {t(
+              'When this is on, CV files and everything extracted from them (text, name, e-mail, summary, quotes, shared-report copies, assistant chats) are erased automatically once they are older than the period below, unless the vacancy is under legal hold. Decisions and the audit trail are kept. A run happens about once an hour and every run leaves a deletion certificate.',
+            )}
           </p>
           <label className="flex items-center gap-2">
             <input
@@ -130,9 +147,9 @@ export function Retention() {
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
             />
-            Erase automatically
+            {t('Erase automatically')}
           </label>
-          <Field label="Keep CV files for (days, 30 to 3650)">
+          <Field label={t('Keep CV files for (days, 30 to 3650)')}>
             <input
               className={`${input} max-w-[10rem]`}
               type="number"
@@ -144,47 +161,74 @@ export function Retention() {
           </Field>
           <div className="flex flex-wrap gap-2">
             <button className={btnPrimary} onClick={() => void save()} disabled={busy}>
-              Save
+              {t('Save')}
             </button>
             <button className={btnSecondary} onClick={() => void run(true)} disabled={busy}>
-              Preview what would be erased
+              {t('Preview what would be erased')}
             </button>
-            {confirm ? (
-              <button className={btnDanger} onClick={() => void run(false)} disabled={busy}>
-                Yes, erase now ({st.due} file{st.due === 1 ? '' : 's'}, cannot be undone)
-              </button>
-            ) : (
-              <button
-                className={btnDanger}
-                onClick={() => setConfirm(true)}
-                disabled={busy || st.due === 0}
-              >
-                Erase expired files now
-              </button>
-            )}
+            {/* The first click only asks; the confirmation opens below, away from this spot, so a
+                double-click can never erase (SD-39). */}
+            <button
+              className={btnDanger}
+              onClick={() => setConfirm(true)}
+              disabled={busy || st.due === 0 || confirm}
+              aria-expanded={confirm}
+            >
+              {t('Erase expired files now')}
+            </button>
           </div>
+          {confirm && (
+            <div
+              role="alertdialog"
+              aria-label={t('Erase expired files')}
+              className="space-y-2 rounded-xl border border-err-line bg-err p-3 text-sm text-err-ink"
+            >
+              <p>
+                {st.due === 1
+                  ? t('Erase {n} file now? This cannot be undone.', { n: st.due })
+                  : t('Erase {n} files now? This cannot be undone.', { n: st.due })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className={btnSecondary} onClick={() => setConfirm(false)} autoFocus>
+                  {t('Cancel')}
+                </button>
+                <button
+                  className={btnDanger}
+                  onClick={() => {
+                    setConfirm(false);
+                    void run(false);
+                  }}
+                  disabled={busy}
+                >
+                  {t('Yes, erase now')}
+                </button>
+              </div>
+            </div>
+          )}
           <p className="text-xs text-ink-3">
-            Right now: {st.due} file(s) older than {st.days} days and not on hold; {st.heldBack}{' '}
-            more on hold. The preview and the button use the saved period.
+            {t(
+              'Right now: {due} file(s) older than {days} days and not on hold; {heldBack} more on hold. The preview and the button use the saved period.',
+              { due: st.due, days: st.days, heldBack: st.heldBack },
+            )}
           </p>
         </div>
       </Card>
 
-      <Card title="Legal hold">
+      <Card title={t('Legal hold')}>
         <p className="mb-2 text-sm">
-          A vacancy under hold is never purged, for example while a complaint or claim about a
-          hiring decision is open. Name the matter; lifting the hold lets the next run take expired
-          files.
+          {t(
+            'A vacancy under hold is never purged, for example while a complaint or claim about a hiring decision is open. Name the matter; lifting the hold lets the next run take expired files.',
+          )}
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <caption className="sr-only">Vacancies and legal hold</caption>
+            <caption className="sr-only">{t('Vacancies and legal hold')}</caption>
             <thead className="border-b text-xs uppercase text-ink-3">
               <tr>
-                <th className="py-2 pr-3">Vacancy</th>
-                <th className="pr-3">Files held</th>
-                <th className="pr-3">Hold</th>
-                <th>Action</th>
+                <th className="py-2 pr-3">{t('Vacancy')}</th>
+                <th className="pr-3">{t('Files held')}</th>
+                <th className="pr-3">{t('Hold')}</th>
+                <th>{t('Action')}</th>
               </tr>
             </thead>
             <tbody>
@@ -202,14 +246,14 @@ export function Retention() {
                         onClick={() => void hold(v, false)}
                         disabled={busy}
                       >
-                        Lift hold
+                        {t('Lift hold')}
                       </button>
                     ) : (
                       <span className="flex gap-2">
                         <input
                           className={input}
                           aria-label={`Matter reference for ${v.title}`}
-                          placeholder="Matter reference"
+                          placeholder={t('Matter reference')}
                           value={matter[v.id] ?? ''}
                           onChange={(e) => setMatter((m) => ({ ...m, [v.id]: e.target.value }))}
                         />
@@ -218,7 +262,7 @@ export function Retention() {
                           onClick={() => void hold(v, true)}
                           disabled={busy || (matter[v.id] ?? '').trim().length < 3}
                         >
-                          Place hold
+                          {t('Place hold')}
                         </button>
                       </span>
                     )}
@@ -230,39 +274,42 @@ export function Retention() {
         </div>
       </Card>
 
-      <Card title="Deletion certificates">
+      <Card title={t('Deletion certificates')}>
         {st.certificates.length === 0 ? (
-          <p className="text-sm text-ink-3">No purge has run yet.</p>
+          <p className="text-sm text-ink-3">{t('No purge has run yet.')}</p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Deletion certificates</caption>
-            <thead className="border-b text-xs uppercase text-ink-3">
-              <tr>
-                <th className="py-2 pr-3">When</th>
-                <th className="pr-3">Run by</th>
-                <th className="pr-3">Period</th>
-                <th className="pr-3">Files erased</th>
-                <th className="pr-3">Kept (hold)</th>
-                <th>Certificate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {st.certificates.map((c) => (
-                <tr key={c.id} className="border-b border-line">
-                  <td className="py-2 pr-3">{when(c.runAt)}</td>
-                  <td className="pr-3">{c.trigger === 'schedule' ? 'Scheduled' : c.by}</td>
-                  <td className="pr-3">{c.days} days</td>
-                  <td className="pr-3">{c.documents}</td>
-                  <td className="pr-3">{c.heldBack}</td>
-                  <td className="font-mono text-xs">{c.id}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">{t('Deletion certificates')}</caption>
+              <thead className="border-b text-xs uppercase text-ink-3">
+                <tr>
+                  <th className="py-2 pr-3">{t('When')}</th>
+                  <th className="pr-3">{t('Run by')}</th>
+                  <th className="pr-3">{t('Period')}</th>
+                  <th className="pr-3">{t('Files erased')}</th>
+                  <th className="pr-3">{t('Kept (hold)')}</th>
+                  <th>{t('Certificate')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {st.certificates.map((c) => (
+                  <tr key={c.id} className="border-b border-line">
+                    <td className="py-2 pr-3">{when(c.runAt)}</td>
+                    <td className="pr-3">{c.trigger === 'schedule' ? t('Scheduled') : c.by}</td>
+                    <td className="pr-3">{t('{days} days', { days: c.days })}</td>
+                    <td className="pr-3">{c.documents}</td>
+                    <td className="pr-3">{c.heldBack}</td>
+                    <td className="font-mono text-xs">{c.id}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <p className="mt-2 text-xs text-ink-3">
-          The certificate number matches an entry in the audit trail; every erased file also has its
-          own entry.
+          {t(
+            'The certificate number matches an entry in the audit trail; every erased file also has its own entry.',
+          )}
         </p>
       </Card>
     </div>

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Boundary, ReloadNote } from '../Boundary';
 import { useT } from '../i18n';
 import {
   crossedMilestone,
@@ -151,9 +152,18 @@ export function Coffeebay({
       data-testid="coffeebay"
       className="cb-panel grid gap-4 rounded-3xl border border-line bg-card p-3 sm:p-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:items-center"
     >
-      <Suspense fallback={<div className="cb-scene" aria-hidden="true" />}>
-        <Scene lit={litStars(pr.p)} done={pr.done} total={n} finished={finished} />
-      </Suspense>
+      <Boundary
+        name="waiting scene"
+        fallback={
+          <div className="cb-scene grid place-items-center">
+            <ReloadNote text="parallax was updated. Reload to see the picture." />
+          </div>
+        }
+      >
+        <Suspense fallback={<div className="cb-scene" aria-hidden="true" />}>
+          <Scene lit={litStars(pr.p)} done={pr.done} total={n} finished={finished} />
+        </Suspense>
+      </Boundary>
 
       <div className="space-y-3">
         <h2

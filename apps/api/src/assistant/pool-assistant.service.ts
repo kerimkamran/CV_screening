@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { DbService } from '../db/db.service';
 import { PoolService, type PoolRow } from '../pipeline/pool.service';
+import { redactNames } from '../pipeline/report.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import { asksDecision, asksProtected, hijacks } from './assistant-rules';
 import { AssistantOff, AssistantService, type Settings } from './assistant.service';
@@ -348,10 +349,6 @@ export class PoolAssistantService {
       input.message.trim().slice(0, 1000) ||
       (input.without ? `− ${input.without.text ?? input.without.kind}` : '');
     const reg = input.conversationId ? await this.register(p, input.conversationId) : null;
-    const lang = this.language(text, input.language, reg);
-    const now = new Date();
-    const a = empty(lang, now.toISOString());
-
     const ids = await this.scope.visibleIds(p, true);
     const { rows: vrows } = ids.length
       ? await this.db.query<VacancyRef & { archived: boolean }>(
@@ -361,6 +358,18 @@ export class PoolAssistantService {
         )
       : { rows: [] };
     const live = vrows.filter((v) => !v.archived);
+    // A vacancy title is a name, not the question's language: "Show the Shortlist for Şəbəkə
+    // Mühəndisi" is an English question (SA-06).
+    let bare = text;
+    for (const v of [...vrows].sort((x, y) => y.title.length - x.title.length))
+      if (v.title.trim().length >= 3)
+        bare = bare.replace(
+          new RegExp(v.title.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'),
+          ' ',
+        );
+    const lang = this.language(bare.trim() ? bare : text, input.language, reg);
+    const now = new Date();
+    const a = empty(lang, now.toISOString());
 
     const pickOptions = (list: VacancyRef[]) =>
       list.slice(0, 8).map((v) => ({ id: v.id, title: v.title, status: v.status }));
@@ -686,13 +695,15 @@ export class PoolAssistantService {
       if (!s.modelRowId && !(await this.gateway.active())) return null;
       if (await this.assistant.capReached(s)) return { down: true };
       const page = pageId ? live.find((v) => v.id === pageId) : undefined;
+      // Names of candidates typed in the question never reach the model (SX-11).
+      const names = await this.assistant.namesIn(live.map((v) => v.id));
       const user = understandUser({
-        message: text.replace(CONTACT, '[contact hidden]'),
+        message: redactNames(text.replace(CONTACT, '[contact hidden]'), names),
         previous: reg?.q ?? null,
         page: page?.title ?? null,
         vacancies: live.map((v) => v.title),
         shown: reg?.shown.length ?? 0,
-        recent: await this.recent(conversationId),
+        recent: (await this.recent(conversationId)).map((m) => redactNames(m, names)),
       });
       const keys = Object.keys(JSON.parse(user) as object);
       if (keys.some((k) => !UNDERSTAND_FIELDS.includes(k))) return null;

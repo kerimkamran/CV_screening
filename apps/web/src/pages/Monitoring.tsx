@@ -129,7 +129,7 @@ export function Monitoring({ canRun }: { canRun: boolean }) {
           <ul className="mt-2 list-disc pl-5 text-sm text-ink-3">
             {runs.design.variants.map((v) => (
               <li key={v.key}>
-                {v.label}: {v.change}
+                {t(v.label)}: {t(v.change)}
               </li>
             ))}
           </ul>

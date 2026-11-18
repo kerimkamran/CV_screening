@@ -36,8 +36,9 @@ const SOCIAL =
   /(^|\.)(linkedin|facebook|instagram|twitter|x|tiktok|telegram|t|vk|ok|snapchat|whatsapp|wa|threads|youtube|youtu)\.(com|me|be|ru|co)$/i;
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]}]+/gi;
+// Social sites written without https:// are listed too, as never read (SC-14).
 const BARE_RE =
-  /\b(?:github\.com|gitlab\.com|bitbucket\.org|behance\.net|dribbble\.com|kaggle\.com|medium\.com|credly\.com|coursera\.org|udemy\.com)\/[^\s<>"'`)\]}]+/gi;
+  /\b(?:github\.com|gitlab\.com|bitbucket\.org|behance\.net|dribbble\.com|kaggle\.com|medium\.com|credly\.com|coursera\.org|udemy\.com|(?:www\.)?linkedin\.com|(?:www\.)?facebook\.com|(?:www\.)?instagram\.com|twitter\.com|tiktok\.com|t\.me)\/[^\s<>"'`)\]}]+/gi;
 
 /** The links written in a resume, first seen first, without those that may never be read. */
 export function linksIn(text: string): { url: string; host: string; blocked: boolean }[] {

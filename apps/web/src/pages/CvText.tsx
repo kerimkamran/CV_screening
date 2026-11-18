@@ -87,7 +87,8 @@ export function CvText({
     <div
       tabIndex={0}
       aria-label={t('CV text')}
-      className={`${tall ? 'max-h-full' : 'max-h-[calc(100vh-16rem)]'} min-h-[20rem] overflow-auto rounded-md bg-neutral/40 p-3 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:p-5`}
+      data-cv-text
+      className={`${tall ? 'min-h-0 flex-1' : 'max-h-[calc(100vh-16rem)] min-h-[20rem]'} overflow-auto rounded-md bg-neutral/40 p-3 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:p-5`}
     >
       <article className="mx-auto min-h-[28rem] max-w-[46rem] rounded-sm bg-white px-6 py-8 text-[0.9rem] leading-relaxed whitespace-pre-wrap text-[#1a1a1a] shadow-md sm:px-10 sm:py-12 forced-colors:border">
         {out}

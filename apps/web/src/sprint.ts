@@ -29,7 +29,8 @@ export function setAutoNext(on: boolean) {
 /** An Undo that follows the person to the next CV (the review screen mounts anew per CV). */
 export interface Carried {
   text: string;
-  undo: () => void | Promise<void>;
+  /** Resolves with the error when the Undo failed, so the screen now open can say so. */
+  undo: () => Promise<unknown>;
 }
 let carried: Carried | null = null;
 export function carry(c: Carried) {

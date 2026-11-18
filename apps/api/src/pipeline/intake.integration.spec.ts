@@ -33,6 +33,7 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
     const data = await zip({
       'batch/Alice_Full.txt': cv('Alice Full', ['BGP routing.', 'Kubernetes.']),
       'batch/Bob_Routing.txt': cv('Bob Routing', ['BGP routing.']),
+      'batch/Cem_Markdown.md': cv('Cem Markdown', ['BGP routing.']),
       'batch/photo.jpg': 'jpeg bytes',
       'batch/inner.zip': 'PK nested',
       '__MACOSX/batch/._Alice_Full.txt': 'junk',
@@ -54,13 +55,13 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
       by('queued')
         .map((x) => x.filename)
         .sort(),
-    ).toEqual(['batch/Alice_Full.txt', 'batch/Bob_Routing.txt']);
+    ).toEqual(['batch/Alice_Full.txt', 'batch/Bob_Routing.txt', 'batch/Cem_Markdown.md']);
     expect(by('duplicate')).toHaveLength(1);
     expect(
       by('skipped')
         .map((x) => x.message)
         .sort(),
-    ).toEqual(['An archive inside the ZIP is not opened', 'Only PDF, DOCX and TXT files']);
+    ).toEqual(['An archive inside the ZIP is not opened', 'Only PDF, DOCX, TXT and MD files']);
 
     const list = (await a.api.get(`/vacancies/${vid}/skipped`)).json().skipped as {
       filename: string;
@@ -72,7 +73,7 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
 
     await h.app.get((await import('./processor.service')).ProcessorService).drain();
     const c = (await a.api.get(`/vacancies/${vid}/candidates`)).json();
-    expect(c.counts.total).toBe(2);
+    expect(c.counts.total).toBe(3); // the Markdown CV in the ZIP is read like the text ones
     expect(c.candidates.every((x: { state: string }) => x.state === 'completed')).toBe(true);
     // Another recruiter cannot read this vacancy's skipped list.
     const other = await h.recruiter('zip-other@azerconnect.test');

@@ -56,6 +56,14 @@ export class SessionController {
     return this.auth.refresh(p);
   }
 
+  /** Ends the session on the server: the token stops working everywhere (SD-51). */
+  @AnyAuthenticated()
+  @Post('logout')
+  @HttpCode(204)
+  async logout(@CurrentPrincipal() p: Principal, @Req() req: FastifyRequest) {
+    await this.auth.logout(p, req.ip);
+  }
+
   @AnyAuthenticated()
   @Post('change-password')
   @HttpCode(200)

@@ -193,12 +193,14 @@ const base =
 describe('Vacancy pool', () => {
   it('shows the empty state with the first-vacancy prompt', async () => {
     mockFetch(base((url) => (url.includes('/vacancies?') ? { body: [] } : undefined)));
+    window.location.hash = '/vacancies'; // #/ is Home, the menu; the list is its own page
     render(<App check={up} />);
     expect(await screen.findByText('No vacancies yet. Add the first one.')).toBeInTheDocument();
   });
 
   it('filters by status chip and archives with a ten-second Undo', async () => {
     let archived = false;
+    window.location.hash = '/vacancies';
     const calls = mockFetch(
       base((url, init) => {
         if (url.includes('/vacancies?')) return { body: archived ? [] : [listItem()] };
@@ -740,11 +742,13 @@ describe('Candidate report', () => {
       .catch(() => null);
     const root = card ?? (await screen.findByText('Links the candidate gave')).closest('section')!;
     // No consent yet: the page button is off, the social network is never offered.
-    expect(within(root).getByRole('button', { name: 'Read example.org' })).toBeDisabled();
+    expect(
+      within(root).getByRole('button', { name: /Read this page\s*example\.org/ }),
+    ).toBeDisabled();
     expect(within(root).getByText('Social networks are never read')).toBeInTheDocument();
     await userEvent.type(within(root).getByLabelText(/Reference/), 'Form 77');
     await userEvent.click(within(root).getByRole('button', { name: /Record the candidate/ }));
-    const btn = await within(root).findByRole('button', { name: 'Read example.org' });
+    const btn = await within(root).findByRole('button', { name: /Read this page\s*example\.org/ });
     await waitFor(() => expect(btn).toBeEnabled());
     expect(calls.some((c) => c.url.endsWith('/links/review'))).toBe(false);
     await userEvent.click(btn);
@@ -965,8 +969,10 @@ describe('SenAI Ask bar', () => {
     await within(panel).findByRole('link', { name: 'Candidate 29' });
     // Regression: "sm:bottom-auto" dropped the bottom edge, so the panel grew past the screen and never scrolled.
     expect(panel.className).not.toMatch(/bottom-auto/);
-    expect(panel.className).toMatch(/sm:inset-y-0/);
-    expect(panel.className).toMatch(/sm:h-dvh/);
+    // Top and bottom edges both set: below the 57 px header (so the account menu stays reachable,
+    // SD-16) down to the bottom of the screen.
+    expect(panel.className).toMatch(/sm:top-\[57px\]/);
+    expect(panel.className).toMatch(/sm:bottom-0/);
     const list = within(panel).getByLabelText('Conversation');
     expect(list.className).toMatch(/overflow-y-auto/);
     expect(list.className).toMatch(/min-h-0/);
@@ -1113,6 +1119,9 @@ describe('SenAI Ask bar', () => {
     });
     expect(calls.some((c) => c.url.endsWith('/assistant/rediscovery/analyze'))).toBe(false);
     await userEvent.click(btn);
+    // The click asks first: it adds a CV to the vacancy (SA-21).
+    expect(calls.some((c) => c.url.endsWith('/assistant/rediscovery/analyze'))).toBe(false);
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Add and analyze' }));
     expect(await within(panel).findByText(/was added to Network Engineer/)).toBeInTheDocument();
     const sent = calls.filter((c) => c.url.endsWith('/assistant/rediscovery/analyze'));
     expect(sent).toHaveLength(1);
@@ -1566,7 +1575,7 @@ describe('Candidate preview and keys (Oct 2026)', () => {
       'aria-pressed',
       'true',
     );
-    await userEvent.click(within(panel).getByRole('button', { name: 'Open the full report' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Open the CV review' }));
     expect(window.location.hash).toMatch(new RegExp(`^#/cv/${DID}\\?l=`));
   });
 

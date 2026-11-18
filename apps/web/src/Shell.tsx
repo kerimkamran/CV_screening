@@ -4,7 +4,7 @@ import { Appearance, LanguageSwitch } from './Appearance';
 import {
   askSenAI,
   setAssistantOpen,
-  SLOGAN,
+  sloganFor,
   useAssistantConfig,
   useAssistantOpen,
   useAssistantRegistration,
@@ -13,7 +13,9 @@ import { Brand, BRAND_FULL, Mark } from './brand';
 import { useT } from './i18n';
 import { AssistantPanel } from './pages/AssistantPanel';
 import { PoolPanel } from './pages/PoolPanel';
+import { getReviewList, parseReviewRoute } from './review';
 import { isBackground } from './theme';
+import { SkipLink, useDetailsMenu, usePublishedHeight } from './ui';
 
 /**
  * The frame around every signed-in page (Development Plan, Phase 1): a left rail with Vacancies and
@@ -26,14 +28,29 @@ const NAV = [
   ['/candidates', 'Candidates'],
 ] as const;
 const inSection = (route: string, href: string) => route === href || route.startsWith(`${href}/`);
+/**
+ * Which rail item is current. The landing page #/ is Home; a CV review belongs to the list it was
+ * opened from (SH-14). At most one item is ever current.
+ */
+function sectionOf(route: string): string | null {
+  if (route === '/' || route === '') return '/';
+  const rv = parseReviewRoute(route);
+  if (rv) {
+    const back = getReviewList(rv.listId)?.back ?? '';
+    return NAV.find(([href]) => inSection(back, href))?.[0] ?? null;
+  }
+  return NAV.find(([href]) => inSection(route, href))?.[0] ?? null;
+}
 
-function Icon({ name }: { name: 'vacancies' | 'candidates' | 'ask' }) {
+function Icon({ name }: { name: 'home' | 'vacancies' | 'candidates' | 'ask' }) {
   const d =
-    name === 'vacancies'
-      ? 'M4 8h16v11H4V8Zm5 0V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16'
-      : name === 'candidates'
-        ? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6'
-        : 'M5 5h14v10H9l-4 4V5Z';
+    name === 'home'
+      ? 'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1v-8Z'
+      : name === 'vacancies'
+        ? 'M4 8h16v11H4V8Zm5 0V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16'
+        : name === 'candidates'
+          ? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6'
+          : 'M5 5h14v10H9l-4 4V5Z';
   return (
     <svg
       width="20"
@@ -63,8 +80,17 @@ function AskBar() {
     const on = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
+      if (document.documentElement.dataset.cvFull) return; // the CV is open full screen
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable)
+      )
         return;
+      // A modal (drawer, full-screen viewer) keeps the focus (SA-02).
+      if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       ref.current?.focus();
     };
@@ -95,7 +121,7 @@ function AskBar() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           maxLength={1000}
-          placeholder={`${cfg.name}: ${SLOGAN}`}
+          placeholder={`${cfg.name}: ${sloganFor(cfg.name)}`}
           className="block w-full rounded-full border border-white/25 bg-white/10 py-2 pl-10 pr-4 text-sm text-on-brand placeholder:text-white/80 transition-colors hover:bg-white/15 focus:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         />
       </label>
@@ -108,6 +134,7 @@ function SenaiPrefs({ name }: { name: string }) {
   const t = useT();
   const [top, setTop] = useState<number | null | undefined>(undefined);
   const [draft, setDraft] = useState('5');
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
     api.get<{ top: number | null }>('/assistant/preferences').then(
@@ -125,10 +152,18 @@ function SenaiPrefs({ name }: { name: string }) {
   if (top === undefined) return null;
   const save = (v: number | null) =>
     api.put<{ top: number | null }>('/assistant/preferences', { top: v }).then(
-      (r) => setTop(r.top),
-      () => undefined,
+      (r) => {
+        setTop(r.top);
+        setFailed(false);
+      },
+      () => setFailed(true), // the saved value stays as it was, and the person is told (AC-12)
     );
-  const n = Math.min(50, Math.max(1, Number(draft) || 5));
+  // 0 is kept as 1 and 99 as 50; only an empty or unreadable field falls back to 5 (SA-25).
+  const typed = Number(draft);
+  const n =
+    draft.trim() !== '' && Number.isFinite(typed)
+      ? Math.min(50, Math.max(1, Math.round(typed)))
+      : 5;
   return (
     <div className="border-t border-line px-2 py-2 text-xs text-ink-2">
       <p className="font-medium text-ink">{t('What {name} remembers', { name })}</p>
@@ -145,11 +180,11 @@ function SenaiPrefs({ name }: { name: string }) {
           value={draft}
           aria-label={t('How many to show')}
           onChange={(e) => setDraft(e.target.value)}
-          className="w-16 rounded-lg border border-edge px-2 py-1 text-sm"
+          className="w-16 rounded-lg border border-edge px-2 py-1 text-sm pointer-coarse:min-h-11"
         />
         <button
           type="button"
-          className="rounded-full border border-edge px-2.5 py-1 font-semibold hover:bg-hover"
+          className="rounded-full border border-edge px-2.5 py-1 font-semibold hover:bg-hover pointer-coarse:min-h-11"
           onClick={() => void save(n)}
         >
           {t('Save')}
@@ -157,13 +192,18 @@ function SenaiPrefs({ name }: { name: string }) {
         {top ? (
           <button
             type="button"
-            className="rounded-full px-2.5 py-1 font-semibold text-link hover:bg-hover"
+            className="rounded-full px-2.5 py-1 font-semibold text-link hover:bg-hover pointer-coarse:min-h-11"
             onClick={() => void save(null)}
           >
             {t('Clear')}
           </button>
         ) : null}
       </div>
+      {failed && (
+        <p role="alert" className="mt-1.5 text-warn-text">
+          {t('Not saved. Check your connection and try again.')}
+        </p>
+      )}
     </div>
   );
 }
@@ -193,28 +233,31 @@ function AccountMenu({
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join('');
-  const close = () => ref.current?.removeAttribute('open');
-  const link = 'block rounded-lg px-2 py-1.5 hover:bg-hover';
+  const { close, onToggle } = useDetailsMenu(ref);
+  const link =
+    'flex items-center rounded-lg px-2 py-1.5 hover:bg-hover pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none';
   return (
-    <details ref={ref} className="relative shrink-0">
+    <details ref={ref} className="relative shrink-0" onToggle={onToggle}>
       <summary
         aria-label={t('Account menu')}
-        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-white text-sm font-bold text-brand focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand focus-visible:outline-none"
+        title={name || undefined}
+        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full bg-white text-sm font-bold text-brand pointer-coarse:h-11 pointer-coarse:w-11 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand focus-visible:outline-none"
       >
         {initials || '·'}
       </summary>
       <div
-        className="absolute right-0 z-40 mt-2 w-64 rounded-2xl border border-line bg-card p-2 text-sm text-ink shadow-xl"
+        className="absolute right-0 z-40 mt-2 max-h-[calc(100dvh-4.5rem-var(--bottombar-h,0px))] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-card p-2 text-sm text-ink shadow-xl"
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('a')) close();
         }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') close();
-        }}
       >
-        <p className="truncate px-2 py-1 font-medium text-ink">{name}</p>
+        <p className="truncate px-2 py-1 font-medium text-ink" title={name}>
+          {name}
+        </p>
         {me.email && me.email !== name && (
-          <p className="truncate px-2 pb-1 text-xs text-ink-3">{me.email}</p>
+          <p className="truncate px-2 pb-1 text-xs text-ink-3" title={me.email}>
+            {me.email}
+          </p>
         )}
         <div className="border-t border-line pt-1">
           <a href="#/reports" className={link}>
@@ -222,23 +265,23 @@ function AccountMenu({
           </a>
           {(isAdmin || isGov) && (
             <a href="#/admin/monitoring" className={link}>
-              {t('Monitoring')}
+              {t('Fairness monitoring')}
             </a>
           )}
           {isAdmin && (
             <a href="#/admin" className={link}>
-              {t('Admin')}
+              {t('Administration')}
             </a>
           )}
           <a href="#/password" className={link}>
-            {t('Password')}
+            {t('Change password')}
           </a>
           <a href="#/security" className={link}>
             {t('Security')}
           </a>
         </div>
         {isTa && cfg && <SenaiPrefs name={cfg.name} />}
-        <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-2 py-2">
           <LanguageSwitch signedIn />
           <Appearance
             value={isBackground(me.background) ? me.background : null}
@@ -305,18 +348,26 @@ export function Shell({
   const cfg = useAssistantConfig();
   const open = useAssistantOpen();
   const rail = isTa;
+  const section = sectionOf(route);
+  // The phone's bottom bar can grow (a long label in Azerbaijani wraps), so its real height is
+  // published for the content, the toasts and the SenAI sheet to keep clear of it (SD-08).
+  const [bar, setBar] = useState<HTMLElement | null>(null);
+  usePublishedHeight('--bottombar-h', bar);
   const link = (active: boolean) =>
-    `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
+    `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
 
   return (
     <div className="min-h-screen bg-page text-ink">
+      <SkipLink />
       <header
-        className="sticky top-0 z-20 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
+        className="sticky top-0 z-40 bg-brand text-on-brand shadow-[0_2px_14px_-6px_rgb(0_0_0/0.45)]"
         style={{ viewTransitionName: 'app-header' }}
       >
-        <div className="flex items-center gap-3 px-4 py-2.5">
+        {/* 57 px tall: the rail and the SenAI panel start right below it (SD-16). From 640 px the
+            open panel sits beside the page, which is padded so no control lies under it (SA-30). */}
+        <div className="flex h-[57px] items-center gap-3 px-4">
           <a
-            href={isTa ? '#/vacancies' : '#/'}
+            href="#/"
             className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
             title={BRAND_FULL}
           >
@@ -327,7 +378,7 @@ export function Shell({
               <Brand compact onBrand />
             </span>
           </a>
-          <AskBar />
+          {isTa ? <AskBar /> : <div className="flex-1" />}
           <AccountMenu
             me={me}
             isTa={isTa}
@@ -341,43 +392,54 @@ export function Shell({
 
       <div className="flex">
         {rail && (
+          // -mb-48: an open menu at the foot of a page makes the page a little taller than this
+          // row; without the negative margin the rail would be pushed up under the header.
           <nav
             aria-label={t('Main')}
             style={{ viewTransitionName: 'app-rail' }}
-            className="sticky top-[57px] hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
+            className="sticky top-[57px] -mb-48 hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
           >
-            {NAV.map(([href, label]) => (
+            {/* Home is in the rail; on a phone the logo leads there, so the bottom bar keeps its
+                three items and long Azerbaijani labels still fit (SD-08). */}
+            {[['/', 'Home'] as const, ...NAV].map(([href, label]) => (
               <a
                 key={href}
                 href={`#${href}`}
-                aria-current={inSection(route, href) ? 'page' : undefined}
-                className={link(inSection(route, href))}
+                aria-current={section === href ? 'page' : undefined}
+                className={link(section === href)}
               >
-                <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
+                <Icon
+                  name={href === '/' ? 'home' : href === '/vacancies' ? 'vacancies' : 'candidates'}
+                />
                 {t(label)}
               </a>
             ))}
           </nav>
         )}
         <div
-          className={`min-w-0 flex-1 ${open && cfg ? 'min-[1280px]:pr-96' : ''} ${rail ? 'pb-16 sm:pb-0' : ''}`}
+          className={`min-w-0 flex-1 ${isTa && open && cfg ? 'sm:pr-96' : ''} ${rail ? 'pb-[var(--bottombar-h,0px)] sm:pb-0' : ''}`}
         >
-          <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-          <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-ink-3">{footer}</footer>
+          <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 focus:outline-none">
+            {children}
+          </main>
+          <footer className="mx-auto max-w-7xl px-4 mb-8 text-xs text-ink-3">{footer}</footer>
         </div>
       </div>
 
+      {/* The bottom bar's items are flex-auto, not flex-1: each is as wide as its words need, so a
+          long Azerbaijani label ('SenAI adlı köməkçidən soruşun') takes two lines at 360 px (I18-08). */}
       {rail && (
         <nav
+          ref={setBar}
           aria-label={t('Main')}
-          className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-card p-1 sm:hidden"
+          className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-card p-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] sm:hidden"
         >
           {NAV.map(([href, label]) => (
             <a
               key={href}
               href={`#${href}`}
-              aria-current={inSection(route, href) ? 'page' : undefined}
-              className={`${link(inSection(route, href))} flex-1`}
+              aria-current={section === href ? 'page' : undefined}
+              className={`${link(section === href)} flex-auto`}
             >
               <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
               {t(label)}
@@ -387,7 +449,7 @@ export function Shell({
             <button
               type="button"
               onClick={() => setAssistantOpen(true)}
-              className={`${link(false)} flex-1`}
+              className={`${link(false)} flex-auto`}
             >
               <Icon name="ask" />
               {t('Ask {name}', { name: cfg.name })}
@@ -395,7 +457,7 @@ export function Shell({
           )}
         </nav>
       )}
-      <SenAI />
+      {isTa && <SenAI />}
     </div>
   );
 }

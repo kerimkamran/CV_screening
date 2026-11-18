@@ -149,7 +149,10 @@ export function ResumesCard({
   const problems = rows.filter((r) => r.problem);
   const readyRows = rows.filter((r) => !r.problem);
   const overRoom = Math.max(readyRows.length - room, 0);
-  const shownRows = showList ? rows : rows.filter((r) => r.problem);
+  // Short lists without problems are shown in full; longer ones, or ones with problems, collapse to the
+  // problems with a toggle. One list either way, so no file is ever listed twice (UP-03).
+  const collapsible = rows.length > COLLAPSE_ABOVE || problems.length > 0;
+  const shownRows = !collapsible || showList ? rows : rows.filter((r) => r.problem);
   const sending = !!run && run.items.some((i) => i.client === 'waiting' || i.client === 'sending');
   return (
     <Card title={t('CVs')}>
@@ -198,8 +201,8 @@ export function ResumesCard({
               <p className="font-medium">{t('Drop CVs here')}</p>
               <p className="text-sm text-ink-3">
                 {folders
-                  ? t('PDF, DOCX or TXT files, a whole folder, or a ZIP of CVs')
-                  : t('PDF, DOCX or TXT files, or a ZIP of CVs')}
+                  ? t('PDF, DOCX, TXT or MD files, a whole folder, or a ZIP of CVs')
+                  : t('PDF, DOCX, TXT or MD files, or a ZIP of CVs')}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <button
@@ -323,8 +326,10 @@ export function ResumesCard({
                       const full = !r.problem && idx >= room;
                       return (
                         <li key={r.key} className="flex items-center justify-between gap-2 py-1.5">
-                          <span className="min-w-0">
-                            <span className="block truncate">{r.path}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate" title={r.path}>
+                              {r.path}
+                            </span>
                             <span
                               className={`block text-xs ${r.problem || full ? 'text-err-ink' : 'text-ink-3'}`}
                             >
@@ -346,7 +351,7 @@ export function ResumesCard({
                     })}
                   </ul>
                 )}
-                {readyRows.length > 0 && (rows.length > COLLAPSE_ABOVE || problems.length > 0) && (
+                {readyRows.length > 0 && collapsible && (
                   <button
                     type="button"
                     className="text-sm text-link underline"
@@ -357,26 +362,6 @@ export function ResumesCard({
                       ? t('Show only the files that need attention')
                       : t('Show all {n} files', { n: rows.length })}
                   </button>
-                )}
-                {rows.length <= COLLAPSE_ABOVE && problems.length === 0 && (
-                  <ul className="max-h-56 divide-y divide-line overflow-auto text-sm">
-                    {rows.map((r) => (
-                      <li key={r.key} className="flex items-center justify-between gap-2 py-1.5">
-                        <span className="min-w-0">
-                          <span className="block truncate">{r.path}</span>
-                          <span className="block text-xs text-ink-3">{mb(r.size)}</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="shrink-0 text-link hover:underline"
-                          aria-label={t('Remove {name}', { name: r.path })}
-                          onClick={() => setRows((cur) => cur.filter((x) => x.key !== r.key))}
-                        >
-                          {t('Remove')}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
                 )}
                 {problems.length > 0 && (
                   <button

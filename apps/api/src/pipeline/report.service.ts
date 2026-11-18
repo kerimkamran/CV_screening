@@ -40,6 +40,30 @@ export function redact(text: string, name: string | null): string {
   return out;
 }
 
+/** Name parts compared without Azerbaijani letters, and with "ə" written as "e" or "a" (Məmmədova = Mammadova). */
+const nameKey = (w: string) =>
+  w
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/ə/g, 'a')
+    .replace(/ı/g, 'i')
+    .replace(/e/g, 'a');
+
+/**
+ * Replace every word that is part of a candidate's name (any of `names`, in any spelling with or
+ * without Azerbaijani letters) with "[name]": text typed by a recruiter can name other candidates
+ * too, and no name may reach the model (AISEC, SX-11).
+ */
+export function redactNames(text: string, names: (string | null)[]): string {
+  const keys = new Set<string>();
+  for (const n of names)
+    for (const part of (n ?? '').split(/[^\p{L}\p{N}'-]+/u))
+      if (part.length >= 3) keys.add(nameKey(part));
+  if (keys.size === 0) return text;
+  return text.replace(/[\p{L}\p{N}'-]+/gu, (w) => (keys.has(nameKey(w)) ? '[name]' : w));
+}
+
 /**
  * Builds the snapshot a share link shows (design spec 6.5). Everything comes from the same rows
  * and the same presentation rules (`@cv/shared`) as the live report, so the two cannot disagree.
@@ -63,7 +87,7 @@ export class ReportService {
     // A snapshot is only offered when the run is done (spec 6.5, states).
     if (all.some((r) => isPending(r))) {
       throw new ConflictException(
-        'The scan is still running. Share the report when every resume has been read, or stop the scan first.',
+        'The scan is still running. Share the report when every CV has been read, or stop the scan first.',
       );
     }
     const rank = all as unknown as RankRow[];
@@ -76,8 +100,10 @@ export class ReportService {
       );
     }
 
-    // Names are shown as written, for everyone who is let in (decision of 8 October 2026).
-    const shown = new Set<string>(scoredRows.map((r) => r.documentId));
+    // Names are shown as written, for everyone who is let in (decision of 8 October 2026), unless
+    // the share was made with `includeNames: false`: then no name, and no name inside the reasons,
+    // quotes or decision lines either, and the page says so (RP-12).
+    const shown = new Set<string>(opts.includeNames ? scoredRows.map((r) => r.documentId) : []);
 
     // Reasons and quotes for the expanded candidates only.
     const top = scoredRows.slice(0, EXPANDED).filter((r) => r.screeningId);

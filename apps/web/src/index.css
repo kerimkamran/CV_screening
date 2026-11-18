@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/manrope';
 @import './motion.css';
+@import './home.css';
 
 /*
  * Design tokens (spec section 4), redesigned October 2026 around the Azerconnect Group navy
@@ -54,6 +55,36 @@
   --c-cafe-board: #1d3a34;
   --c-cafe-chalk: #f6f1e4;
   --c-cafe-light: #f5c461;
+  /* Home tiles (November 2026): tonal containers, one hue per function. -ink is the text on the
+     container, -icon the strong disc behind a glyph, -on-icon the glyph. contrast.test.ts measures all. */
+  --c-t-blue: #d9e6fb;
+  --c-t-blue-ink: #0b2a55;
+  --c-t-blue-icon: #1558b0;
+  --c-t-blue-on-icon: #ffffff;
+  --c-t-green: #d3efdf;
+  --c-t-green-ink: #0a3f25;
+  --c-t-green-icon: #17794a;
+  --c-t-green-on-icon: #ffffff;
+  --c-t-amber: #fbe6b0;
+  --c-t-amber-ink: #442c00;
+  --c-t-amber-icon: #f2b01e;
+  --c-t-amber-on-icon: #3a2600;
+  --c-t-violet: #e5dcfa;
+  --c-t-violet-ink: #2a1660;
+  --c-t-violet-icon: #6a45d1;
+  --c-t-violet-on-icon: #ffffff;
+  --c-t-teal: #cdeded;
+  --c-t-teal-ink: #003b3c;
+  --c-t-teal-icon: #00797a;
+  --c-t-teal-on-icon: #ffffff;
+  --c-t-slate: #e4e9f2;
+  --c-t-slate-ink: #0b1f3a;
+  --c-t-slate-icon: #4b5d7c;
+  --c-t-slate-on-icon: #ffffff;
+  --c-t-lead-from: #133e72;
+  --c-t-lead-to: #1d5fb4;
+  --c-t-grad-a: #1558b0;
+  --c-t-grad-b: #6a45d1;
   color-scheme: light;
 }
 
@@ -145,6 +176,36 @@
   --c-cafe-wall: #16314f;
   --c-cafe-wood: #7a4f2c;
   --c-cafe-board: #10231f;
+  /* Home tiles (November 2026): tonal containers, one hue per function. -ink is the text on the
+     container, -icon the strong disc behind a glyph, -on-icon the glyph. contrast.test.ts measures all. */
+  --c-t-blue: #17407a;
+  --c-t-blue-ink: #dce8ff;
+  --c-t-blue-icon: #8fbaff;
+  --c-t-blue-on-icon: #0a2140;
+  --c-t-green: #124030;
+  --c-t-green-ink: #cbf1dc;
+  --c-t-green-icon: #7fd6a6;
+  --c-t-green-on-icon: #06261a;
+  --c-t-amber: #4a3508;
+  --c-t-amber-ink: #fbe6b0;
+  --c-t-amber-icon: #f2b01e;
+  --c-t-amber-on-icon: #3a2600;
+  --c-t-violet: #33285f;
+  --c-t-violet-ink: #e3dafc;
+  --c-t-violet-icon: #b9a3ff;
+  --c-t-violet-on-icon: #1d0f4a;
+  --c-t-teal: #0f4041;
+  --c-t-teal-ink: #c9eded;
+  --c-t-teal-icon: #6fd0d1;
+  --c-t-teal-on-icon: #00292a;
+  --c-t-slate: #1f3558;
+  --c-t-slate-ink: #e8f0fc;
+  --c-t-slate-icon: #9db3d4;
+  --c-t-slate-on-icon: #0a2140;
+  --c-t-lead-from: #1d58b8;
+  --c-t-lead-to: #2468d4;
+  --c-t-grad-a: #8fbaff;
+  --c-t-grad-b: #c3a8ff;
   color-scheme: dark;
 }
 
@@ -189,6 +250,36 @@
     --c-cafe-wall: #16314f;
     --c-cafe-wood: #7a4f2c;
     --c-cafe-board: #10231f;
+    /* Home tiles (November 2026): tonal containers, one hue per function. -ink is the text on the
+       container, -icon the strong disc behind a glyph, -on-icon the glyph. contrast.test.ts measures all. */
+    --c-t-blue: #17407a;
+    --c-t-blue-ink: #dce8ff;
+    --c-t-blue-icon: #8fbaff;
+    --c-t-blue-on-icon: #0a2140;
+    --c-t-green: #124030;
+    --c-t-green-ink: #cbf1dc;
+    --c-t-green-icon: #7fd6a6;
+    --c-t-green-on-icon: #06261a;
+    --c-t-amber: #4a3508;
+    --c-t-amber-ink: #fbe6b0;
+    --c-t-amber-icon: #f2b01e;
+    --c-t-amber-on-icon: #3a2600;
+    --c-t-violet: #33285f;
+    --c-t-violet-ink: #e3dafc;
+    --c-t-violet-icon: #b9a3ff;
+    --c-t-violet-on-icon: #1d0f4a;
+    --c-t-teal: #0f4041;
+    --c-t-teal-ink: #c9eded;
+    --c-t-teal-icon: #6fd0d1;
+    --c-t-teal-on-icon: #00292a;
+    --c-t-slate: #1f3558;
+    --c-t-slate-ink: #e8f0fc;
+    --c-t-slate-icon: #9db3d4;
+    --c-t-slate-on-icon: #0a2140;
+    --c-t-lead-from: #1d58b8;
+    --c-t-lead-to: #2468d4;
+    --c-t-grad-a: #8fbaff;
+    --c-t-grad-b: #c3a8ff;
     color-scheme: dark;
   }
 }
@@ -236,6 +327,10 @@
 @layer base {
   html {
     background: var(--c-bg);
+    /* Scrolling to a control (focus, find, "scroll into view") keeps it clear of the sticky header
+       and of the bars fixed to the bottom on phones. */
+    scroll-padding-top: 64px;
+    scroll-padding-bottom: calc(var(--bottombar-h, 0px) + var(--reviewbar-h, 0px) + 8px);
   }
   body {
     background-color: var(--c-bg);
@@ -262,6 +357,32 @@
   ::placeholder {
     color: var(--c-ink-3);
     opacity: 1;
+  }
+  /*
+   * Touch screens: every control is at least 44 x 44 px (WCAG 2.5.5; UAT check TGT). In the base
+   * layer, so a component may still ask for more. Links inside a sentence are inline and keep their
+   * size (min-height does not apply to inline boxes). A control marked data-tgt="small" (the evidence
+   * map's dots, which sit in a 20 px strip and are also reachable from the analysis) is exempt.
+   */
+  @media (pointer: coarse) {
+    :is(
+      button,
+      summary,
+      select,
+      a[href],
+      [role='button'],
+      [role='tab'],
+      input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='range'])
+    ):not([data-tgt='small']) {
+      min-height: 44px;
+    }
+    :is(button, summary, [role='button']):not([data-tgt='small']) {
+      min-width: 44px;
+    }
+    /* A checkbox or radio is small by nature; the label that wraps it is the target. */
+    label:has(> input:is([type='checkbox'], [type='radio'])) {
+      min-height: 44px;
+    }
   }
 }
 
@@ -335,5 +456,14 @@
     animation: none;
     transform: none;
     opacity: 0.4;
+  }
+}
+
+/* Forced colours (Windows high contrast): a focus ring drawn with box-shadow is removed by the
+   system, so every focused control gets a real outline there (A11-10). */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
   }
 }

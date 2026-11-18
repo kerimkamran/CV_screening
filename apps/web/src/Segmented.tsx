@@ -13,6 +13,7 @@ export function Segmented<K extends string>({
   label,
   className = '',
   stretch = false,
+  panelId,
 }: {
   items: { key: K; label: string }[];
   value: K;
@@ -21,6 +22,8 @@ export function Segmented<K extends string>({
   className?: string;
   /** Tabs share the width equally (phones). */
   stretch?: boolean;
+  /** The id of the panel each tab shows (aria-controls). */
+  panelId?: (k: K) => string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
@@ -47,6 +50,25 @@ export function Segmented<K extends string>({
       role="tablist"
       aria-label={label}
       className={`relative flex gap-1 rounded-md border border-line bg-card p-1 ${className}`}
+      // ARIA tabs: one tab stop; the arrow keys, Home and End move to a tab and choose it.
+      onKeyDown={(e) => {
+        const at = items.findIndex((i) => i.key === value);
+        const n = items.length;
+        const to =
+          e.key === 'ArrowRight'
+            ? (at + 1) % n
+            : e.key === 'ArrowLeft'
+              ? (at - 1 + n) % n
+              : e.key === 'Home'
+                ? 0
+                : e.key === 'End'
+                  ? n - 1
+                  : -1;
+        if (to < 0 || at < 0) return;
+        e.preventDefault();
+        onChange(items[to]!.key);
+        box.current?.querySelector<HTMLElement>(`[data-k="${items[to]!.key}"]`)?.focus();
+      }}
     >
       {pill && (
         <span
@@ -64,6 +86,8 @@ export function Segmented<K extends string>({
             role="tab"
             type="button"
             aria-selected={on}
+            aria-controls={panelId?.(it.key)}
+            tabIndex={on ? 0 : -1}
             onClick={() => onChange(it.key)}
             className={`relative rounded px-3 py-1 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${stretch ? 'flex-1 py-1.5' : ''} ${
               on

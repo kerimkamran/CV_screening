@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { api, type Me } from '../api';
 import { setAssistantScope } from '../assistant';
 import { tr, useT } from '../i18n';
 import { go } from '../route';
 import { ago, STATUS_STYLE, statusName, type VacancyView } from '../pool';
-import { btnSecondary, errMsg, Notice, when } from '../ui';
-import { CandidatePool } from './CandidatePool';
-import { Report } from './Report';
+import { btnSecondary, errMsg, Notice, tapLink, when } from '../ui';
+import { CandidatePool, Report } from './lazy';
 import { BatchPanel } from './BatchPanel';
 import { ResumesCard } from './ResumesCard';
 import { Results } from './Results';
@@ -62,8 +61,10 @@ function describe(c: HistoryRow['changes'][number]): string {
   return c.field ?? '';
 }
 
-function Runs({ id, rows }: { id: string; rows: Run[] | null }) {
+function Runs({ id, rows, error }: { id: string; rows: Run[] | null; error?: string }) {
   const t = useT();
+  // A failed load says so; it is never shown as "no runs" (SD-58).
+  if (error) return <Notice kind="error">{error}</Notice>;
   if (!rows) return <p className="text-sm text-ink-3">{t('Loading…')}</p>;
   if (rows.length === 0)
     return <p className="text-sm text-ink-2">{t('No analysis has been run yet.')}</p>;
@@ -97,6 +98,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [runs, setRuns] = useState<Run[] | null>(null);
+  const [runsError, setRunsError] = useState('');
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   // The role and resume cards fold away once there are results; null means "decide by itself".
@@ -115,8 +117,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
     if (creating) return;
     try {
       setRuns(await api.get<Run[]>(`/vacancies/${id}/runs`));
-    } catch {
-      setRuns([]);
+      setRunsError('');
+    } catch (e) {
+      setRunsError(errMsg(e));
     }
   }, [id, creating]);
   useEffect(() => void reload(), [reload]);
@@ -169,7 +172,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   if (creating)
     return (
       <div className="mx-auto max-w-3xl space-y-4">
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <h1 className="text-2xl font-bold tracking-tight">{t('New vacancy')}</h1>
@@ -187,7 +190,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   if (error && !v)
     return (
       <div className="space-y-3">
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <Notice kind="error">{error}</Notice>
@@ -210,7 +213,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   return (
     <div className="space-y-5">
       <div>
-        <a href="#/vacancies" className="text-sm text-link hover:underline">
+        <a href="#/vacancies" className={`text-sm text-link hover:underline ${tapLink}`}>
           {t('← Vacancies')}
         </a>
         <div className="mt-1 flex flex-wrap items-center gap-3">
@@ -238,7 +241,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
               {v.counts.outOfDate > 0 && ` · ${t('{n} out of date', { n: v.counts.outOfDate })}`}
             </>
           ) : (
-            t('Last run') + ': ' + t('none yet')
+            // While the list loads, or when it could not be loaded, "none yet" would be a wrong
+            // statement (RN-01); it is said only once the list has come back empty.
+            t('Last run') + ': ' + (runs ? t('none yet') : '–')
           )}
           {' · '}
           <button
@@ -356,7 +361,13 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
       )}
 
       <div id="vacancy-setup" hidden={!setupOpen} className="grid items-start gap-4 xl:grid-cols-2">
-        <RoleCard vacancy={v} onSaved={setV} onReload={reload} onDirty={setDirty} />
+        <RoleCard
+          vacancy={v}
+          onSaved={setV}
+          onReload={reload}
+          onDirty={setDirty}
+          onOffer={() => setSetupChoice(true)}
+        />
         <ResumesCard
           vacancy={v}
           roleDirty={dirty}
@@ -370,36 +381,70 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
         />
       </div>
 
+      {/* ARIA tabs (VP-04): one tab stop, arrows move between the tabs, Enter or a click opens one. */}
       <div
         role="tablist"
         aria-label={t('Vacancy views')}
         className="flex gap-1 overflow-x-auto border-b"
+        onKeyDown={(e) => {
+          const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')];
+          const at = tabs.indexOf(document.activeElement as HTMLElement);
+          if (at < 0) return;
+          const to =
+            e.key === 'ArrowRight'
+              ? (at + 1) % tabs.length
+              : e.key === 'ArrowLeft'
+                ? (at - 1 + tabs.length) % tabs.length
+                : e.key === 'Home'
+                  ? 0
+                  : e.key === 'End'
+                    ? tabs.length - 1
+                    : -1;
+          if (to < 0) return;
+          e.preventDefault();
+          tabs[to]!.focus();
+        }}
       >
         {TABS.map((k) => (
           <button
             key={k}
+            id={`vtab-${k}`}
             role="tab"
             type="button"
             aria-selected={tab === k}
+            aria-controls="vacancy-tabpanel"
+            tabIndex={tab === k ? 0 : -1}
             onClick={() => go(`/vacancies/${v.id}/${k}`)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium pointer-coarse:min-h-11 focus-visible:rounded-t focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
             {t(TAB_LABEL[k])}
           </button>
         ))}
       </div>
-      <div role="tabpanel">
-        {tab === 'candidates' ? (
-          <CandidatePool vacancyId={v.id} vacancyTitle={v.title} canMark />
-        ) : tab === 'results' ? (
-          <Results vacancyId={v.id} onTable={() => go(`/vacancies/${v.id}/candidates`)} />
-        ) : tab === 'report' ? (
-          <Report vacancyId={v.id} title={v.title} createdAt={v.createdAt} />
-        ) : tab === 'runs' ? (
-          <Runs id={v.id} rows={runs} />
-        ) : (
-          <CriteriaTab id={v.id} />
-        )}
+      <div role="tabpanel" id="vacancy-tabpanel" aria-labelledby={`vtab-${tab}`}>
+        <Suspense
+          fallback={
+            <p role="status" className="p-4 text-sm text-ink-2">
+              {t('Loading…')}
+            </p>
+          }
+        >
+          {tab === 'candidates' ? (
+            <CandidatePool vacancyId={v.id} vacancyTitle={v.title} canMark />
+          ) : tab === 'results' ? (
+            <Results
+              vacancyId={v.id}
+              onTable={() => go(`/vacancies/${v.id}/candidates`)}
+              archived={v.archived}
+            />
+          ) : tab === 'report' ? (
+            <Report vacancyId={v.id} title={v.title} createdAt={v.createdAt} />
+          ) : tab === 'runs' ? (
+            <Runs id={v.id} rows={runs} error={runsError} />
+          ) : (
+            <CriteriaTab id={v.id} archived={v.archived} />
+          )}
+        </Suspense>
       </div>
     </div>
   );

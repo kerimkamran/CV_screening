@@ -26,9 +26,10 @@ export const AZ_SHELL: Record<string, string> = {
   'Could not save your choice. It applies on this device only for now.':
     'Seçiminiz saxlanmadı. Hələlik yalnız bu cihazda keçərlidir.',
   'Loading…': 'Yüklənir…',
+  'Skip to main content': 'Əsas məzmuna keçin',
   'Administrators only.': 'Yalnız administratorlar üçün.',
-  'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.':
-    'Administratorlar istifadəçiləri və süni intellekt modellərini “İdarə” bölməsində idarə edir. Namizəd məlumatları yalnız işə götürənlər üçün əlçatandır.',
+  'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.':
+    'Administratorlar istifadəçiləri və süni intellekt modellərini “İdarəetmə” bölməsində idarə edir. Namizəd məlumatları yalnız işə götürənlər üçün əlçatandır.',
   'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.':
     'Süni intellektlə dəstəklənən yoxlama: bal və sıralama yalnız tövsiyədir. Namizəd barədə hər qərarı insan verir və onun adı ilə qeyd olunur.',
   'Checking service…': 'Xidmət yoxlanılır…',
@@ -114,4 +115,43 @@ export const AZ_SHELL: Record<string, string> = {
   'Not found': 'Tapılmadı',
   Forbidden: 'İcazə yoxdur',
   'Forbidden resource': 'İcazə yoxdur',
+  // server messages people meet at sign-in and when setting a password (SD-43)
+  'Too many attempts. Try again in a minute.':
+    'Çox cəhd edildi. Bir dəqiqədən sonra yenidən yoxlayın.',
+  'Invalid email, password or code': 'E-poçt, parol və ya kod yanlışdır',
+  'Enter the 6-digit code from your authenticator app':
+    'Autentifikator tətbiqinizdəki 6 rəqəmli kodu daxil edin',
+  'Current password is incorrect': 'Cari parol yanlışdır',
+  'Password is incorrect': 'Parol yanlışdır',
+  'New password must differ from the old one': 'Yeni parol köhnəsindən fərqli olmalıdır',
+  'New password must be at least 12 characters': 'Yeni parol ən azı 12 simvol olmalıdır',
+  'New password must be at most 128 characters': 'Yeni parol ən çoxu 128 simvol ola bilər',
+  'New password must not contain your email name':
+    'Yeni parolda e-poçt ünvanınızın adı olmamalıdır',
+  'New password is too repetitive': 'Yeni parol eyni simvolun təkrarından ibarət ola bilməz',
+  'This link has already been used or was replaced by a newer one. Ask your administrator for a new one.':
+    'Bu link artıq istifadə olunub və ya daha yenisi ilə əvəz edilib. Administratorunuzdan yeni link istəyin.',
+  'This account is disabled. Ask your administrator.':
+    'Bu hesab deaktiv edilib. Administratorunuza müraciət edin.',
+  'An account with this email already exists': 'Bu e-poçt ilə hesab artıq mövcuddur',
+  'You cannot disable your own account': 'Öz hesabınızı deaktiv edə bilməzsiniz',
+  'Cannot disable the last active ADMIN': 'Sonuncu aktiv administratoru deaktiv etmək olmaz',
+  'Two-step sign-in is already on': 'İki addımlı daxil olma artıq aktivdir',
+  'Start the setup first': 'Əvvəlcə quraşdırmanı başladın',
+  'Not saved. Check your connection and try again.':
+    'Saxlanmadı. Bağlantınızı yoxlayıb yenidən cəhd edin.',
+  // a part of the page that could not load (SD-45)
+  'parallax was updated. Reload to see the CV.':
+    'parallax yeniləndi. CV-ni görmək üçün səhifəni yenidən yükləyin.',
+  'parallax was updated. Reload to see this page.':
+    'parallax yeniləndi. Səhifəni görmək üçün yenidən yükləyin.',
+  'parallax was updated. Reload to see the picture.':
+    'parallax yeniləndi. Şəkli görmək üçün səhifəni yenidən yükləyin.',
+  'Something went wrong on this page. Reload to continue.':
+    'Bu səhifədə nəsə səhv getdi. Davam etmək üçün yenidən yükləyin.',
+  // the network or the service is down (SD-48)
+  'The service cannot be reached. Check your connection and try again.':
+    'Xidmətə qoşulmaq mümkün olmadı. Bağlantınızı yoxlayıb yenidən cəhd edin.',
+  'The service did not answer properly. Try again in a moment.':
+    'Xidmət düzgün cavab vermədi. Bir azdan yenidən cəhd edin.',
 };

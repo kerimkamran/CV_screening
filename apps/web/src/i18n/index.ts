@@ -30,6 +30,8 @@ function initial(): Lang {
 }
 
 let current: Lang = initial();
+// The page's language is right from the first paint, not only after a switch (SD-52).
+if (typeof document !== 'undefined') document.documentElement.lang = current;
 const listeners = new Set<() => void>();
 
 export const getLang = (): Lang => current;

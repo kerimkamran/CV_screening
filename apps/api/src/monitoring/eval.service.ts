@@ -39,7 +39,9 @@ export class EvalService implements OnApplicationBootstrap {
   async start(p: Principal, arms: Arm[]): Promise<{ id: string; total: number }> {
     const active = await this.ai.active();
     if (!active)
-      throw new ConflictException('Choose and test an AI model first (Admin > AI models).');
+      throw new ConflictException(
+        'Choose and test an AI model first (Administration > AI models).',
+      );
     const running = await this.db.query(`SELECT 1 FROM eval_run WHERE state = 'running' LIMIT 1`);
     if (running.rows.length) throw new ConflictException('A fairness test is already running.');
     const total = TEMPLATES.length * VARIANTS.length * arms.length;

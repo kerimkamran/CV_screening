@@ -194,7 +194,7 @@ export class ScreeningsController {
   ) {
     const sid = parse(ulidSchema, id);
     const d = parse(decisionSchema, body);
-    await this.scope.assertScreening(p, sid);
+    await this.scope.assertScreeningActive(p, sid);
     if (p.actorType !== 'human')
       throw new BadRequestException('Only a person can record a decision');
     if (d.outcome === 'reject' && d.evidenceReviewed !== true) {

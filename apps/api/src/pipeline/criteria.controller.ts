@@ -81,7 +81,7 @@ export class CriteriaController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     const jd = (
       await this.db.query<{ id: string; body: string }>(
         `SELECT id, body FROM job_description_version WHERE vacancy_id = $1 ORDER BY version DESC LIMIT 1`,
@@ -170,7 +170,7 @@ export class CriteriaController {
   ) {
     const vid = parse(ulidSchema, id);
     const { requirements } = parse(z.object({ requirements: requirementsInput }), body);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     await this.db.withTx(async (tx) => {
       const latest = await this.sets.latest(tx, vid);
       if (!latest || latest.frozen) {
@@ -207,7 +207,7 @@ export class CriteriaController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     await this.db.withTx(async (tx) => {
       await tx.query(`SELECT 1 FROM vacancy WHERE id = $1 FOR UPDATE`, [vid]);
       const latest = await this.sets.latest(tx, vid);
@@ -241,7 +241,7 @@ export class CriteriaController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     await this.db.withTx(async (tx) => {
       const latest = await this.sets.latest(tx, vid);
       if (!latest || latest.frozen) throw new ConflictException('There is no draft to freeze');

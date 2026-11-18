@@ -6,7 +6,8 @@ import {
   type Mark,
   type VacancyStatus,
 } from '@cv/shared';
-import { tr } from './i18n';
+import { day } from './dates';
+import { getLang, tr } from './i18n';
 
 /** Shapes the Vacancy pool, the Candidate pool and the report use (Development Plan, Phases 1 to 3). */
 
@@ -32,7 +33,14 @@ export const MARK_STYLE: Record<Mark, string> = {
 };
 export const MARKS: Mark[] = ['new', 'shortlist', 'maybe', 'not_now'];
 export const markName = (m: Mark) => tr(MARK_LABEL[m]);
-export const statusName = (s: VacancyStatus) => tr(VACANCY_STATUS_LABEL[s]);
+/**
+ * A vacancy's state, as a word for a state. 'Open' is also the button that opens something, and
+ * Azerbaijani tells them apart: the button is the command "Açın", the state is "Açıq" (SD-44).
+ */
+const STATE_AZ: Record<string, string> = { Open: 'Açıq' };
+export const stateWord = (en: string): string =>
+  getLang() === 'az' && STATE_AZ[en] ? STATE_AZ[en] : tr(en);
+export const statusName = (s: VacancyStatus) => stateWord(VACANCY_STATUS_LABEL[s]);
 export const STATUS_STYLE: Record<VacancyStatus, string> = {
   draft: 'bg-neutral text-ink',
   open: 'bg-ok text-ok-ink',
@@ -282,15 +290,20 @@ export function ago(iso: string, now = Date.now()): string {
   if (h < 24) return tr('{n} h ago', { n: h });
   const d = Math.round(h / 24);
   if (d < 14) return d === 1 ? tr('yesterday') : tr('{n} days ago', { n: d });
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  // In the app's language, not the browser's (VL-01).
+  return day(new Date(iso), 'short');
 }
 
-/** Warn before leaving a page with unsaved work: reloads, closing the tab, and in-app links. */
-export function useLeaveGuard(dirty: boolean, message: string, bypass?: { current: boolean }) {
+/**
+ * Warn before leaving a page with unsaved work: reloads, closing the tab, and in-app links. Moving
+ * inside `within` (a hash prefix, e.g. the vacancy's own tabs) is not leaving (VP-09).
+ */
+export function useLeaveGuard(
+  dirty: boolean,
+  message: string,
+  bypass?: { current: boolean },
+  within?: string,
+) {
   useEffect(() => {
     if (!dirty) return;
     const before = (e: BeforeUnloadEvent) => {
@@ -300,6 +313,11 @@ export function useLeaveGuard(dirty: boolean, message: string, bypass?: { curren
     let last = window.location.hash;
     const onHash = () => {
       if (window.location.hash === last || bypass?.current) return;
+      const h = window.location.hash;
+      if (within && (h === within || h.startsWith(`${within}/`))) {
+        last = h;
+        return;
+      }
       if (window.confirm(message)) {
         last = window.location.hash;
         return;
@@ -314,5 +332,5 @@ export function useLeaveGuard(dirty: boolean, message: string, bypass?: { curren
       window.removeEventListener('beforeunload', before);
       window.removeEventListener('hashchange', onHash);
     };
-  }, [dirty, message, bypass]);
+  }, [dirty, message, bypass, within]);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -65,6 +65,18 @@ function problemOf(e: unknown): PdfProblem {
   return 'broken';
 }
 
+/** The box that scrolls these pages: the nearest ancestor that scrolls, else the parent (EM-03). */
+function scrollParent(el: HTMLElement | null | undefined): HTMLElement | null {
+  let n = el?.parentElement ?? null;
+  const first = n;
+  while (n && n !== document.body) {
+    const o = getComputedStyle(n).overflowY;
+    if (o === 'auto' || o === 'scroll') return n;
+    n = n.parentElement;
+  }
+  return first;
+}
+
 function Page({
   doc,
   n,
@@ -122,9 +134,20 @@ function Page({
   }, [doc, n, near, quoteKey]);
 
   // Asked for and marked: bring the first mark to the middle of the view.
+  const aimedAt = useRef(0);
+  useEffect(() => {
+    if (aim > 0) aimedAt.current = Date.now();
+  }, [aim]);
   useEffect(() => {
     if (aim > 0 && marks.length > 0) scrollInside(firstMark.current, 'center');
   }, [aim, marks]);
+  // When the CV was hidden (the other tab on a narrow screen) the pages are measured only after it
+  // shows, and grow below the mark that was just centred: it is centred again, but only for a
+  // moment after it was asked for, so that zooming later never pulls the view back (CV-07).
+  useEffect(() => {
+    if (aim > 0 && marks.length > 0 && Date.now() - aimedAt.current < 1500)
+      scrollInside(firstMark.current, 'center');
+  }, [width]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = box.current;
@@ -156,8 +179,10 @@ function Page({
         if (!c) return;
         c.width = Math.floor(vp.width);
         c.height = Math.floor(vp.height);
-        c.style.width = `${Math.floor(vp.width / dpr)}px`;
-        c.style.height = `${Math.floor(vp.height / dpr)}px`;
+        // The canvas always fills its page box, so during a resize the old drawing is stretched for a
+        // moment instead of sitting at the old size (the marks are placed on the box).
+        c.style.width = '100%';
+        c.style.height = '100%';
         const ctx = c.getContext('2d');
         if (!ctx) return;
         task = page.render({ canvasContext: ctx, viewport: vp });
@@ -215,6 +240,9 @@ function Page({
 export default function PdfPages({
   documentId,
   zoom,
+  fitHeight = false,
+  maxWidth,
+  onZoom,
   ref,
   onPages,
   onProblem,
@@ -223,7 +251,14 @@ export default function PdfPages({
   onMap,
 }: {
   documentId: string;
+  /** 1 is the page as wide as the pane (or maxWidth). */
   zoom: number;
+  /** Fit one whole page into the height of the box that scrolls the pages ("Fit"). */
+  fitHeight?: boolean;
+  /** A readable page width on a large screen (full screen). */
+  maxWidth?: number;
+  /** The zoom actually shown, relative to the fitted width (for the "%" in the toolbar). */
+  onZoom?: (z: number) => void;
   /** Lines to mark on the pages: the chosen requirement's quotes. */
   quotes?: string[];
   /** Every requirement's quotes, for the evidence map. */
@@ -239,7 +274,8 @@ export default function PdfPages({
   const pending = useRef<number | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [count, setCount] = useState(0);
-  const [width, setWidth] = useState(0);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const [ratio1, setRatio1] = useState(0);
   const [flash, setFlash] = useState<number | null>(null);
   const [aim, setAim] = useState<{ page: number; seq: number }>({ page: 0, seq: 0 });
 
@@ -263,6 +299,9 @@ export default function PdfPages({
         });
         loaded = await task.promise;
         if (ctl.signal.aborted) return void loaded.destroy();
+        const first = (await loaded.getPage(1)).getViewport({ scale: 1 });
+        if (ctl.signal.aborted) return void loaded.destroy();
+        setRatio1(first.height / first.width);
         setDoc(loaded);
         setCount(loaded.numPages);
         onPages?.(loaded.numPages);
@@ -305,24 +344,77 @@ export default function PdfPages({
     };
   }, [doc, mapKey]);
 
-  // The width the pages should have: the pane, times the zoom.
+  // The room the pages have: the pane's width, and the height of the box that scrolls them.
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const read = () => setWidth(Math.max(0, Math.floor(el.clientWidth - 8) * zoom));
+    const scroller = scrollParent(el);
+    const read = () =>
+      setBox({ w: Math.max(0, Math.floor(el.clientWidth - 8)), h: scroller?.clientHeight ?? 0 });
     read();
     if (typeof ResizeObserver === 'undefined') return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ro = new ResizeObserver(() => {
       clearTimeout(timer);
-      timer = setTimeout(read, 150);
+      timer = setTimeout(read, 120);
     });
     ro.observe(el);
+    if (scroller) ro.observe(scroller);
     return () => {
       clearTimeout(timer);
       ro.disconnect();
     };
-  }, [zoom]);
+  }, []);
+  // The width the pages get: the fitted width (capped on large screens) times the zoom, or the width
+  // at which one whole page fits the height.
+  const fitted = maxWidth ? Math.min(box.w, maxWidth) : box.w;
+  const byHeight = ratio1 > 0 ? Math.floor((box.h - PAGE_GAP - 16) / ratio1) : 0;
+  const width = fitHeight && byHeight > 40 ? Math.min(byHeight, box.w) : Math.floor(fitted * zoom);
+  const onZoomRef = useRef(onZoom);
+  useEffect(() => {
+    onZoomRef.current = onZoom;
+  });
+  useEffect(() => {
+    if (fitted > 0 && width > 0) onZoomRef.current?.(width / fitted);
+  }, [width, fitted]);
+
+  // Zooming keeps the reading position: the point in the middle of the view stays in the middle.
+  const view = useRef({ top: 0, left: 0, h: 0, w: 0 });
+  useEffect(() => {
+    const sc = scrollParent(wrap.current);
+    if (!sc) return;
+    const read = () => {
+      view.current = {
+        top: sc.scrollTop,
+        left: sc.scrollLeft,
+        h: sc.clientHeight,
+        w: sc.clientWidth,
+      };
+    };
+    read();
+    sc.addEventListener('scroll', read, { passive: true });
+    return () => sc.removeEventListener('scroll', read);
+  }, []);
+  const lastWidth = useRef(0);
+  useLayoutEffect(() => {
+    const old = lastWidth.current;
+    lastWidth.current = width;
+    const sc = scrollParent(wrap.current);
+    if (!sc || !old || !width || old === width || !doc) return;
+    const k = width / old;
+    const v = view.current;
+    sc.scrollTo?.({
+      top: Math.max(0, (v.top + v.h / 2) * k - sc.clientHeight / 2),
+      left: Math.max(0, (v.left + v.w / 2) * k - sc.clientWidth / 2),
+      behavior: 'instant',
+    });
+    view.current = {
+      top: sc.scrollTop,
+      left: sc.scrollLeft,
+      h: sc.clientHeight,
+      w: sc.clientWidth,
+    };
+  }, [width, doc]);
 
   const jump = (page: number) => {
     const el = els.current.get(page);

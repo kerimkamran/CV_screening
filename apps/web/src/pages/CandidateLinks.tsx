@@ -41,6 +41,7 @@ export function CandidateLinks({ matchId, canEdit }: { matchId: string; canEdit:
   const [st, setSt] = useState<LinkState | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState('');
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [source, setSource] = useState('application_form');
   const [evidence, setEvidence] = useState('');
   const base = `/assistant/candidates/${matchId}/links`;
@@ -98,10 +99,38 @@ export function CandidateLinks({ matchId, canEdit }: { matchId: string; canEdit:
               type="button"
               className="text-link underline"
               disabled={busy !== ''}
-              onClick={() => void run('withdraw', () => api.del<LinkState>(`${base}/consent`))}
+              onClick={() => setConfirmWithdraw(true)}
             >
               {t('Withdraw consent and delete what was read')}
             </button>
+          )}
+          {/* Withdrawing deletes what was read, so it asks first (SD-14). */}
+          {confirmWithdraw && (
+            <span
+              role="alertdialog"
+              aria-label={t('Withdraw consent?')}
+              className="mt-2 flex flex-wrap items-center gap-2"
+            >
+              <span>{t('This deletes what was read from the pages. Withdraw consent?')}</span>
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={busy !== ''}
+                onClick={() => {
+                  setConfirmWithdraw(false);
+                  void run('withdraw', () => api.del<LinkState>(`${base}/consent`));
+                }}
+              >
+                {t('Withdraw consent')}
+              </button>
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => setConfirmWithdraw(false)}
+              >
+                {t('Cancel')}
+              </button>
+            </span>
           )}
         </p>
       ) : canEdit ? (
@@ -135,6 +164,9 @@ export function CandidateLinks({ matchId, canEdit }: { matchId: string; canEdit:
         </form>
       ) : null}
       <ul className="divide-y divide-line text-sm" aria-label={t('Links in the CV')}>
+        <li className="sr-only" role="status">
+          {busy.startsWith('http') ? t('Reading…') : ''}
+        </li>
         {st.links.map((l) => (
           <li key={l.url} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <span className="min-w-0 break-all">{l.url}</span>
@@ -145,12 +177,13 @@ export function CandidateLinks({ matchId, canEdit }: { matchId: string; canEdit:
                 type="button"
                 className={btnSecondary}
                 disabled={!st.consent || !canEdit || busy !== ''}
-                aria-label={t('Read {host}', { host: l.host })}
                 onClick={() =>
                   void run(l.url, () => api.post<LinkState>(`${base}/review`, { url: l.url }))
                 }
               >
+                {/* The name is the visible text plus the host (SD-60). */}
                 {busy === l.url ? t('Reading…') : t('Read this page')}
+                <span className="sr-only"> {l.host}</span>
               </button>
             )}
           </li>

@@ -274,7 +274,7 @@ export class DocumentsController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     return this.db.withTx(async (tx) => {
       const r = await tx.query(
         `UPDATE screening sc SET cancelled_at = now()
@@ -305,7 +305,7 @@ export class DocumentsController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     return this.db.withTx(async (tx) => {
       const r = await tx.query(
         `UPDATE screening sc SET cancelled_at = NULL, run_after = now()
@@ -336,7 +336,7 @@ export class DocumentsController {
     @Req() req: FastifyRequest,
   ) {
     const vid = parse(ulidSchema, id);
-    await this.scope.assert(p, vid);
+    await this.scope.assertActive(p, vid);
     return this.db
       .withTx(async (tx) => {
         const set = (

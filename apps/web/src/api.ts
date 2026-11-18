@@ -47,6 +47,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Shown when the browser cannot reach the service at all. */
+export const NETWORK_DOWN = 'The service cannot be reached. Check your connection and try again.';
+/** Shown when a gateway or proxy answers instead of the service. */
+export const BAD_ANSWER = 'The service did not answer properly. Try again in a moment.';
+
 type Listener = () => void;
 const onUnauthorized: Listener[] = [];
 export const subscribeUnauthorized = (fn: Listener) => {
@@ -62,25 +67,36 @@ async function raw(
   signal?: AbortSignal,
 ) {
   const token = session.get();
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-    },
-    body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+      },
+      body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
+      signal,
+    });
+  } catch (e) {
+    // A cancelled request stays a cancellation; anything else is the network or the service being
+    // down, which the browser reports as "Failed to fetch" / "Load failed". Say it plainly (SD-48).
+    if (signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) throw e;
+    throw new ApiError(0, NETWORK_DOWN, 'NETWORK');
+  }
   if (!res.ok) {
-    let message = res.statusText;
+    let message = '';
     let code: string | undefined;
     try {
       const j = (await res.json()) as { message?: string | string[]; code?: string };
-      message = Array.isArray(j.message) ? j.message.join(', ') : (j.message ?? message);
+      message = Array.isArray(j.message) ? j.message.join(', ') : (j.message ?? '');
       code = j.code;
     } catch {
-      /* non-JSON error */
+      /* non-JSON error: a proxy's HTML page, an empty body */
     }
+    // Never an empty notice: a gateway page or a bare status line gets a plain sentence (SD-88).
+    if (!message)
+      message = res.status >= 500 ? BAD_ANSWER : res.statusText || 'Something went wrong';
     if (res.status === 401 && token) onUnauthorized.forEach((f) => f());
     throw new ApiError(res.status, message, code);
   }

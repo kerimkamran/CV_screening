@@ -5,7 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { DbService, type Queryable } from '../db/db.service';
 import { CandidatesService } from '../pipeline/candidates.service';
-import { redact } from '../pipeline/report.service';
+import { redact, redactNames } from '../pipeline/report.service';
 import { localiseAnswer } from './assistant-az';
 import { eraseAssistantForDocument } from './assistant-erase';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
@@ -274,6 +274,34 @@ export class AssistantService {
     return { evidence: m, summary: sc.summary, injection: sc.injection, cvText: sc.text ?? '' };
   }
 
+  /** The names read from the resumes of these vacancies: never sent to a model (SX-11). */
+  async namesIn(vacancyIds: string[]): Promise<string[]> {
+    if (vacancyIds.length === 0) return [];
+    // The name read by the model, and the name on a "Name:" line at the top of the resume (a name
+    // the reading missed is still taken out).
+    const { rows } = await this.db.query<{ name: string | null }>(
+      `SELECT DISTINCT s.candidate_name AS name
+         FROM screening s JOIN cv_document d ON d.id = s.document_id
+        WHERE d.vacancy_id = ANY($1::char(26)[]) AND s.candidate_name IS NOT NULL
+       UNION
+       SELECT DISTINCT substring(d.text from
+                '(?i)(?:^|\n)[ \t]*(?:full name|name|ad|soyad[, ]+ad|имя|фио)[ \t]*:[ \t]*([^\n]{3,60})')
+         FROM cv_document d
+        WHERE d.vacancy_id = ANY($1::char(26)[]) AND d.erased_at IS NULL AND d.text IS NOT NULL`,
+      [vacancyIds],
+    );
+    // Only what looks like a name: no sentence marks or digits, at most five words; capitalised words.
+    return rows
+      .map((r) => r.name?.trim() ?? '')
+      .filter((n) => n && !/[.,:;!?\d@]/.test(n) && n.split(/\s+/).length <= 5)
+      .map((n) =>
+        n
+          .split(/\s+/)
+          .filter((w) => /^\p{Lu}/u.test(w))
+          .join(' '),
+      );
+  }
+
   private async build(vid: string, screeningId: string, prefix: string) {
     const { row, label } = await this.record(vid, screeningId);
     const readable =
@@ -310,8 +338,12 @@ export class AssistantService {
     const main = await this.build(vacancyId, screeningId, input.intent === 'compare' ? 'A.' : '');
     // The question as asked, with the person's name taken out: a reveal on screen is never fed back.
     const text0 = input.intent === 'ask' ? input.message : QUESTION_FOR[input.intent];
-    const text = redact(text0, main.row.candidateName).slice(0, 1000);
-    const read = input.read ? redact(input.read, main.row.candidateName).slice(0, 400) : undefined;
+    // Other candidates' names typed in the question are taken out too (SX-11).
+    const names = await this.namesIn([vacancyId]);
+    const text = redactNames(redact(text0, main.row.candidateName), names).slice(0, 1000);
+    const read = input.read
+      ? redactNames(redact(input.read, main.row.candidateName), names).slice(0, 400)
+      : undefined;
 
     let answer: Answer;
     const nameFor = new Map<string, string>();
@@ -359,7 +391,11 @@ export class AssistantService {
             if (!b.unread) packages.push(b.built);
           }
         }
-        const history = await this.history(p.userId, screeningId);
+        // Earlier answers were stored with the real names shown on screen: taken out again (SX-11).
+        const history = (await this.history(p.userId, screeningId)).map((h) => ({
+          ...h,
+          text: redactNames(redact(h.text, main.row.candidateName), names),
+        }));
         const modelIntent: ModelIntent =
           input.intent === 'ask' ? 'ask' : (input.intent as ModelIntent);
         try {

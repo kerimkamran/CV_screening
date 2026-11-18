@@ -3,7 +3,7 @@
 //
 //   node scripts/uat-seed.mjs accounts   Makes the test accounts and prints one setup link for each.
 //   node scripts/uat-seed.mjs data       Signs in as the UAT recruiter and loads the vacancy and the
-//                                        ten fixture resumes, then starts the analysis.
+//                                        ten fixture resumes; their analysis starts as they arrive.
 //
 // Settings come from the environment, never the command line:
 //   UAT_BASE_URL         the site, for example https://cv-screening-rcov.onrender.com
@@ -85,6 +85,9 @@ async function data() {
   const v = await call('POST', '/vacancies', token, { title, jdText: jd });
   console.log(`Vacancy: ${title} (${v.id})`);
   await call('POST', `/vacancies/${v.id}/criteria/extract`, token);
+  // The notice is confirmed and the criteria are frozen first: CVs are accepted only after that,
+  // and each one's analysis then starts as it is uploaded (SD-46: uploading first gave 409).
+  await call('POST', `/vacancies/${v.id}/start`, token, { confirmNotice: true });
   const form = new FormData();
   for (const f of readdirSync(join(UAT, 'resumes'))
     .filter((x) => x.endsWith('.txt'))
@@ -96,8 +99,7 @@ async function data() {
     );
   const up = await call('POST', `/vacancies/${v.id}/documents`, token, undefined, form);
   console.log(`Uploaded: ${JSON.stringify(up).slice(0, 160)}`);
-  await call('POST', `/vacancies/${v.id}/start`, token, { confirmNotice: true });
-  console.log(`Started. Open ${base}/#/vacancies/${v.id}`);
+  console.log(`Analysis started. Open ${base}/#/vacancies/${v.id}`);
 }
 
 const cmd = process.argv[2];

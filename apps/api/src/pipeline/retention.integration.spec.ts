@@ -123,4 +123,34 @@ describeDb('Retention purge, legal hold, certificates (plan DOC-08..11)', () => 
       ).rows[0].n,
     ).toBe(3);
   });
+
+  it('lets governance read but not change retention, erase files or set holds (SD-40)', async () => {
+    const gov = await h.recruiter('ret-gov@azerconnect.test', 'GOVERNANCE');
+    const rec = await h.recruiter('ret-rec-gov@azerconnect.test');
+    const vid = await h.scenario(
+      rec.api,
+      [{ name: 'Gov One', lines: ['BGP routing'] }],
+      'Gov vacancy',
+    );
+    expect((await gov.api.get('/admin/retention')).statusCode).toBe(200);
+    expect((await gov.api.put('/admin/retention', { enabled: true, days: 30 })).statusCode).toBe(
+      403,
+    );
+    expect((await gov.api.post('/admin/retention/run', { dryRun: false })).statusCode).toBe(403);
+    expect(
+      (await gov.api.put(`/admin/vacancies/${vid}/legal-hold`, { hold: true, matter: 'GOV-1' }))
+        .statusCode,
+    ).toBe(403);
+    const denied = await h.db.owner.query(
+      `SELECT after->>'resource' AS r FROM audit_event WHERE action = 'access.denied' AND actor_id = $1`,
+      [gov.userId],
+    );
+    expect(denied.rows.map((x: { r: string }) => x.r).sort()).toEqual(
+      ['/admin/retention', '/admin/retention/run', `/admin/vacancies/${vid}/legal-hold`].sort(),
+    );
+    const s = (await h.admin.get('/admin/retention')).json();
+    expect(s.enabled).toBe(false);
+    const v = await h.db.owner.query(`SELECT legal_hold FROM vacancy WHERE id = $1`, [vid]);
+    expect(v.rows[0].legal_hold).toBe(false);
+  });
 });

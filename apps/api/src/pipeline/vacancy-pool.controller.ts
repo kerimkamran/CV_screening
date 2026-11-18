@@ -78,8 +78,21 @@ export class VacancyPoolController {
   @Roles(...HUMAN)
   @Post(':id/duplicate')
   @HttpCode(201)
-  duplicate(@Param('id') id: string, @CurrentPrincipal() p: Principal, @Req() req: FastifyRequest) {
-    return this.svc.duplicate(p, parse(ulidSchema, id), req.ip);
+  duplicate(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    // The page may name the copy in its own language ("… (surət)"); without a title it is "Copy of …".
+    const b = parse(
+      z
+        .object({ title: z.string().trim().min(1).max(200).optional() })
+        .strict()
+        .nullish(),
+      body,
+    );
+    return this.svc.duplicate(p, parse(ulidSchema, id), req.ip, b?.title);
   }
 
   @Roles(...HUMAN)

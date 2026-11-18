@@ -1,11 +1,43 @@
 /** Azerbaijani for Home, Past scans and the Vacancy tabs (design spec 13). Keys are the exact English text. */
 export const AZ_HOME: Record<string, string> = {
+  // Home: the launcher of functions
+  Home: 'Ana səhifə',
+  Welcome: 'Xoş gəlmisiniz',
+  'Good morning, {name}': 'Sabahınız xeyir, {name}',
+  'Good afternoon, {name}': 'Günortanız xeyir, {name}',
+  'Good evening, {name}': 'Axşamınız xeyir, {name}',
+  'What would you like to do today?': 'Bu gün nə etmək istərdiniz?',
+  'Screen candidates': 'Namizədləri yoxlayın',
+  Oversight: 'Nəzarət',
+  Account: 'Hesab',
+  'Pick up where you left off': 'Qaldığınız yerdən davam edin',
+  'Ask {name} about your candidates': '{name} adlı köməkçidən namizədləriniz barədə soruşun',
+  'Describe a role, add CVs and see who fits, with the evidence.':
+    'Vəzifəni təsvir edin, CV-ləri əlavə edin və kimin uyğun olduğunu dəlillərlə görün.',
+  'All your roles with status, progress and decisions.':
+    'Bütün vakansiyalarınız: vəziyyət, irəliləyiş və qərarlar.',
+  'Search every analyzed CV across your vacancies.':
+    'Vakansiyalarınız üzrə təhlil olunmuş bütün CV-lərdə axtarın.',
+  'Ask about your candidates in plain words.':
+    'Namizədləriniz barədə sualları sadə sözlərlə verin.',
+  'Reports that colleagues shared with you.': 'İş yoldaşlarınızın sizinlə paylaşdığı hesabatlar.',
+  'Add people, set roles and reset access.':
+    'İnsanları əlavə edin, rolları təyin edin və girişi sıfırlayın.',
+  'Choose and test the models that read CVs.': 'CV-ləri oxuyan modelləri seçin və yoxlayın.',
+  'Turn the assistant on and set what it may do.':
+    'Köməkçini işə salın və nə edə biləcəyini müəyyən edin.',
+  'Fairness figures and the audit trail.': 'Ədalətlilik göstəriciləri və audit izi.',
+  'Decide how long files are kept.': 'Faylların nə qədər saxlanacağını müəyyən edin.',
+  'Review how the assistant is set up and used.':
+    'Köməkçinin necə qurulduğunu və istifadə olunduğunu nəzərdən keçirin.',
+  'Change the password you sign in with.': 'Daxil olmaq üçün istifadə etdiyiniz parolu dəyişin.',
+  'Set up two-step sign-in for your account.': 'Hesabınız üçün iki addımlı girişi qurun.',
   'Our recruitment team uses an AI-assisted tool to help read and compare applications against the requirements of the role. The tool produces a suggested ranking with the evidence behind it. It does not make decisions: every shortlisting or rejection decision is made by a member of our recruitment team, who reviews your application. You may ask us for a human review of your application, for access to your data, or for its deletion, by contacting HR.':
     'Əməkdaşlarımız müraciətləri vakansiyanın tələbləri ilə müqayisə edib oxumaq üçün süni intellektlə işləyən alətdən istifadə edir. Alət təklif olunan sıralamanı və onun əsaslandığı dəlilləri təqdim edir. Qərarı alət vermir: qısa siyahıya salma və ya imtina barədə hər qərarı müraciətinizə baxan işçimiz verir. Müraciətinizə insan tərəfindən yenidən baxılmasını, məlumatlarınıza çıxış əldə etməyi və ya onların silinməsini HR ilə əlaqə saxlayaraq istəyə bilərsiniz.',
   'Add at least one CV.': 'Ən azı bir CV əlavə edin.',
   'Add the position title.': 'Vəzifənin adını yazın.',
   'Describe the role, then choose "Read requirements".':
-    'Vəzifəni təsvir edin, sonra “Tələbləri oxu” düyməsini seçin.',
+    'Vəzifəni təsvir edin, sonra “Tələbləri oxuyun” düyməsini seçin.',
   'Add at least one skill.': 'Ən azı bir bacarıq əlavə edin.',
   'Confirm the candidate notice.': 'Namizəd bildirişini təsdiqləyin.',
   'Who fits this role?': 'Bu vəzifəyə kim uyğundur?',
@@ -20,7 +52,7 @@ export const AZ_HOME: Record<string, string> = {
   '(a ZIP is unpacked when you start)': '(ZIP başlayanda açılır)',
   'Hide the list': 'Siyahını gizlədin',
   'Show the list': 'Siyahını göstərin',
-  'Remove {name}': '{name} adlı şəxsi sil',
+  'Remove {name}': '{name} adlı şəxsi silin',
   Remove: 'Silin',
   'The role': 'Vakansiya',
   Position: 'Vəzifə',
@@ -67,7 +99,7 @@ export const AZ_HOME: Record<string, string> = {
   'Past scans': 'Keçmiş yoxlamalar',
   'Every scan is kept. Open one to see its results again, or change the requirements and read the same CVs against them.':
     'Hər yoxlama saxlanılır. Nəticələrə yenidən baxmaq üçün birini açın və ya tələbləri dəyişib eyni CV-ləri onlara qarşı yenidən oxuyun.',
-  Cancel: 'Ləğv et',
+  Cancel: 'Ləğv edin',
   'New vacancy': 'Yeni vakansiya',
   'No vacancies yet.': 'Hələ vakansiya yoxdur.',
   'Create one to get started.': 'Başlamaq üçün birini yaradın.',
@@ -97,7 +129,7 @@ export const AZ_HOME: Record<string, string> = {
   'You decide': 'Qərarı siz verirsiniz',
   ': edit, add or remove anything, then freeze. Frozen criteria cannot change, so every score can be traced to exactly what was used.':
     ': istədiyinizi dəyişin, əlavə edin və ya silin, sonra dondurun. Dondurulmuş meyarlar dəyişmir, ona görə hər balın nəyə əsaslandığını dəqiq izləmək olur.',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   'Edit text': 'Mətni redaktə edin',
   'Saved as a new version. Extract criteria again to refresh the draft.':
     'Yeni versiya kimi saxlanıldı. Qaralamanı yeniləmək üçün meyarları yenidən çıxarın.',
@@ -137,15 +169,15 @@ export const AZ_HOME: Record<string, string> = {
   'Freeze criteria': 'Meyarları dondurun',
   'After creating and freezing a new version, use “Screen with latest criteria” on the Candidates tab.':
     'Yeni versiya yaradıb dondurduqdan sonra Namizədlər nişanında “Ən son meyarlarla yoxlayın” düyməsindən istifadə edin.',
-  'No AI provider is active, so uploaded CVs will wait in the queue. An administrator can set one up under Admin → AI models.':
-    'Heç bir süni intellekt provayderi aktiv deyil, ona görə yüklənən CV-lər növbədə gözləyəcək. Administrator onu Admin → Süni intellekt modelləri bölməsində qura bilər.',
+  'No AI provider is active, so uploaded CVs will wait in the queue. An administrator can set one up under Administration → AI models.':
+    'Heç bir süni intellekt provayderi aktiv deyil, ona görə yüklənən CV-lər növbədə gözləyəcək. Administrator onu İdarəetmə → Süni intellekt modelləri bölməsində qura bilər.',
   'Before you upload: candidate notice': 'Yükləməzdən əvvəl: namizəd bildirişi',
   'Candidates must be told that AI assists the screening of their application. Share this text (for example in the job advert or the application confirmation), then confirm below. Uploading is blocked until you do.':
     'Namizədlərə müraciətlərinin yoxlanılmasında süni intellektin kömək etdiyi bildirilməlidir. Bu mətni (məsələn, vakansiya elanında və ya müraciətin təsdiqində) paylaşın, sonra aşağıda təsdiqləyin. Təsdiqləməyincə yükləmə bağlıdır.',
   'Confirm and enable uploads': 'Təsdiqləyin və yükləməni açın',
   'Upload CVs': 'CV-ləri yükləyin',
-  'PDF, DOCX or TXT, up to 10 MB each, up to 50 files at a time. Scanned (image-only) PDFs cannot be read and are flagged for manual review.':
-    'PDF, DOCX və ya TXT, hər biri 10 MB-a qədər, bir dəfəyə 50 fayla qədər. Skan edilmiş (yalnız şəkildən ibarət) PDF-lər oxuna bilmir və əl ilə baxış üçün işarələnir.',
+  'PDF, DOCX, TXT or MD, up to 10 MB each, up to 50 files at a time. Scanned (image-only) PDFs cannot be read and are flagged for manual review.':
+    'PDF, DOCX, TXT və ya MD, hər biri 10 MB-a qədər, bir dəfəyə 50 fayla qədər. Skan edilmiş (yalnız şəkildən ibarət) PDF-lər oxuna bilmir və əl ilə baxış üçün işarələnir.',
   'Choose CV files': 'CV faylları seçin',
   'Uploading and reading files…': 'Fayllar yüklənir və oxunur…',
   'queued for screening': 'yoxlama üçün növbəyə qoyuldu',
@@ -193,7 +225,8 @@ export const AZ_HOME: Record<string, string> = {
   '1–3 yrs': '1–3 il',
   '3–5 yrs': '3–5 il',
   '5+ yrs': '5+ il',
-  'only PDF, DOCX and TXT files can be read.': 'yalnız PDF, DOCX və TXT faylları oxuna bilər.',
+  'only PDF, DOCX, TXT and MD files can be read.':
+    'yalnız PDF, DOCX, TXT və MD faylları oxuna bilər.',
   'added twice.': 'iki dəfə əlavə edilib.',
   '{n} word': '{n} söz',
   '{n} words': '{n} söz',
@@ -214,7 +247,9 @@ export const AZ_HOME: Record<string, string> = {
   Shortlisted: 'Qısa siyahıya salındı',
   Maybe: 'Bəlkə',
   'Not now': 'İndi yox',
-  'Only PDF, DOCX and TXT files are accepted': 'Yalnız PDF, DOCX və TXT faylları qəbul edilir',
+  'Only PDF, DOCX, TXT and MD files are accepted':
+    'Yalnız PDF, DOCX, TXT və MD faylları qəbul edilir',
+  'Only PDF, DOCX, TXT and MD files': 'Yalnız PDF, DOCX, TXT və MD faylları',
   'Already uploaded for this vacancy': 'Bu vakansiya üçün artıq yüklənib',
   'No CVs found in this ZIP': 'Bu ZIP-də CV tapılmadı',
   'No readable text (scanned or protected file). Review the original manually.':

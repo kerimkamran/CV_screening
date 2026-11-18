@@ -32,7 +32,8 @@ import { verifyTotp } from './totp';
 
 const MAX_FAILURES = 5;
 /** Per-IP brake on top of the per-account lockout, so one address cannot spray many accounts. */
-const ipLimiter = new RateLimiter(30, 60_000);
+// AUTH_IP_LIMIT_PER_MIN exists for test rigs where every browser shares one address; default 30.
+const ipLimiter = new RateLimiter(Number(process.env.AUTH_IP_LIMIT_PER_MIN) || 30, 60_000);
 const LOCK_MINUTES = 15;
 const BAD_CREDENTIALS = 'Invalid email or password';
 /** An invitation / password-setup link has no time limit. It works once, and a newer link for the same person replaces it. */
@@ -212,6 +213,29 @@ export class LocalAuthService {
     return this.session(email, outcome.mustChange, outcome.sv);
   }
 
+  /**
+   * Sign out for real (SD-51): the session version moves on, so every token issued before stops
+   * working at once (this person's other tabs and devices included), instead of only being
+   * forgotten by the browser.
+   */
+  async logout(p: Principal, ip?: string): Promise<void> {
+    this.assertLocal();
+    await this.db.withTx(async (tx) => {
+      await tx.query(
+        `UPDATE local_credential SET session_version = session_version + 1 WHERE user_id = $1`,
+        [p.userId],
+      );
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: ip,
+        action: 'auth.logout',
+        entityType: 'app_user',
+        entityId: p.userId,
+      });
+    });
+  }
+
   /** Same user, fresh expiry. The old token is not revoked (stateless) but is short-lived. */
   async refresh(p: Principal): Promise<SessionResult> {
     this.assertLocal();
@@ -239,7 +263,11 @@ export class LocalAuthService {
         [p.userId],
       );
       if (!rows[0] || !(await verifyPassword(current, rows[0].password_hash))) {
-        throw new UnauthorizedException('Current password is incorrect');
+        // 400, not 401: the session is valid and must stay signed in (SD-49).
+        throw new BadRequestException({
+          message: 'Current password is incorrect',
+          code: 'WRONG_PASSWORD',
+        });
       }
       const upd = await tx.query<{ session_version: number }>(
         `UPDATE local_credential SET password_hash = $2, must_change = false,
