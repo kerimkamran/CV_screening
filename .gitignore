@@ -17,3 +17,13 @@ e2e/playwright-report/
 test-results/
 e2e/.env.uat.local
 e2e/fixtures/files/oversize.zip
+
+# Local agent-tool state (agentic-qe, claude-flow, swarm, ruvector): changes on every run,
+# holds keys and databases, and caused merge conflicts. Never commit it.
+.agentic-qe/
+.claude-flow/
+.swarm/
+ruvector.db
+# Hand-made sync bundles
+*-files.tgz
+stage2-sync-*.tgz
