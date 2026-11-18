@@ -440,7 +440,7 @@ uat(
       .soft(
         page.getByText(
           t(
-            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.',
           ),
         ),
       )

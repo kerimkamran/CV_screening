@@ -244,9 +244,7 @@ uat(
         await expect(q.getByRole('navigation', { name: 'Main' })).toBeVisible();
         await expect(q.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
       } else
-        await expect(
-          q.getByRole('heading', { level: 1, name: 'Reports shared with me' }),
-        ).toBeVisible();
+        await expect(q.getByRole('heading', { level: 1, name: 'Shared with me' })).toBeVisible();
       flush();
       await ctx.close();
     }
@@ -352,7 +350,7 @@ uat(
     await signedIn(tabB);
     const toPassword = async () => {
       await openMenu(page);
-      await menu(page).getByRole('link', { name: 'Password', exact: true }).click();
+      await menu(page).getByRole('link', { name: 'Change password', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Change password' })).toBeVisible();
     };
     const fill = async (cur: string, next: string) => {
@@ -518,7 +516,9 @@ uat(
     await expect(page.getByLabel('Account menu', { exact: true })).toHaveText('NQ');
     await openMenu(page);
     await expect(menu(page)).toContainText(email);
-    await expect(menu(page).getByRole('link', { name: 'Admin', exact: true })).toHaveCount(0);
+    await expect(menu(page).getByRole('link', { name: 'Administration', exact: true })).toHaveCount(
+      0,
+    );
     const t1 = (await page.evaluate(() => sessionStorage.getItem('cv.session')))!;
     expect(t1).not.toBe(tok1);
     const me = await api(t1).get('/me');

@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
+import JSZip from 'jszip';
+import { DOCX_MIME, FILES } from '../fixtures/files';
 import { esc, inFlight, jd, makeVacancy, T, textCvs } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
 import { accounts, api, BASE, db, drain, login, openAs, uniq } from './stack';
@@ -296,5 +299,116 @@ uat(
       .toBeVisible();
     await expect.soft(c2.locator('ul[role=status]')).toHaveCount(0);
     await ux.check('nothing new', [...STD, 'AZ']);
+  },
+);
+
+// UP-15: bulk upload of loose PDF, Word and Markdown CVs plus a ZIP holding the same three formats.
+uat(
+  'UP-15',
+  'Bulk upload: PDF, Word and Markdown files together with a ZIP of the same formats',
+  { on: ['D'] },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    const acc = accounts();
+    const token = await login(acc.recruiter);
+    const v = await makeVacancy(BASE, token, {
+      title: uniq('UAT Bulk formats'),
+      jd: jd(['BGP routing']),
+      start: true,
+    });
+    const tag = uniq('Bulk').toLowerCase().replace(/\W+/g, '-');
+    const md = (who: string) =>
+      Buffer.from(
+        `# ${who}\n\n## Skills\n\n- **BGP routing**, OSPF, Kubernetes\n- Python scripting\n\n## Experience\n\n` +
+          `Network engineer. ${'Designed and operated carrier-grade backbones. '.repeat(8)}\n`,
+      );
+    const pdfBytes = readFileSync(new URL('../fixtures/cv.pdf', import.meta.url));
+    // The ZIP holds its own PDF and Word files: an identical file is the same CV and would be left out.
+    const zipPdf = readFileSync(new URL('../fixtures/cv-10p.pdf', import.meta.url));
+    const word = await JSZip.loadAsync(FILES.docx());
+    const body = await word.file('word/document.xml')!.async('string');
+    const cut = body.lastIndexOf('<w:sectPr');
+    word.file(
+      'word/document.xml',
+      `${body.slice(0, cut)}<w:p><w:r><w:t>Second copy of this CV, ${tag}.</w:t></w:r></w:p>${body.slice(cut)}`,
+    );
+    const zipDocx = await word.generateAsync({ type: 'nodebuffer' });
+    const zip = new JSZip();
+    zip.file(`${tag}-z.pdf`, zipPdf);
+    zip.file(`${tag}-z.docx`, zipDocx);
+    zip.file(`${tag}-z.md`, md('Zip Markdown Person'));
+    zip.file(`team/${tag}-nested.md`, md('Zip Nested Person'));
+    zip.file(`${tag}-photo.jpg`, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]));
+    zip.file('__MACOSX/._junk', Buffer.from('x'));
+    const zipBytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    await openAs(page, acc.recruiter, `#/vacancies/${v.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: v.title })).toBeVisible();
+    const roleBtn = page.getByRole('button', { name: t('Role and CVs') });
+    const c = cvsCard(page, meta.lang);
+    await expect(roleBtn.or(c).first()).toBeVisible();
+    if (!(await c.isVisible())) await roleBtn.click();
+    await expect(c).toBeVisible();
+    // 1) Three loose files in one choice, then the ZIP in a second choice.
+    await choose(page, meta.lang, [
+      { name: `${tag}-a.md`, mimeType: 'text/markdown', buffer: md('Loose Markdown Person') },
+      { name: `${tag}-b.docx`, mimeType: DOCX_MIME, buffer: FILES.docx() },
+      { name: `${tag}-c.pdf`, mimeType: 'application/pdf', buffer: pdfBytes },
+    ]);
+    await choose(page, meta.lang, [
+      { name: `${tag}.zip`, mimeType: 'application/zip', buffer: zipBytes },
+    ]);
+    await expect(c.getByTestId('check-summary')).toContainText(t('{n} files', { n: 4 }));
+    await expect(c.getByTestId('check-summary')).toContainText(t('{n} ready', { n: 4 }));
+    await ux.check('three formats and a zip chosen', [...STD, 'AZ']);
+    // 2) Start.
+    const box = c.getByRole('checkbox');
+    if (await box.count()) await box.first().check();
+    await c
+      .locator('button')
+      .filter({
+        hasText: new RegExp(`^(${esc(t('Find the best fit →'))}|${esc(t('Re-analyze'))})$`),
+      })
+      .click();
+    await expect(page).toHaveURL(/\/candidates$/);
+    await expect
+      .poll(async () => (await drain(), await used(token, v.id)), { timeout: 90_000 })
+      .toBe(7);
+    // 3) Seven CVs were read (three loose, three in the ZIP, one in a ZIP folder); the photo was reported.
+    const docs = await db<{ filename: string; state: string | null }>(
+      `SELECT d.filename, s.state FROM cv_document d LEFT JOIN screening s ON s.document_id = d.id WHERE d.vacancy_id = $1 ORDER BY d.filename`,
+      [v.id],
+    );
+    const names = docs.map((d) => d.filename);
+    for (const ext of ['md', 'docx', 'pdf'])
+      expect
+        .soft(names.filter((n) => n.endsWith(`.${ext}`)).length, `.${ext} files`)
+        .toBeGreaterThan(0);
+    expect.soft(names.filter((n) => n.endsWith('.md')).length, 'three Markdown CVs').toBe(3);
+    expect.soft(names.filter((n) => n.endsWith('.docx')).length, 'two Word CVs').toBe(2);
+    expect.soft(names.filter((n) => n.endsWith('.pdf')).length, 'two PDF CVs').toBe(2);
+    expect
+      .soft(
+        docs.every((d) => d.state === 'completed'),
+        'all seven analyzed',
+      )
+      .toBe(true);
+    const skips = await db<{ filename: string; reason: string }>(
+      `SELECT filename, reason FROM intake_skip WHERE vacancy_id = $1`,
+      [v.id],
+    );
+    expect.soft(skips.map((s) => s.filename).join('|')).toContain('photo.jpg');
+    expect.soft(skips[0]?.reason).toBe('Only PDF, DOCX, TXT and MD files');
+    // 4) The recruiter sees the skipped photo with its reason (Results tab: 'N skipped, see which').
+    await page.goto(`/#/vacancies/${v.id}/results`);
+    await expect(page.getByRole('heading', { level: 1, name: v.title })).toBeVisible();
+    await page
+      .getByRole('button', { name: t('see which'), exact: true })
+      .click({ timeout: 20_000 });
+    const line = page.getByText(new RegExp(`${esc(`${tag}.zip › ${tag}-photo.jpg`)}: `)).first();
+    await expect.soft(line, 'the photo is listed with its ZIP').toBeVisible({ timeout: 15_000 });
+    await expect
+      .soft(line, 'with its reason, in the screen language')
+      .toContainText(t('Only PDF, DOCX, TXT and MD files'));
+    await ux.check('after the upload', [...STD, 'AZ']);
   },
 );

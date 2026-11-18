@@ -270,7 +270,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
           closeAssistant();
         }
       }}
-      className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:top-[57px] sm:right-0 sm:bottom-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
+      className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex min-h-[calc(60dvh-var(--bottombar-h,0px))] max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:inset-x-auto sm:top-[57px] sm:right-0 sm:bottom-0 sm:max-h-none sm:min-h-0 sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
     >
       <header className="flex items-start justify-between gap-2 border-b border-line p-3">
         <div className="min-w-0">
@@ -281,7 +281,7 @@ export function PoolPanel({ config }: { config: AssistantConfig }) {
           <p lang="az" className="mt-0.5 text-xs text-ink-3">
             {sloganFor(config.name)}
           </p>
-          <p className="mt-1 truncate text-sm text-ink-2" data-testid="scope-chip">
+          <p className="mt-1 line-clamp-2 break-words text-sm text-ink-2" data-testid="scope-chip">
             {scope
               ? t('Searching in: {title}', { title: scope.title })
               : t('Searching in: all vacancies')}
@@ -896,6 +896,10 @@ function CopyTable({ table }: { table: NonNullable<PoolAnswer['table']> }) {
       <button type="button" className={btnSecondary} onClick={() => void copy()}>
         {done === 'ok' ? t('Copied') : t('Copy')}
       </button>
+      {/* The button's own text changes, which a screen reader does not announce: say it here. */}
+      <span className="sr-only" role="status">
+        {done === 'ok' ? t('Copied') : ''}
+      </span>
       {done === 'failed' && (
         <span role="alert" className="text-xs text-err-ink">
           {t('Could not copy. Select the table and copy it by hand.')}

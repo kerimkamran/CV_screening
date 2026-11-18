@@ -9,8 +9,20 @@
 //  - anything else (e.g. SenAI's question reader): text that is not JSON, so SenAI falls back to
 //    its rules, exactly as when the model is unavailable.
 // Modes (set through the control server): scripted, fail (HTTP 500), slow (delay, then scripted).
+// `failMarkers`: CVs containing one of these texts are refused, the rest are read as usual.
 
-export const state = { mode: 'scripted', delayMs: 0, calls: [] };
+export const state = {
+  mode: 'scripted',
+  delayMs: 0,
+  calls: [],
+  failMarkers: [],
+  /** SenAI's question reader (SX-02, SX-03, SX-06): false = text that is not JSON; true = a typed query. */
+  reader: false,
+  /** While true, every call waits (a CV "held mid-read") until `release` is called. */
+  hold: false,
+  held: Promise.resolve(),
+  release: () => {},
+};
 
 const words = (s) =>
   s
@@ -20,10 +32,15 @@ const words = (s) =>
 
 function requirementsFrom(jd) {
   const req = [];
+  // A phrase may end in [low] or [medium]: the reader then says it is not sure about that one (CR-02).
   const add = (text, classification, weight) => {
-    const t = text.replace(/\s+/g, ' ').trim();
+    const mark = /\[(low|medium)\]/i.exec(text)?.[1]?.toLowerCase();
+    const t = text
+      .replace(/\[(?:low|medium)\]/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (t && !req.some((r) => r.text.toLowerCase() === t.toLowerCase()))
-      req.push({ text: t, classification, weight, confidence: 'high' });
+      req.push({ text: t, classification, weight, confidence: mark ?? 'high' });
   };
   const line = (re) => [...jd.matchAll(re)].map((m) => m[1]).join(' ');
   const must = line(/(?:Required|Requirements|Must have|Tələb olunur|Tələblər)\s*:\s*([^\n]+)/gi);
@@ -105,8 +122,27 @@ function secondReader(user) {
   };
 }
 
+/** The question reader: "find ..." is a find for the vacancy whose title the message names; anything else is "unknown". */
+function readQuestion(user) {
+  let j = {};
+  try {
+    j = JSON.parse(user);
+  } catch {
+    /* not the reader's input */
+  }
+  const msg = String(j.message ?? '').toLowerCase();
+  const title = (j.vacancyTitles ?? []).find((t) => msg.includes(String(t).toLowerCase())) ?? null;
+  return JSON.stringify(
+    /\b(find|best|show)\b/.test(msg)
+      ? { intent: 'find', followUp: 'new', vacancy: title }
+      : { intent: 'unknown' },
+  );
+}
+
 export function answer(system, user) {
   if (/single word: ok/i.test(system)) return 'ok';
+  if (state.reader && system.startsWith("You read a recruiter's message"))
+    return readQuestion(user);
   if (system.includes('convert a job description')) {
     const jd = user.includes('<<<') ? user : user;
     return JSON.stringify({ requirements: requirementsFrom(jd) });
@@ -132,10 +168,15 @@ export async function fakeFetch(url, init = {}) {
   const body = JSON.parse(String(init.body ?? '{}'));
   const system = String(body.system ?? '');
   const user = String(body.messages?.[0]?.content ?? '');
-  state.calls.push({ at: new Date().toISOString(), url: u, system, user });
+  state.calls.push({ at: new Date().toISOString(), url: u, model: body.model, system, user });
   if (state.calls.length > 2000) state.calls.splice(0, 1000);
   if (state.mode === 'fail')
     return new Response(JSON.stringify({ error: { message: 'fake outage' } }), { status: 500 });
+  // A CV carrying one of these markers is refused (400, so the outage breaker is not involved): the
+  // analysis of that one CV fails while the others go through.
+  if (user.includes('<<<CV_START>>>') && state.failMarkers.some((m) => user.includes(m)))
+    return new Response(JSON.stringify({ error: { message: 'fake refusal' } }), { status: 400 });
+  if (state.hold) await state.held;
   if (state.mode === 'slow' || state.delayMs)
     await new Promise((r) => setTimeout(r, state.delayMs || 5000));
   const text = answer(system, user);

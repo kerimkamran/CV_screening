@@ -175,9 +175,7 @@ describe('Shared report (spec 6.5)', () => {
       return { body: opened(report()) };
     });
     render(<App check={async () => ({ state: 'up' as const })} />);
-    expect(
-      await screen.findByRole('heading', { name: 'Reports shared with me' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Shared with me' })).toBeInTheDocument();
     // The list is a screen that loads on demand, so its rows come a moment after its heading.
     const link = await screen.findByRole('link', { name: 'Backend Engineer' });
     expect(link).toHaveAttribute('href', '#/reports/01ARZ3NDEKTSV4RRFFQ69G5FAV');

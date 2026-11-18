@@ -69,8 +69,8 @@ Object.assign(process.env, {
   AUTH_MODE: 'local',
   SESSION_SECRET: secrets.SESSION_SECRET,
   SETTINGS_ENCRYPTION_KEY: secrets.SETTINGS_ENCRYPTION_KEY,
-  BOOTSTRAP_ADMIN_EMAIL: secrets.BOOTSTRAP_ADMIN_EMAIL,
-  BOOTSTRAP_ADMIN_PASSWORD: secrets.BOOTSTRAP_ADMIN_PASSWORD,
+  BOOTSTRAP_ADMIN_EMAIL: process.env.UAT_BOOTSTRAP_EMAIL ?? secrets.BOOTSTRAP_ADMIN_EMAIL,
+  BOOTSTRAP_ADMIN_PASSWORD: process.env.UAT_BOOTSTRAP_PASSWORD ?? secrets.BOOTSTRAP_ADMIN_PASSWORD,
   WEB_DIST_DIR: join(root, 'apps/web/dist'),
   EMAIL_PROVIDER: process.env.EMAIL_PROVIDER ?? 'console',
   VACANCY_EDIT: process.env.VACANCY_EDIT ?? 'everyone',
@@ -89,6 +89,7 @@ const { createApp } = require(join(root, 'apps/api/dist/app.factory.js'));
 const { AiGateway } = require(join(root, 'apps/api/dist/ai/ai-gateway.service.js'));
 const { EmailService } = require(join(root, 'apps/api/dist/auth/email.service.js'));
 const { ProcessorService } = require(join(root, 'apps/api/dist/pipeline/processor.service.js'));
+const { LINK_READER } = require(join(root, 'apps/api/dist/pipeline/link-reader.token.js'));
 
 const app = await createApp();
 const outbox = [];
@@ -100,6 +101,9 @@ email.send = async (mail) => {
   return send(mail);
 };
 if (process.env.UAT_FAKE_AI !== '0') app.get(AiGateway).fetcher = fakeFetch;
+// Link review reads a fake page on this machine: the reader refuses loopback unless told otherwise
+// (the same switch the API's own tests use, LinkReader({ allowLoopback: true })).
+if (process.env.UAT_LINK_LOOPBACK === '1') app.get(LINK_READER).o.allowLoopback = true;
 await app.listen(PORT, '127.0.0.1');
 console.log(
   `uat: full stack on http://127.0.0.1:${PORT} (fake AI ${process.env.UAT_FAKE_AI !== '0' ? 'on' : 'off'})`,
@@ -124,7 +128,22 @@ const control = createServer(async (req, res) => {
   if (u.pathname === '/ai') {
     if (body.mode) state.mode = body.mode;
     if (body.delayMs !== undefined) state.delayMs = body.delayMs;
-    return reply(200, { mode: state.mode, delayMs: state.delayMs });
+    if (Array.isArray(body.failMarkers)) state.failMarkers = body.failMarkers;
+    if (body.reader !== undefined) state.reader = !!body.reader;
+    if (body.hold === true && !state.hold) {
+      state.hold = true;
+      state.held = new Promise((r) => (state.release = r));
+    }
+    if (body.hold === false && state.hold) {
+      state.hold = false;
+      state.release();
+    }
+    return reply(200, {
+      mode: state.mode,
+      delayMs: state.delayMs,
+      failMarkers: state.failMarkers,
+      reader: state.reader,
+    });
   }
   if (u.pathname === '/drain') {
     await app.get(ProcessorService).drain();

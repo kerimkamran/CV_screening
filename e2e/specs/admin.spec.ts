@@ -8,7 +8,6 @@ import {
   CONN_ID,
   json,
   M1,
-  M2,
   pageScrollsSideways,
   retention,
   RET_VACS,
@@ -16,7 +15,7 @@ import {
   USER_LIST,
   USERS,
 } from '../fixtures/pkg-b';
-import { expect, test, uat } from '../ux/test';
+import { expect, uat } from '../ux/test';
 
 // 7.x Administration (AD), screen layer (L1, mocked API). All people and keys are invented.
 
@@ -58,8 +57,8 @@ uat(
     await expect(tabs.getByRole('link')).toHaveText([
       'Users',
       'AI models',
-      'Assistant',
-      'Monitoring',
+      'SenAI',
+      'Fairness monitoring',
       'Data retention',
     ]);
     await expect(tabs.getByRole('link', { name: 'Users' })).toHaveClass(/bg-accent/);
@@ -856,32 +855,3 @@ uat(
     await expect(page.getByRole('button', { name: 'Erase expired files now' })).toBeDisabled();
   },
 );
-
-for (const [id, title, on, langs] of [
-  [
-    'AD-04',
-    "Row 'Copy invite link' copies the link and gives feedback at the row",
-    ['D', 'A'],
-    'EN',
-  ],
-  ['AD-07', 'Users: load error, empty list, long list, action error', ['D', 'A'], 'EN'],
-  ['AD-08', 'AI models: status notice, empty and error states', ['D', 'T', 'A'], 'EN'],
-  ['AD-13', 'Assistant tab opens and saves the basic settings', ['D', 'T', 'A'], 'EN'],
-  [
-    'AD-14',
-    "Assistant: 'Test connection' keeps unsaved changes, including a model just added",
-    ['D'],
-    'EN',
-  ],
-  [
-    'AD-15',
-    'Fairness monitoring for admins: run the paired-CV test and read the results',
-    ['D', 'T', 'A'],
-    'EN+AZ',
-  ],
-  ['AD-16', 'Fairness monitoring for governance: read-only', ['D', 'A'], 'EN+AZ'],
-  ['AD-20', 'Admin pages in Azerbaijani and on all four backgrounds', ['D', 'A'], 'EN+AZ'],
-] as const)
-  uat(id, title, { on: [...on], langs }, async () => {
-    test.skip(true, 'Not built: P2/P3, outside the time budget of package B');
-  });

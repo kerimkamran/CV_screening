@@ -201,8 +201,8 @@ export function ResumesCard({
               <p className="font-medium">{t('Drop CVs here')}</p>
               <p className="text-sm text-ink-3">
                 {folders
-                  ? t('PDF, DOCX or TXT files, a whole folder, or a ZIP of CVs')
-                  : t('PDF, DOCX or TXT files, or a ZIP of CVs')}
+                  ? t('PDF, DOCX, TXT or MD files, a whole folder, or a ZIP of CVs')
+                  : t('PDF, DOCX, TXT or MD files, or a ZIP of CVs')}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 <button

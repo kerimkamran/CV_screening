@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ReqStatus } from './api';
 import { dayAndTime } from './dates';
 import { tr, useT } from './i18n';
+import { trServer } from './i18n/server';
 
 export const btn =
   'm-press inline-flex items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold pointer-coarse:min-h-11 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
@@ -145,8 +146,9 @@ export function when(iso: string | null | undefined) {
   return dayAndTime(new Date(iso));
 }
 
-/** Server messages are English; the common ones have an Azerbaijani entry, the rest show as sent. */
-export const errMsg = (e: unknown) => tr(e instanceof Error ? e.message : 'Something went wrong');
+/** Server messages are English; each has an Azerbaijani entry or template (az.server.ts, server.ts). */
+export const errMsg = (e: unknown) =>
+  trServer(e instanceof Error ? e.message : 'Something went wrong');
 
 // ------------------------------------------------------------------ menus on <details>
 

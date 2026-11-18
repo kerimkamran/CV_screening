@@ -233,3 +233,98 @@ uat(
     expect.soft(ko[0]?.n ?? 0, 'knockout rules unchanged').toBe(0);
   },
 );
+
+uat(
+  'RQ-03',
+  "'Back to original' from the drawer and from the page notice",
+  { on: ['D'], langs: 'EN+AZ' },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    const acc = accounts();
+    const token = await login(acc.recruiter);
+    const p = uniq('Reset');
+    const files = Array.from({ length: 8 }, (_, i) =>
+      cv(p, i + 1, [
+        'BGP routing on the core.',
+        ...(i < 5 ? ['CCIE certification held since 2019.'] : []),
+        ...(i % 3 === 0 ? [] : ['OSPF areas redesign.']),
+      ]),
+    );
+    const v = await screenedVacancy(token, {
+      title: uniq('UAT Reset'),
+      jd: jd(['BGP routing', 'CCIE certification', 'OSPF areas'], ['Python scripting']),
+      files,
+    });
+    const resets: string[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && /\/adjustments\/reset$/.test(r.url())) resets.push(r.url());
+    });
+    await openAs(page, acc.recruiter, `#/vacancies/${v.id}/results`);
+    const btn = page.getByRole('button', { name: new RegExp(`^${esc(t('Requirements'))}`) });
+    const dlg = page.getByRole('dialog', { name: t('Requirements') });
+    const row = (text: RegExp) => dlg.getByRole('group').filter({ hasText: text });
+    const change = async (req: RegExp, to: string) => {
+      await btn.click();
+      await expect(dlg).toBeVisible();
+      await row(req)
+        .getByRole('radio', { name: t(to) })
+        .click();
+      await expect(row(req).getByRole('radio', { name: t(to) })).toBeChecked();
+    };
+    const closeDrawer = async () => {
+      await page.keyboard.press('Escape');
+      await expect(dlg).toHaveCount(0);
+    };
+    // Two changes to start from.
+    await change(/CCIE/, 'Nice-to-have');
+    await row(/OSPF/)
+      .getByRole('radio', { name: t('Ignore') })
+      .click();
+    await expect(dlg.getByText(t('{n} changes since the first scan.', { n: 2 }))).toBeVisible();
+    await closeDrawer();
+    await expect(
+      page.getByText(t('The ranking uses your requirement changes ({n}).', { n: 2 })),
+    ).toBeVisible();
+    await expect(btn).toHaveText(`${t('Requirements')} ${t('({n} changed)', { n: 2 })}`);
+
+    // 1) From the page notice: one reset, the answer on the page, the notice gone (SD-93).
+    await page.getByRole('button', { name: t('Back to original'), exact: true }).click();
+    await expect.poll(() => resets.length).toBe(1);
+    expect(resets[0]).toContain(`/vacancies/${v.id}/adjustments/reset`);
+    await expect(
+      page.getByRole('status').filter({ hasText: t('Back to the original ranking.') }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(t('The ranking uses your requirement changes ({n}).', { n: 2 })),
+    ).toHaveCount(0);
+    await expect(btn).toHaveText(t('Requirements'));
+    await ux.check('reset from the notice', [...STD, 'AZ']);
+
+    // 2) One change again, then 3) the drawer's own button.
+    await change(/CCIE/, 'Ignore');
+    await expect(dlg.getByText(t('{n} change since the first scan.', { n: 1 }))).toBeVisible();
+    // The page's earlier answer is not repeated inside the drawer.
+    await expect(dlg.getByText(t('Back to the original ranking.'))).toHaveCount(0);
+    const back = dlg.getByRole('button', { name: t('Back to original'), exact: true });
+    await expect(back).toBeEnabled();
+    await back.click();
+    await expect.poll(() => resets.length).toBe(2);
+    await expect(dlg.getByText(t('Back to the original ranking.'))).toBeVisible();
+    await expect(dlg.getByText(t('No changes since the first scan.'))).toBeVisible();
+    // History keeps both resets as lines of their own; with 0 changes the button is disabled.
+    const hist = dlg.getByRole('region', { name: t('History of changes') });
+    await expect(hist.getByRole('listitem').filter({ hasText: t('Back to original') })).toHaveCount(
+      2,
+    );
+    await expect(back).toBeDisabled();
+    await ux.check('reset from the drawer', [...STD, 'AZ'], { overlay: 'aside[role=dialog]' });
+    await closeDrawer();
+    await expect(btn).toHaveText(t('Requirements'));
+    // Nothing was erased: three changes and two resets are kept, the last row is a reset.
+    const kept = await db<{ is_reset: boolean }>(
+      `SELECT is_reset FROM criteria_adjustment WHERE vacancy_id = $1 ORDER BY changed_at, id`,
+      [v.id],
+    );
+    expect(kept.map((r) => r.is_reset)).toEqual([false, false, true, false, true]);
+  },
+);

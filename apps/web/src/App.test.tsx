@@ -123,11 +123,27 @@ describe('sign-in and gates', () => {
     await userEvent.type(await screen.findByLabelText('Email'), 'a@x.az');
     await userEvent.type(screen.getByLabelText('Password'), 'secret-secret');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    // Signing in lands on Home, the menu: a greeting, the functions, and the last vacancy.
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByText(/^Good (morning|afternoon|evening), Ayla$/)).toBeInTheDocument();
+    const menu = within(screen.getByRole('region', { name: 'Screen candidates' }));
+    expect(menu.getByRole('link', { name: /^Vacancies/ })).toHaveAttribute('href', '#/vacancies');
+    expect(menu.getByRole('link', { name: /^Candidates/ })).toHaveAttribute('href', '#/candidates');
+    expect(menu.getByRole('link', { name: /^New vacancy/ })).toHaveAttribute(
+      'href',
+      '#/vacancies/new',
+    );
     expect(await screen.findByRole('link', { name: 'Backend Engineer' })).toHaveAttribute(
       'href',
       '#/vacancies/V',
     );
-    expect(screen.getByRole('heading', { name: 'Vacancies' })).toBeInTheDocument();
+    // The list is its own page.
+    window.location.hash = '/vacancies';
+    expect(await screen.findByRole('heading', { name: 'Vacancies' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Backend Engineer' })).toHaveAttribute(
+      'href',
+      '#/vacancies/V',
+    );
     // Out of date carries its own action; progress and decisions read in words.
     expect(screen.getByRole('link', { name: '1 out of date · Re-analyze' })).toHaveAttribute(
       'href',
@@ -179,7 +195,7 @@ describe('sign-in and gates', () => {
     expect(
       await screen.findByText(/Administrators manage users and AI models/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Vacancies' })).not.toBeInTheDocument();
   });
 });
@@ -1003,7 +1019,7 @@ describe('Requirements drawer (spec 6.2.5)', () => {
     decision: null,
   });
 
-  function setup() {
+  function setup(opts: { failReset?: boolean } = {}) {
     session.set('t');
     let changed = 0;
     const calls = mockFetch((url, init) => {
@@ -1012,6 +1028,7 @@ describe('Requirements drawer (spec 6.2.5)', () => {
         return { body: {} };
       }
       if (url.endsWith('/adjustments/reset')) {
+        if (opts.failReset) return { status: 409, body: { message: 'Try again in a moment' } };
         changed = 0;
         return { body: {} };
       }
@@ -1087,5 +1104,48 @@ describe('Requirements drawer (spec 6.2.5)', () => {
     expect(await within(dialog).findByText('No changes since the first scan.')).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Requirements' })).toBeNull();
+  });
+
+  it('answers "Back to original" on the page itself when the drawer is closed (SD-93)', async () => {
+    const calls = setup();
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Requirements' }));
+    const dialog = screen.getByRole('dialog', { name: 'Requirements' });
+    await userEvent.click(
+      within(within(dialog).getByRole('group', { name: /Kubernetes/ })).getByRole('radio', {
+        name: 'Ignore',
+      }),
+    );
+    await within(dialog).findByText('1 change since the first scan.');
+    await userEvent.keyboard('{Escape}');
+    // The page notice has its own "Back to original".
+    expect(
+      await screen.findByText(/The ranking uses your requirement changes \(1\)/),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to original' }));
+    expect(await screen.findByText('Back to the original ranking.')).toBeVisible();
+    expect(screen.queryByText(/The ranking uses your requirement changes/)).toBeNull();
+    expect(calls.some((c) => c.url.endsWith('/adjustments/reset'))).toBe(true);
+    // Opening the drawer again starts clean.
+    await userEvent.click(screen.getByRole('button', { name: 'Requirements' }));
+    expect(screen.queryAllByText('Back to the original ranking.')).toHaveLength(0);
+  });
+
+  it('shows why "Back to original" failed, on the page (SD-93)', async () => {
+    setup({ failReset: true });
+    render(<Results vacancyId="V" onTable={() => undefined} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Requirements' }));
+    const dialog = screen.getByRole('dialog', { name: 'Requirements' });
+    await userEvent.click(
+      within(within(dialog).getByRole('group', { name: /Kubernetes/ })).getByRole('radio', {
+        name: 'Ignore',
+      }),
+    );
+    await within(dialog).findByText('1 change since the first scan.');
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to original' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again in a moment');
+    // Still changed: the notice stays.
+    expect(screen.getByText(/The ranking uses your requirement changes \(1\)/)).toBeVisible();
   });
 });

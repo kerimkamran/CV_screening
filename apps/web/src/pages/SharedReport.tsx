@@ -86,7 +86,7 @@ export function SharedReport({ id }: { id: string }) {
           {t('This report is no longer available. Ask the recruiter for a new link.')}
         </Notice>
         <a className="text-link underline" href="#/reports">
-          {t('Reports shared with me')}
+          {t('Shared with me')}
         </a>
       </div>
     );
@@ -97,7 +97,7 @@ export function SharedReport({ id }: { id: string }) {
           {t("You don't have access to this report. Ask the recruiter.")}
         </Notice>
         <a className="text-link underline" href="#/reports">
-          {t('Reports shared with me')}
+          {t('Shared with me')}
         </a>
       </div>
     );
@@ -465,7 +465,7 @@ export function SharedList() {
   }, []);
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">{t('Reports shared with me')}</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t('Shared with me')}</h1>
       {error && <Notice kind="error">{error}</Notice>}
       {rows === null && !error && <p className="text-sm text-ink-3">{t('Loading…')}</p>}
       {rows?.length === 0 && (

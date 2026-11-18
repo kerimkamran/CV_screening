@@ -46,6 +46,7 @@ describe('safe ZIP unpacking (spec 6.1.4)', () => {
       'batch/alice.txt': 'Alice CV',
       'batch/bob.pdf': Buffer.from('%PDF-1.4 bob'),
       'batch/carol.docx': 'PK docx',
+      'batch/dana.md': '# Dana\n- BGP routing',
       '__MACOSX/batch/._alice.txt': 'junk',
       'batch/.DS_Store': 'junk',
       'batch/~$carol.docx': 'lock',
@@ -63,11 +64,12 @@ describe('safe ZIP unpacking (spec 6.1.4)', () => {
       'batch/alice.txt',
       'batch/bob.pdf',
       'batch/carol.docx',
+      'batch/dana.md',
       // The reader (JSZip) already flattens "../"; names are only labels, so it is harmless.
       'evil.pdf',
     ]);
     const why = Object.fromEntries(u.skipped.map((s) => [s.name, s.reason]));
-    expect(why['batch/photo.jpg']).toBe('Only PDF, DOCX and TXT files');
+    expect(why['batch/photo.jpg']).toBe('Only PDF, DOCX, TXT and MD files');
     expect(why['batch/inner.zip']).toMatch(/archive inside the ZIP/);
     expect(Object.values(why).filter((r) => r === 'Unsafe file path')).toHaveLength(2);
     // Nothing is silently dropped except litter.

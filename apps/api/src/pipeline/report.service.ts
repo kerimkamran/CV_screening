@@ -87,7 +87,7 @@ export class ReportService {
     // A snapshot is only offered when the run is done (spec 6.5, states).
     if (all.some((r) => isPending(r))) {
       throw new ConflictException(
-        'The scan is still running. Share the report when every resume has been read, or stop the scan first.',
+        'The scan is still running. Share the report when every CV has been read, or stop the scan first.',
       );
     }
     const rank = all as unknown as RankRow[];
@@ -100,8 +100,10 @@ export class ReportService {
       );
     }
 
-    // Names are shown as written, for everyone who is let in (decision of 8 October 2026).
-    const shown = new Set<string>(scoredRows.map((r) => r.documentId));
+    // Names are shown as written, for everyone who is let in (decision of 8 October 2026), unless
+    // the share was made with `includeNames: false`: then no name, and no name inside the reasons,
+    // quotes or decision lines either, and the page says so (RP-12).
+    const shown = new Set<string>(opts.includeNames ? scoredRows.map((r) => r.documentId) : []);
 
     // Reasons and quotes for the expanded candidates only.
     const top = scoredRows.slice(0, EXPANDED).filter((r) => r.screeningId);

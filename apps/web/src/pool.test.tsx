@@ -193,12 +193,14 @@ const base =
 describe('Vacancy pool', () => {
   it('shows the empty state with the first-vacancy prompt', async () => {
     mockFetch(base((url) => (url.includes('/vacancies?') ? { body: [] } : undefined)));
+    window.location.hash = '/vacancies'; // #/ is Home, the menu; the list is its own page
     render(<App check={up} />);
     expect(await screen.findByText('No vacancies yet. Add the first one.')).toBeInTheDocument();
   });
 
   it('filters by status chip and archives with a ten-second Undo', async () => {
     let archived = false;
+    window.location.hash = '/vacancies';
     const calls = mockFetch(
       base((url, init) => {
         if (url.includes('/vacancies?')) return { body: archived ? [] : [listItem()] };

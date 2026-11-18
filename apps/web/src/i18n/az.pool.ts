@@ -16,7 +16,7 @@ export const AZ_POOL: Record<string, string> = {
   'On hold': 'Gözləmədə',
   Closed: 'Bağlı',
   Archived: 'Arxivdə',
-  Archive: 'Arxivə at',
+  Archive: 'Arxivə atın',
   Restore: 'Bərpa edin',
   Duplicate: 'Kopyasını yaradın',
   Delete: 'Silin',
@@ -152,7 +152,7 @@ export const AZ_POOL: Record<string, string> = {
   'This list was opened a while ago. Reload it to continue.':
     'Bu siyahı bir müddət əvvəl açılıb. Davam etmək üçün yenidən yükləyin.',
   Reload: 'Yenidən yükləyin',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   Copy: 'Kopyalayın',
   'Copied.': 'Köçürüldü.',
   'Open in e-mail': 'E-poçtda açın',
@@ -218,7 +218,7 @@ export const AZ_POOL: Record<string, string> = {
   'Same must-have evidence as {name}, who is marked {mark}. Look again?':
     '{name} ilə eyni vacib tələb sübutu var, o isə "{mark}" kimi qeyd olunub. Yenidən baxaq?',
   'another candidate': 'başqa namizəd',
-  'Remove filter {name}': '{name} filtrini götür',
+  'Remove filter {name}': '{name} filtrini götürün',
   'How I got this': 'Bunu necə tapdım',
   'Read as': 'Belə oxundu',
   'A model read the question': 'Sualı model oxudu',
@@ -253,7 +253,7 @@ export const AZ_POOL: Record<string, string> = {
   'Delete this chat?': 'Bu söhbət silinsin?',
   'This adds the CV of {name} to {vacancy} and analyzes it against its requirements. Continue?':
     '{name} namizədinin CV-si {vacancy} vakansiyasına əlavə olunacaq və onun tələbləri ilə təhlil ediləcək. Davam edilsin?',
-  'Add and analyze': 'Əlavə et və təhlil et',
+  'Add and analyze': 'Əlavə edin və təhlil edin',
   'Your account cannot use {name}.': 'Hesabınız {name} köməkçisindən istifadə edə bilməz.',
   '{name} could not answer right now. Try again in a moment.':
     '{name} hazırda cavab verə bilmədi. Bir az sonra yenidən cəhd edin.',
@@ -338,17 +338,17 @@ export const AZ_POOL: Record<string, string> = {
   'Nothing saved. Ask "always show top 5" or set it here.':
     'Heç nə saxlanmayıb. "həmişə ilk 5-i göstər" yazın və ya burada təyin edin.',
   'How many to show': 'Neçəsini göstərmək',
-  Clear: 'Təmizlə',
+  Clear: 'Təmizləyin',
   '{n} CVs mention it': '{n} CV bunu qeyd edir',
   'Mentioned in the CV, not assessed': 'CV-də qeyd olunub, qiymətləndirilməyib',
   'Requirements from a similar vacancy': 'Oxşar vakansiyanın tələbləri',
   'Add {n} requirements from “{title}” that this vacancy does not have yet?':
     '“{title}” vakansiyasından bu vakansiyada hələ olmayan {n} tələbi əlavə edək?',
   'Everything in “{title}” is already here.': '“{title}” vakansiyasındakı hər şey artıq buradadır.',
-  'Add them to the form': 'Formaya əlavə et',
+  'Add them to the form': 'Formaya əlavə edin',
   'Added. Read them, then save.': 'Əlavə olundu. Oxuyun, sonra yadda saxlayın.',
   'No thanks': 'Xeyr, sağ olun',
-  'Copy requirements': 'Tələbləri köçür',
+  'Copy requirements': 'Tələbləri köçürün',
   'Review the requirements of {title} to copy':
     '{title} vakansiyasının tələblərinə baxın və köçürün',
 
@@ -375,8 +375,8 @@ export const AZ_POOL: Record<string, string> = {
   // Sign-in (Oct 2026)
   'Show password': 'Parolu göstərin',
   'Hide password': 'Parolu gizlədin',
-  Show: 'Göstər',
-  Hide: 'Gizlət',
+  Show: 'Göstərin',
+  Hide: 'Gizlədin',
 
   // Role card (Oct 2026)
   'No skills could be read from this text. Add the skills yourself below, or write a fuller description of the role.':

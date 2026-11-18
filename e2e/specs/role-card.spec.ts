@@ -16,6 +16,7 @@ import {
   vacApi,
   vview,
   type Req,
+  S,
 } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
 import { appDayAndTime } from '../fixtures/dates';
@@ -226,7 +227,9 @@ uat(
     await expect.soft(block.getByRole('link', { name: 'Network Engineer (Bakı)' })).toBeVisible();
     await expect
       .soft(block.locator('li').first())
-      .toHaveText(`Network Engineer · ${t('Open')} · Rauf Aliyev · ${t('{n} CVs', { n: 12 })}`);
+      .toHaveText(
+        `Network Engineer · ${S(meta.lang)('Open')} · Rauf Aliyev · ${t('{n} CVs', { n: 12 })}`,
+      );
     await ux.check('similar shown', [...STD, 'AZ']);
     // 2) Create: no POST.
     await c.getByRole('button', { name: t('Create vacancy') }).click();

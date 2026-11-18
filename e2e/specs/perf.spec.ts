@@ -336,24 +336,30 @@ uat(
         expect.soft(r.blank, `${name}: blank screens in between`).toBe(0);
       };
       const tab = (n: string) => page.getByRole('tab', { name: n, exact: true });
+      // On a phone the open SenAI panel is a sheet over most of the screen, and the page under it
+      // cannot be reached by a pointer without scrolling: the route change is started from the
+      // keyboard (focus and Enter), which is real input like a tap, so layout shifts that follow it
+      // are not counted as unexpected.
+      const hit = async (l: import('@playwright/test').Locator) => {
+        if (!(slowDevice && withPanel)) return l.click();
+        await l.focus();
+        await page.keyboard.press('Enter');
+      };
       await go('vacancy', 'Role and CVs', () =>
-        page.getByRole('link', { name: 'UAT Results role' }).first().click(),
+        hit(page.getByRole('link', { name: 'UAT Results role' }).first()),
       );
-      await go('Results tab', 'Your constellation', () => tab('Results').click());
-      await go('Report tab', 'Candidates, best match first', () => tab('Report').click());
-      await go('Runs tab', 'No analysis has been run yet.', () => tab('Runs').click());
-      await go('Criteria tab', 'Criteria · version', () => tab('Criteria').click());
+      await go('Results tab', 'Your constellation', () => hit(tab('Results')));
+      await go('Report tab', 'Candidates, best match first', () => hit(tab('Report')));
+      await go('Runs tab', 'No analysis has been run yet.', () => hit(tab('Runs')));
+      await go('Criteria tab', 'Criteria · version', () => hit(tab('Criteria')));
       await go('Candidates', 'Aysel Məmmədova', () =>
-        page.getByRole('link', { name: 'Candidates', exact: true }).first().click(),
+        hit(page.getByRole('link', { name: 'Candidates', exact: true }).first()),
       );
       await go('CV', 'Must-haves', () =>
-        page
-          .getByRole('link', { name: /Aysel Məmmədova/ })
-          .first()
-          .click(),
+        hit(page.getByRole('link', { name: /Aysel Məmmədova/ }).first()),
       );
       await go('Back', 'Rauf Əliyev', () =>
-        page.getByRole('link', { name: /Back to Candidates/ }).click(),
+        hit(page.getByRole('link', { name: /Back to Candidates/ })),
       );
       const p = await perfRead(page);
       if (!slowDevice)
@@ -365,7 +371,10 @@ uat(
           .toEqual([]);
       if (withPanel)
         expect
-          .soft(p.cls, `layout shift with the panel open: ${JSON.stringify(p.shifts)}`)
+          .soft(
+            p.cls,
+            `layout shift with the panel open: ${p.cls.toFixed(3)} (sum ${p.total.toFixed(3)}) ${JSON.stringify(p.shifts)}`,
+          )
           .toBeLessThanOrEqual(0.1);
     }
     test.info().annotations.push({ type: 'timings', description: times.join('; ') });
@@ -391,14 +400,22 @@ uat(
     };
     const full = page.locator(FULL);
     const open = page.getByRole('button', { name: t('Full screen'), exact: true });
-    const close = page.getByRole('button', { name: t('Close full screen'), exact: true });
     const canvas = () => full.locator('[data-page="1"] canvas');
+    // Is there ink on the page? The canvas is shrunk to a thumbnail first: reading all 1920 px of a
+    // page every 16 ms would be the main thing the page does and would slow the draw it is timing.
     const inked = () =>
       canvas().evaluate((el: HTMLCanvasElement) => {
         if (!el.width || !el.height) return 0;
-        const d = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data;
+        const s = document.createElement('canvas');
+        s.width = 96;
+        s.height = 128;
+        const c = s.getContext('2d', { willReadFrequently: true })!;
+        c.fillStyle = '#fff';
+        c.fillRect(0, 0, 96, 128);
+        c.drawImage(el, 0, 0, 96, 128);
+        const d = c.getImageData(0, 0, 96, 128).data;
         let n = 0;
-        for (let i = 0; i < d.length; i += 4 * 97) if (d[i + 3]! > 200 && d[i]! < 200) n++;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3]! > 200 && d[i]! < 235) n++;
         return n;
       });
     const width = () => canvas().evaluate((el: HTMLCanvasElement) => el.width);
@@ -440,23 +457,35 @@ uat(
     expect
       .soft(Math.max(0, ...mp), `largest canvas ${Math.max(0, ...mp).toFixed(1)} MP (limit 16)`)
       .toBeLessThanOrEqual(16);
-    // 4) Close and open ten times: closing is quick and nothing piles up.
+    // 4) Close and open ten times: closing is quick and nothing piles up. The close is timed inside
+    // the page (from the click to the dialog being gone), not through the test's round trips.
+    const closeLabel = t('Close full screen');
     for (let i = 0; i < 10; i++) {
-      t0 = await now();
-      await ((await full.count()) ? close : open).click();
-      if (i % 2 === 0) {
-        await expect(full).toHaveCount(0);
-        const ms = (await now()) - t0;
-        expect
-          .soft(ms, `close ${i + 1} took ${Math.round(ms)} ms (limit 200)`)
-          .toBeLessThanOrEqual(200 + 100);
-        await open.click();
-        await expect(full).toBeAttached();
-        await drawn(await now(), `cycle ${i + 1}: drawn again`);
-      } else {
-        await expect(full).toBeAttached();
-        await drawn(await now(), `cycle ${i + 1}: drawn again`);
-      }
+      const ms = await page.evaluate(
+        (label) =>
+          new Promise<number>((resolve) => {
+            const b = [...document.querySelectorAll('button')].find(
+              (x) => x.textContent?.trim() === label,
+            );
+            if (!b) return resolve(-1);
+            const t0 = performance.now();
+            b.click();
+            const tick = () =>
+              document.querySelector('dialog[aria-modal="true"]')
+                ? requestAnimationFrame(tick)
+                : resolve(performance.now() - t0);
+            requestAnimationFrame(tick);
+          }),
+        closeLabel,
+      );
+      expect.soft(ms, `close ${i + 1} found its button`).toBeGreaterThanOrEqual(0);
+      await expect(full).toHaveCount(0);
+      expect
+        .soft(ms, `close ${i + 1} took ${Math.round(ms)} ms (limit 200)`)
+        .toBeLessThanOrEqual(200 + 100);
+      await open.click();
+      await expect(full).toBeAttached();
+      await drawn(await now(), `cycle ${i + 1}: drawn again`);
     }
     const grown = ((await heap()) - h0) / 1e6;
     expect.soft(grown, `heap grew ${grown.toFixed(1)} MB (limit 100)`).toBeLessThanOrEqual(100);

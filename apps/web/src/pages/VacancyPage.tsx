@@ -415,7 +415,7 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
             aria-controls="vacancy-tabpanel"
             tabIndex={tab === k ? 0 : -1}
             onClick={() => go(`/vacancies/${v.id}/${k}`)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium pointer-coarse:min-h-11 focus-visible:rounded-t focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium pointer-coarse:min-h-11 focus-visible:rounded-t focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${tab === k ? 'border-accent text-link' : 'border-transparent text-ink-2 hover:text-ink'}`}
           >
             {t(TAB_LABEL[k])}
           </button>

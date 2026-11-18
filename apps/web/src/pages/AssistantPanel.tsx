@@ -158,6 +158,8 @@ export function AssistantPanel(props: {
   const stop = () => {
     turn.current++;
     setBusy(false);
+    // The "reading the record" line goes away; say that it stopped (the note in the chat is not live).
+    setAnnounce(tr('Stopped. Nothing was changed.'));
     setItems((i) => [
       ...i,
       {
@@ -231,7 +233,7 @@ export function AssistantPanel(props: {
           closeAssistant();
         }
       }}
-      className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:top-[57px] sm:bottom-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
+      className="fixed inset-x-0 bottom-[var(--bottombar-h,0px)] z-30 flex min-h-[calc(60dvh-var(--bottombar-h,0px))] max-h-[calc(85dvh-var(--bottombar-h,0px))] flex-col rounded-t-xl border border-line bg-card shadow-xl sm:top-[57px] sm:bottom-0 sm:left-auto sm:right-0 sm:max-h-none sm:min-h-0 sm:w-96 sm:rounded-none sm:border-y-0 sm:border-r-0"
     >
       <header className="flex items-start justify-between gap-2 border-b border-line p-3">
         <div className="min-w-0">

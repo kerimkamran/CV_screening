@@ -113,6 +113,40 @@ describeDb('Shared reports (design spec 6.5)', () => {
     expect(rep.decisions[0].documentId).toBeUndefined();
   });
 
+  it('says what it shows: names by default, and none anywhere when includeNames is false (RP-12)', async () => {
+    const { ayla, manager, vid } = await setup('n');
+    const list = (await ayla.api.get(`/vacancies/${vid}/candidates`)).json().candidates as (Cand & {
+      candidateName: string | null;
+    })[];
+    const bob = list.find((c) => c.candidateName?.includes('Bob'))!;
+    await ayla.api.post(`/screenings/${bob.screeningId}/decision`, {
+      outcome: 'shortlist',
+      reason: 'Bob Routing is strong on BGP',
+    });
+    const dflt = (
+      await ayla.api.post(`/vacancies/${vid}/shares`, { viewerIds: [manager.userId] })
+    ).json();
+    const a = (await manager.api.get(`/reports/${dflt.id}`)).json().report;
+    expect(a.includeNames).toBe(true);
+    expect(a.candidates.map((c: { name: string | null }) => c.name)).toContain('Alice Full');
+    expect(a.decisions[0].reason).toBe('Bob Routing is strong on BGP');
+    const row = (await ayla.api.get(`/vacancies/${vid}/shares`)).json().shares[0];
+    expect(row.includeNames).toBe(true);
+
+    const hidden = (
+      await ayla.api.post(`/vacancies/${vid}/shares`, {
+        viewerIds: [manager.userId],
+        includeNames: false,
+      })
+    ).json();
+    const b = (await manager.api.get(`/reports/${hidden.id}`)).json().report;
+    expect(b.includeNames).toBe(false);
+    expect(b.candidates.every((c: { name: string | null }) => c.name === null)).toBe(true);
+    const text = JSON.stringify(b);
+    for (const word of ['Alice', 'Bob', 'Carol']) expect(text).not.toContain(word);
+    expect(b.decisions[0].reason).toBe('[name] [name] is strong on BGP');
+  });
+
   it('can leave the quotes out', async () => {
     const { ayla, manager, vid } = await setup('d');
     const withQ = (

@@ -26,10 +26,10 @@ export const AZ_SHELL: Record<string, string> = {
   'Could not save your choice. It applies on this device only for now.':
     'Seçiminiz saxlanmadı. Hələlik yalnız bu cihazda keçərlidir.',
   'Loading…': 'Yüklənir…',
-  'Skip to main content': 'Əsas məzmuna keç',
+  'Skip to main content': 'Əsas məzmuna keçin',
   'Administrators only.': 'Yalnız administratorlar üçün.',
-  'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.':
-    'Administratorlar istifadəçiləri və süni intellekt modellərini “İdarə” bölməsində idarə edir. Namizəd məlumatları yalnız işə götürənlər üçün əlçatandır.',
+  'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.':
+    'Administratorlar istifadəçiləri və süni intellekt modellərini “İdarəetmə” bölməsində idarə edir. Namizəd məlumatları yalnız işə götürənlər üçün əlçatandır.',
   'AI-assisted screening: scores and rankings are recommendations. Every decision about a candidate is made by a person and recorded under their name.':
     'Süni intellektlə dəstəklənən yoxlama: bal və sıralama yalnız tövsiyədir. Namizəd barədə hər qərarı insan verir və onun adı ilə qeyd olunur.',
   'Checking service…': 'Xidmət yoxlanılır…',

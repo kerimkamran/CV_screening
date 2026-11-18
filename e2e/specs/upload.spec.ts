@@ -100,8 +100,8 @@ uat(
         c.getByText(
           t(
             iphone
-              ? 'PDF, DOCX or TXT files, or a ZIP of CVs'
-              : 'PDF, DOCX or TXT files, a whole folder, or a ZIP of CVs',
+              ? 'PDF, DOCX, TXT or MD files, or a ZIP of CVs'
+              : 'PDF, DOCX, TXT or MD files, a whole folder, or a ZIP of CVs',
           ),
           { exact: true },
         ),

@@ -624,7 +624,7 @@ export async function freshAcc(
 export async function openAsR(
   page: Page,
   a: Pick<Account, 'email' | 'password'>,
-  hash = '#/',
+  hash = '#/vacancies',
   token?: string,
 ) {
   const tk = token ?? (await loginR(a));

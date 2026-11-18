@@ -1675,7 +1675,7 @@ uat('FS-22', 'Download the original file', { on: ['D', 'A'] }, async ({ page, ux
   const { readFileSync } = await import('node:fs');
   expect.soft(readFileSync(path).subarray(0, 4).toString(), 'the PDF bytes').toBe('%PDF');
   await expect.soft(btn).toBeEnabled();
-  if (meta.lang === 'az') expect.soft(t('Download')).toBe('Yüklə');
+  if (meta.lang === 'az') expect.soft(t('Download')).toBe('Yükləyin');
   await ux.check('downloaded', [...STD, 'AZ']);
   // 404.
   await page.unrouteAll({ behavior: 'ignoreErrors' });

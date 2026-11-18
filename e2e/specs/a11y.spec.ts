@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
-import { DID, mockApi, openReview } from '../fixtures/api';
+import { DID, ME, MID, mockApi, openReview, showAnalysis, VID } from '../fixtures/api';
+import { mockF } from '../fixtures/pkg-f';
+import { CFG, senaiRoutes, threadPair, type AskLog } from '../fixtures/pkg-g';
 import { ADMIN_ANSWERS, MFA_OFF } from '../fixtures/pkg-a';
 import { hasRing, pageScrollsSideways, smallTargets, vacApi, vrow, vview } from '../fixtures/pkg-c';
 import { DVID, resultsApi } from '../fixtures/pkg-d';
@@ -87,7 +89,7 @@ const axeLines = async (page: Page, where: string) =>
 uat(
   'A11-01',
   'axe WCAG 2.2 AA on every main screen on all 4 backgrounds',
-  { on: ['D', 'A'], timeout: 180_000 },
+  { on: ['D', 'A'], timeout: 240_000 },
   async ({ page, ux, meta }) => {
     const t = T(meta.lang);
     const out: string[] = [];
@@ -107,6 +109,7 @@ uat(
     // Recruiter screens (admin + TA so Admin is reachable).
     await app(page, { me: ADMIN_ME });
     for (const [hash, name] of [
+      ['#/', 'Home'],
       ['#/vacancies', 'Vacancies'],
       ['#/vacancies/new', 'New vacancy'],
       ['#/candidates', 'Candidates'],
@@ -1054,5 +1057,241 @@ uat(
     await ux.check('reduced motion', [...STD, 'RM']);
     expect.soft(moving, 'no animation runs with reduced motion').toEqual([]);
     void hasRing;
+  },
+);
+
+// ---------------------------------------------------------------- A11-08
+
+/** Records what a screen reader would be told: every change of text inside a live region. */
+const LIVE_RECORDER = `(() => {
+  const SEL = '[aria-live]:not([aria-live=off]), [role=status], [role=alert], [role=log]';
+  window.__live = [];
+  const last = new WeakMap();
+  const note = (el) => {
+    if (!el || el.nodeType !== 1) return;
+    const regions = [];
+    const own = el.closest(SEL);
+    if (own) regions.push(own);
+    el.querySelectorAll?.(SEL).forEach((r) => regions.push(r));
+    for (const r of regions) {
+      const text = (r.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (!text) { last.set(r, ''); continue; }
+      if (last.get(r) === text) continue;
+      last.set(r, text);
+      window.__live.push({ role: r.getAttribute('role') || 'live', text });
+    }
+  };
+  new MutationObserver((ms) => {
+    for (const m of ms) {
+      if (m.type === 'characterData') note(m.target.parentElement);
+      else {
+        for (const n of m.addedNodes) note(n.nodeType === 1 ? n : n.parentElement);
+        note(m.target.nodeType === 1 ? m.target : m.target.parentElement);
+      }
+    }
+  }).observe(document, { subtree: true, childList: true, characterData: true });
+})();`;
+
+type Said = { role: string; text: string };
+
+uat(
+  'A11-08',
+  'Live regions announce once and in the UI language',
+  { on: ['D'], timeout: 150_000 },
+  async ({ page, ux, meta }) => {
+    ux.allow(/404|Failed to load resource|503/);
+    const t = T(meta.lang);
+    const az = meta.lang === 'az';
+    const problems: string[] = [];
+    await page.addInitScript(LIVE_RECORDER);
+    const said = (from = 0) =>
+      page.evaluate((n) => (window as unknown as { __live: Said[] }).__live.slice(n), from);
+    const count = () =>
+      page.evaluate(() => (window as unknown as { __live: Said[] }).__live.length);
+    /** Each of `texts` was announced exactly once since `from`; nothing is in English in AZ. */
+    const expectOnce = async (step: string, from: number, texts: string[], role?: string) => {
+      const log = await said(from);
+      for (const text of texts) {
+        const hits = log.filter((l) => l.text.includes(text));
+        if (hits.length !== 1)
+          problems.push(
+            `${step}: '${text}' announced ${hits.length} times (${JSON.stringify(log.map((l) => l.text))})`,
+          );
+        else if (role && hits[0]!.role !== role)
+          problems.push(`${step}: '${text}' is announced as role=${hits[0]!.role}, not ${role}`);
+      }
+      if (az)
+        for (const l of log)
+          if (
+            /\b(has answered|is looking|is reading|Copied|Suggested|Stopped|Marked|Could not|Try again)\b/.test(
+              l.text,
+            )
+          )
+            problems.push(`${step}: announced in English: '${l.text}'`);
+    };
+
+    // 1) The pool panel: nothing per keystroke; a question; Suggest it; Copy (works, fails); an error.
+    const log: AskLog = { asks: [], cand: [] };
+    let failAsk = false;
+    const route = senaiRoutes(log, {
+      askDelayMs: 500,
+      ask: () => ({
+        ...poolAnswer(3, { table: 3 }),
+        copyable: true,
+        unknownSkills: ['Zabbixx'],
+      }),
+    });
+    await vacApi(page, {
+      assistant: CFG,
+      views: [vview({ id: VID, title: 'Network Engineer' })],
+      extra: async (r, u, method) => {
+        if (u.pathname === '/assistant/skills/suggest' && method === 'POST')
+          return r.fulfill({ json: { ok: true } }).then(() => true);
+        if (failAsk && u.pathname === '/assistant/ask' && method === 'POST')
+          return r
+            .fulfill({ status: 503, json: { message: 'Service Unavailable' } })
+            .then(() => true);
+        return route(r, u);
+      },
+    });
+    await page.goto(`/#/vacancies/${VID}`);
+    const bar = page.getByRole('search').getByRole('textbox');
+    await expect(bar).toBeVisible();
+    await page.waitForLoadState('networkidle'); // the page's own first announcements are not the keystrokes'
+    await page.waitForTimeout(400);
+    let from = await count();
+    await bar.pressSequentially('Who has BGP routing and OSPF?', { delay: 15 });
+    expect(await said(from), 'nothing is announced per keystroke').toEqual([]);
+    from = await count();
+    await bar.press('Enter');
+    const panel = page.getByRole('complementary', { name: 'SenAI' });
+    await expect(panel.locator('[data-answer]')).toBeVisible();
+    await page.waitForTimeout(300);
+    await expectOnce('pool question', from, [t('{name} has answered.', { name: 'SenAI' })]);
+    const looking = (await said(from)).filter((l) =>
+      l.text.includes(t('{name} is looking…', { name: 'SenAI' })),
+    );
+    if (looking.length > 1) problems.push(`'is looking' announced ${looking.length} times`);
+
+    from = await count();
+    await panel
+      .getByRole('button', { name: t('Suggest {word} to the administrator', { word: 'Zabbixx' }) })
+      .click();
+    await expect(panel.getByText(t('Suggested. An administrator will review it.'))).toBeVisible();
+    await expectOnce('Suggest it', from, [t('Suggested. An administrator will review it.')]);
+
+    await page.evaluate(() =>
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: async () => undefined },
+        configurable: true,
+      }),
+    );
+    from = await count();
+    await panel.getByRole('button', { name: t('Copy'), exact: true }).click();
+    await expect(panel.getByRole('button', { name: t('Copied'), exact: true })).toBeVisible();
+    await expectOnce('Copy (works)', from, [t('Copied')]);
+    await page.waitForTimeout(3300); // "Copied" goes back to "Copy"
+    await page.evaluate(() =>
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {
+            throw new Error('blocked');
+          },
+        },
+        configurable: true,
+      }),
+    );
+    from = await count();
+    await panel.getByRole('button', { name: t('Copy'), exact: true }).click();
+    await expect(panel.getByRole('alert')).toBeVisible();
+    await expectOnce(
+      'Copy (fails)',
+      from,
+      [t('Could not copy. Select the table and copy it by hand.')],
+      'alert',
+    );
+
+    failAsk = true;
+    from = await count();
+    const box = panel.getByRole('textbox');
+    await box.fill('And who has Zabbix?');
+    await box.press('Enter');
+    // The earlier "Could not copy" note stays beside its own answer: the error is the last alert.
+    await expect(panel.getByRole('alert').last()).toContainText(/\S/);
+    await expectOnce(
+      'pool error',
+      from,
+      [t('{name} could not answer right now. Try again in a moment.', { name: 'SenAI' })],
+      'alert',
+    );
+    await ux.check('pool panel', [...STD, 'AZ']);
+
+    // 2) The candidate panel on the CV screen: a question, Stop, an Undo toast, an error.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    const clog: AskLog = { asks: [], cand: [] };
+    let failCand = false;
+    let slow = 0;
+    const croute = senaiRoutes(clog, { thread: { [MID]: threadPair(1) } });
+    await mockF(page, {
+      assistant: CFG,
+      live: true,
+      extra: async (r, u) => {
+        const post = r.request().method() === 'POST';
+        if (post && /^\/screenings\/\w+\/assistant$/.test(u.pathname)) {
+          if (failCand)
+            return r
+              .fulfill({ status: 503, json: { message: 'Service Unavailable' } })
+              .then(() => true);
+          if (slow) await new Promise((res) => setTimeout(res, slow));
+        }
+        return croute(r, u);
+      },
+    });
+    await openReview(page, DID);
+    await page.evaluate((k) => localStorage.setItem(k, '1'), `cv-assistant-open:${ME.userId}`);
+    await page.reload();
+    await showAnalysis(page);
+    const cpanel = page.getByRole('complementary', { name: 'SenAI' });
+    await expect(cpanel).toBeVisible();
+    await page.waitForTimeout(500);
+
+    from = await count();
+    const cbox = cpanel.getByRole('textbox');
+    await cbox.fill('Why is BGP found?');
+    await cbox.press('Enter');
+    await expect(
+      cpanel.getByText('Aysel Məmmədova matches on what the record shows.').last(),
+    ).toBeVisible();
+    await page.waitForTimeout(300);
+    await expectOnce('candidate question', from, [t('{name} has answered.', { name: 'SenAI' })]);
+
+    slow = 6000;
+    await cbox.fill('And the OSPF areas?');
+    await cbox.press('Enter');
+    await expect(cpanel.getByRole('button', { name: t('Stop'), exact: true })).toBeVisible();
+    from = await count();
+    await cpanel.getByRole('button', { name: t('Stop'), exact: true }).click();
+    await page.waitForTimeout(300);
+    await expectOnce('Stop', from, [t('Stopped. Nothing was changed.')]);
+    slow = 0;
+
+    from = await count();
+    await page
+      .getByRole('combobox', { name: t('Decision for {name}', { name: 'Aysel Məmmədova' }) })
+      .selectOption('maybe');
+    await expect(page.getByRole('button', { name: t('Undo') })).toBeVisible();
+    await page.waitForTimeout(300);
+    await expectOnce('Undo toast', from, [t('Marked {mark}.', { mark: t('Maybe') })]);
+
+    failCand = true;
+    from = await count();
+    await cbox.fill('Anything else?');
+    await cbox.press('Enter');
+    await expect(cpanel.getByRole('alert')).toBeVisible();
+    await expectOnce('candidate error', from, [t('Service Unavailable')], 'alert');
+    await ux.check('candidate panel', [...STD, 'AZ'], {
+      overlay: (page.viewportSize()?.width ?? 1280) < 640 ? 'aside' : undefined,
+    });
+    expect.soft(problems, 'every event is announced once, in the UI language').toEqual([]);
   },
 );

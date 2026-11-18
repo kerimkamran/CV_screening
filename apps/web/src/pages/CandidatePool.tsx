@@ -769,16 +769,19 @@ export function CandidatePool({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-2">
-        <p role="status">
-          {page
-            ? [
-                tr(page.total === 1 ? '{n} candidate' : '{n} candidates', { n: page.total }),
-                t('{n} strong', { n: page.counts.strong }),
-                page.counts.outOfDate ? t('{n} out of date', { n: page.counts.outOfDate }) : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            : ''}
+        <p>
+          {/* Only the counts are announced; the time changes on every refresh and would repeat them (A11-08). */}
+          <span role="status">
+            {page
+              ? [
+                  tr(page.total === 1 ? '{n} candidate' : '{n} candidates', { n: page.total }),
+                  t('{n} strong', { n: page.counts.strong }),
+                  page.counts.outOfDate ? t('{n} out of date', { n: page.counts.outOfDate }) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : ''}
+          </span>
           {page && (
             <span className="text-ink-3">
               {' · '}

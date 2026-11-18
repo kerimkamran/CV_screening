@@ -30,7 +30,9 @@ const MAX_DAYS = 90;
 const shareSchema = z.object({
   viewerIds: z.array(ulidSchema).min(1).max(50),
   expiresInDays: z.number().int().min(1).max(MAX_DAYS).default(DEFAULT_DAYS),
-  includeNames: z.boolean().default(false),
+  // Names are not hidden by default (decision of 8 October 2026), so a share made without saying
+  // anything shows them, and the page and the 'Shared so far' row say so. `false` hides them.
+  includeNames: z.boolean().default(true),
   includeQuotes: z.boolean().default(true),
 });
 

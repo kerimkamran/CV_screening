@@ -192,7 +192,7 @@ uat(
     expect(local, 'no localStorage key holds the token').toEqual([]);
     const me = seen.requests.filter((r) => r.url === '/me');
     expect(me.at(-1)!.headers.authorization).toBe('Bearer t1');
-    await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeAttached();
     await expect(page.getByText('Your session ended. Please sign in again.')).toHaveCount(0);
     await ux.check('signed in');
   },
@@ -579,7 +579,7 @@ uat(
     await page.getByLabel(t('Account menu'), { exact: true }).click();
     await page
       .locator('header details[open] > div')
-      .getByRole('link', { name: t('Password'), exact: true })
+      .getByRole('link', { name: t('Change password'), exact: true })
       .click();
     await expect(page).toHaveURL(/#\/password$/);
     await expect(page.getByRole('heading', { name: t('Change password') })).toBeVisible();
@@ -820,7 +820,7 @@ test.describe('AU-16 language before sign-in', () => {
       await page.getByLabel('Parol', { exact: true }).fill('Correct-horse-battery-1');
       await page.getByRole('button', { name: 'Daxil olun', exact: true }).click();
       await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
-      await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeAttached();
       expect(await page.evaluate(() => document.documentElement.lang)).toBe('en');
       await page.getByLabel('Account menu', { exact: true }).click();
       await expect(page.locator('header details[open] select')).toHaveValue('en');

@@ -29,11 +29,11 @@ const NAV = [
 ] as const;
 const inSection = (route: string, href: string) => route === href || route.startsWith(`${href}/`);
 /**
- * Which rail item is current. The landing page #/ is the vacancy list; a CV review belongs to the
- * list it was opened from (SH-14). At most one item is ever current.
+ * Which rail item is current. The landing page #/ is Home; a CV review belongs to the list it was
+ * opened from (SH-14). At most one item is ever current.
  */
 function sectionOf(route: string): string | null {
-  if (route === '/' || route === '') return '/vacancies';
+  if (route === '/' || route === '') return '/';
   const rv = parseReviewRoute(route);
   if (rv) {
     const back = getReviewList(rv.listId)?.back ?? '';
@@ -42,13 +42,15 @@ function sectionOf(route: string): string | null {
   return NAV.find(([href]) => inSection(route, href))?.[0] ?? null;
 }
 
-function Icon({ name }: { name: 'vacancies' | 'candidates' | 'ask' }) {
+function Icon({ name }: { name: 'home' | 'vacancies' | 'candidates' | 'ask' }) {
   const d =
-    name === 'vacancies'
-      ? 'M4 8h16v11H4V8Zm5 0V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16'
-      : name === 'candidates'
-        ? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6'
-        : 'M5 5h14v10H9l-4 4V5Z';
+    name === 'home'
+      ? 'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1v-8Z'
+      : name === 'vacancies'
+        ? 'M4 8h16v11H4V8Zm5 0V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16'
+        : name === 'candidates'
+          ? 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6'
+          : 'M5 5h14v10H9l-4 4V5Z';
   return (
     <svg
       width="20"
@@ -263,16 +265,16 @@ function AccountMenu({
           </a>
           {(isAdmin || isGov) && (
             <a href="#/admin/monitoring" className={link}>
-              {t('Monitoring')}
+              {t('Fairness monitoring')}
             </a>
           )}
           {isAdmin && (
             <a href="#/admin" className={link}>
-              {t('Admin')}
+              {t('Administration')}
             </a>
           )}
           <a href="#/password" className={link}>
-            {t('Password')}
+            {t('Change password')}
           </a>
           <a href="#/security" className={link}>
             {t('Security')}
@@ -352,7 +354,7 @@ export function Shell({
   const [bar, setBar] = useState<HTMLElement | null>(null);
   usePublishedHeight('--bottombar-h', bar);
   const link = (active: boolean) =>
-    `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
+    `flex flex-col items-center gap-1 rounded-2xl px-2 py-2.5 text-center text-xs font-semibold ${active ? 'bg-sel text-link shadow-[inset_3px_0_0_var(--c-accent)]' : 'text-ink-2 hover:bg-hover'} focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none`;
 
   return (
     <div className="min-h-screen bg-page text-ink">
@@ -365,7 +367,7 @@ export function Shell({
             open panel sits beside the page, which is padded so no control lies under it (SA-30). */}
         <div className="flex h-[57px] items-center gap-3 px-4">
           <a
-            href={isTa ? '#/vacancies' : '#/'}
+            href="#/"
             className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
             title={BRAND_FULL}
           >
@@ -397,14 +399,18 @@ export function Shell({
             style={{ viewTransitionName: 'app-rail' }}
             className="sticky top-[57px] -mb-48 hidden h-[calc(100vh-57px)] w-24 shrink-0 flex-col gap-1.5 border-r bg-card/70 p-2.5 sm:flex"
           >
-            {NAV.map(([href, label]) => (
+            {/* Home is in the rail; on a phone the logo leads there, so the bottom bar keeps its
+                three items and long Azerbaijani labels still fit (SD-08). */}
+            {[['/', 'Home'] as const, ...NAV].map(([href, label]) => (
               <a
                 key={href}
                 href={`#${href}`}
                 aria-current={section === href ? 'page' : undefined}
                 className={link(section === href)}
               >
-                <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
+                <Icon
+                  name={href === '/' ? 'home' : href === '/vacancies' ? 'vacancies' : 'candidates'}
+                />
                 {t(label)}
               </a>
             ))}
@@ -420,6 +426,8 @@ export function Shell({
         </div>
       </div>
 
+      {/* The bottom bar's items are flex-auto, not flex-1: each is as wide as its words need, so a
+          long Azerbaijani label ('SenAI adlı köməkçidən soruşun') takes two lines at 360 px (I18-08). */}
       {rail && (
         <nav
           ref={setBar}
@@ -431,7 +439,7 @@ export function Shell({
               key={href}
               href={`#${href}`}
               aria-current={section === href ? 'page' : undefined}
-              className={`${link(section === href)} flex-1`}
+              className={`${link(section === href)} flex-auto`}
             >
               <Icon name={href === '/vacancies' ? 'vacancies' : 'candidates'} />
               {t(label)}
@@ -441,7 +449,7 @@ export function Shell({
             <button
               type="button"
               onClick={() => setAssistantOpen(true)}
-              className={`${link(false)} flex-1`}
+              className={`${link(false)} flex-auto`}
             >
               <Icon name="ask" />
               {t('Ask {name}', { name: cfg.name })}

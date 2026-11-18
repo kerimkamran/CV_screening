@@ -7,7 +7,7 @@ import {
   type VacancyStatus,
 } from '@cv/shared';
 import { day } from './dates';
-import { tr } from './i18n';
+import { getLang, tr } from './i18n';
 
 /** Shapes the Vacancy pool, the Candidate pool and the report use (Development Plan, Phases 1 to 3). */
 
@@ -33,7 +33,14 @@ export const MARK_STYLE: Record<Mark, string> = {
 };
 export const MARKS: Mark[] = ['new', 'shortlist', 'maybe', 'not_now'];
 export const markName = (m: Mark) => tr(MARK_LABEL[m]);
-export const statusName = (s: VacancyStatus) => tr(VACANCY_STATUS_LABEL[s]);
+/**
+ * A vacancy's state, as a word for a state. 'Open' is also the button that opens something, and
+ * Azerbaijani tells them apart: the button is the command "Açın", the state is "Açıq" (SD-44).
+ */
+const STATE_AZ: Record<string, string> = { Open: 'Açıq' };
+export const stateWord = (en: string): string =>
+  getLang() === 'az' && STATE_AZ[en] ? STATE_AZ[en] : tr(en);
+export const statusName = (s: VacancyStatus) => stateWord(VACANCY_STATUS_LABEL[s]);
 export const STATUS_STYLE: Record<VacancyStatus, string> = {
   draft: 'bg-neutral text-ink',
   open: 'bg-ok text-ok-ink',

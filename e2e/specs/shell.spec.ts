@@ -36,7 +36,7 @@ uat(
     ).toEqual(['sticky', '0px']);
     const brand = header.getByRole('link', { name: /parallax/ }).first();
     await expect(brand).toHaveAttribute('title', 'parallax by Azerconnect Group');
-    await expect(brand).toHaveAttribute('href', '#/vacancies');
+    await expect(brand).toHaveAttribute('href', '#/'); // the brand leads to Home
     await expect(
       page
         .getByRole('button', { name: tx('Account menu', 'Hesab menyusu') })
@@ -47,6 +47,9 @@ uat(
     expect(Math.round((await rail.boundingBox())!.width)).toBe(96);
     const vac = rail.getByRole('link', { name: tx('Vacancies', 'Vakansiyalar') });
     const cand = rail.getByRole('link', { name: tx('Candidates', 'Namizədlər') });
+    const home = rail.getByRole('link', { name: tx('Home', 'Ana səhifə') });
+    await expect(home).toHaveAttribute('href', '#/');
+    await expect(home).not.toHaveAttribute('aria-current', 'page');
     await expect(vac).toHaveAttribute('aria-current', 'page');
     await expect(cand).not.toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('contentinfo')).toContainText(
@@ -65,7 +68,9 @@ uat(
     await expect(page).toHaveURL(/#\/vacancies$/);
     await page.goto('/#/candidates');
     await brand.click();
-    await expect(page).toHaveURL(/#\/vacancies$/);
+    await expect(page).toHaveURL(/#\/$/);
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await expect(vac).not.toHaveAttribute('aria-current', 'page');
     await ux.check('after navigation');
   },
 );
@@ -280,12 +285,13 @@ uat(
         'admin',
         ['ADMIN'],
         async () => {
+          await expect(page.getByRole('heading', { level: 1, name: t('Home') })).toBeAttached();
           await expect(
-            page.getByRole('status').filter({
-              hasText: t(
-                'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+            page.getByText(
+              t(
+                'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.',
               ),
-            }),
+            ),
           ).toBeVisible();
         },
       ],
@@ -293,9 +299,8 @@ uat(
         'governance',
         ['GOVERNANCE'],
         async () => {
-          await expect(
-            page.getByRole('heading', { level: 1, name: t('Fairness monitoring') }),
-          ).toBeVisible();
+          await expect(page.getByRole('heading', { level: 1, name: t('Home') })).toBeAttached();
+          await expect(page.getByRole('region', { name: t('Oversight') })).toBeVisible();
         },
       ],
       [
@@ -303,7 +308,7 @@ uat(
         [],
         async () => {
           await expect(
-            page.getByRole('heading', { level: 1, name: t('Reports shared with me') }),
+            page.getByRole('heading', { level: 1, name: t('Shared with me') }),
           ).toBeVisible();
         },
       ],
@@ -494,7 +499,7 @@ uat(
           expect(
             page.getByText(
               t(
-                'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+                'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.',
               ),
             ),
           ).toBeVisible(),
@@ -512,9 +517,7 @@ uat(
       },
       viewer: {
         '#/nope': () =>
-          expect(
-            page.getByRole('heading', { level: 1, name: t('Reports shared with me') }),
-          ).toBeVisible(),
+          expect(page.getByRole('heading', { level: 1, name: t('Shared with me') })).toBeVisible(),
       },
     };
     const roles: Record<string, string[] | null> = {
@@ -862,7 +865,7 @@ uat(
     // 3) Keyboard order with a visible ring.
     await page.reload(); // the top of a fresh page: Tab starts from the document
     await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
-    const want = ['skip', 'brand', 'avatar', 'Vacancies', 'Candidates'];
+    const want = ['skip', 'brand', 'avatar', 'Home', 'Vacancies', 'Candidates'];
     const got: string[] = [];
     for (let i = 0; i < want.length + 1; i++) {
       await page.keyboard.press('Tab');
@@ -886,8 +889,8 @@ uat(
       got.push(f.name);
       if (i < want.length) expect.soft(f.ring, `${f.name} shows a focus ring`).toBe(true);
     }
-    expect(got.slice(0, 5), `focus order: ${got.join(', ')}`).toEqual(want);
-    expect(got[5]).toMatch(/^content:/);
+    expect(got.slice(0, want.length), `focus order: ${got.join(', ')}`).toEqual(want);
+    expect(got[want.length]).toMatch(/^content:/);
     await page.keyboard.press('Shift+Tab');
     await expect(rail.getByRole('link', { name: 'Candidates' })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -1040,7 +1043,7 @@ uat(
 
 uat(
   'SH-14',
-  'Rail highlight on the landing page #/ and on a CV review',
+  'Rail highlight on the landing page #/ (Home) and on a CV review',
   { on: ['D', 'T', 'A'], langs: 'EN' },
   async ({ page, ux, meta }) => {
     ux.allow(/Transition was skipped/); // the test changes routes faster than a person; see SH-06
@@ -1048,16 +1051,28 @@ uat(
     const current = () => main.locator('[aria-current="page"]');
     await mockApi(page);
     await page.goto('/#/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeAttached();
+    // The phone's bottom bar keeps Vacancies and Candidates only (the brand is Home), so there nothing is current on #/.
+    const phone = (page.viewportSize()?.width ?? 1200) < 640;
+    if (phone) {
+      await expect
+        .soft(main.getByRole('link', { name: 'Home' }), 'no Home on the bar')
+        .toHaveCount(0);
+      await expect.soft(current(), "#/: nothing is current on the phone's bar").toHaveCount(0);
+    } else {
+      await expect
+        .soft(main.getByRole('link', { name: 'Home' }), "#/: 'Home' is the current section")
+        .toHaveAttribute('aria-current', 'page');
+      expect
+        .soft(
+          await main.getByRole('link', { name: 'Home' }).getAttribute('class'),
+          "#/: 'Home' has the selected style",
+        )
+        .toContain('bg-sel');
+    }
     await expect
-      .soft(main.getByRole('link', { name: 'Vacancies' }), "#/: 'Vacancies' is the current section")
-      .toHaveAttribute('aria-current', 'page');
-    expect
-      .soft(
-        await main.getByRole('link', { name: 'Vacancies' }).getAttribute('class'),
-        "#/: 'Vacancies' has the selected style",
-      )
-      .toContain('bg-sel');
+      .soft(main.getByRole('link', { name: 'Vacancies' }), "#/: 'Vacancies' is not current")
+      .not.toHaveAttribute('aria-current', 'page');
     expect(await current().count()).toBeLessThanOrEqual(1);
     await ux.check('landing');
     await page.goto('/#/candidates');
@@ -1112,13 +1127,15 @@ uat(
     expect(pb.y + pb.height).toBeLessThanOrEqual(vp.height);
     await expect(panel).toContainText('Ayla Karimova');
     await expect(panel).toContainText('ayla@example.az');
-    for (const l of ['Shared with me', 'Password', 'Security'])
+    for (const l of ['Shared with me', 'Change password', 'Security'])
       await expect(panel.getByRole('link', { name: t(l), exact: true })).toBeVisible();
     await expect(panel.getByRole('combobox', { name: t('Language') })).toBeVisible();
     await expect(panel.getByText(t('Background'), { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: t('Sign out') })).toBeVisible();
-    await expect(panel.getByRole('link', { name: t('Monitoring') })).toHaveCount(0);
-    await expect(panel.getByRole('link', { name: t('Admin'), exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('link', { name: t('Fairness monitoring') })).toHaveCount(0);
+    await expect(panel.getByRole('link', { name: t('Administration'), exact: true })).toHaveCount(
+      0,
+    );
     await ux.check('menu open', ['OCC', 'OVL', 'OVF', 'TGT', 'AXE', 'AZ'], {
       overlay: MENU_OVERLAY,
     });
@@ -1176,16 +1193,26 @@ uat('AC-02', 'Account menu items per role', { on: ['D', 'A'] }, async ({ page, u
     Security: /#\/security$/,
   };
   const cases: [string, string[], string[], boolean][] = [
-    ['admin', ['ADMIN'], ['Shared with me', 'Monitoring', 'Admin', 'Password', 'Security'], false],
+    [
+      'admin',
+      ['ADMIN'],
+      ['Shared with me', 'Fairness monitoring', 'Administration', 'Change password', 'Security'],
+      false,
+    ],
     [
       'admin+TA',
       ['ADMIN', 'TA_PARTNER'],
-      ['Shared with me', 'Monitoring', 'Admin', 'Password', 'Security'],
+      ['Shared with me', 'Fairness monitoring', 'Administration', 'Change password', 'Security'],
       true,
     ],
-    ['governance', ['GOVERNANCE'], ['Shared with me', 'Monitoring', 'Password', 'Security'], false],
-    ['no role', [], ['Shared with me', 'Password', 'Security'], false],
-    ['lead', ['TA_LEAD'], ['Shared with me', 'Password', 'Security'], true],
+    [
+      'governance',
+      ['GOVERNANCE'],
+      ['Shared with me', 'Fairness monitoring', 'Change password', 'Security'],
+      false,
+    ],
+    ['no role', [], ['Shared with me', 'Change password', 'Security'], false],
+    ['lead', ['TA_LEAD'], ['Shared with me', 'Change password', 'Security'], true],
   ];
   for (const [who, roles, links, remembers] of cases) {
     await openWith(page, '#/', { me: { roles }, assistant: SENAI_ON, table: DIRECT });
@@ -1211,8 +1238,8 @@ uat('AC-02', 'Account menu items per role', { on: ['D', 'A'] }, async ({ page, u
     }
   }
   if (meta.lang === 'az') {
-    expect(t('Admin')).toBe('İdarə');
-    expect(t('Monitoring')).toBe('Monitorinq');
+    expect(t('Administration')).toBe('İdarəetmə');
+    expect(t('Fairness monitoring')).toBe('Ədalətlilik monitorinqi');
   }
 });
 
@@ -1526,7 +1553,7 @@ uat(
   async ({ page, ux, meta }) => {
     ux.allow(/Transition was skipped/); // the test changes routes faster than a person; see SH-06
     const t = words(meta);
-    const h1 = page.getByRole('heading', { level: 1, name: t('Reports shared with me') });
+    const h1 = page.getByRole('heading', { level: 1, name: t('Shared with me') });
     const go = async (roles: string[], answer: unknown, bg: string) => {
       await openWith(page, '#/', {
         me: { roles, background: bg },
@@ -1711,9 +1738,9 @@ uat(
     // 3) Tap each item.
     const dest: [string, RegExp][] = [
       ['Shared with me', /#\/reports$/],
-      ['Monitoring', /#\/admin\/monitoring$/],
-      ['Admin', /#\/admin$/],
-      ['Password', /#\/password$/],
+      ['Fairness monitoring', /#\/admin\/monitoring$/],
+      ['Administration', /#\/admin$/],
+      ['Change password', /#\/password$/],
       ['Security', /#\/security$/],
     ];
     for (const [l, re] of dest) {

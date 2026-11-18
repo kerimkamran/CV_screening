@@ -1,0 +1,533 @@
+/*
+ * Home (the launcher), November 2026.
+ *
+ * Material 3 in the Google style: a large greeting, one prompt bar, and a bento of tonal tiles, one
+ * hue per function. Colours come from the --c-t-* tokens (index.css), so every page background and
+ * the dark theme are measured by contrast.test.ts. Shape and colour stay with "reduce motion"; only
+ * movement is dropped. Movement is transform, opacity and border-radius, short, and never carries
+ * meaning (every tile is a labelled link).
+ */
+
+/* ------------------------------------------------------------------ ambient glow */
+.home-aurora {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 22rem;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  mask-image: linear-gradient(#000 35%, transparent);
+}
+.home-glow {
+  position: absolute;
+  border-radius: 9999px;
+  width: 30rem;
+  height: 30rem;
+  opacity: 0.55;
+}
+.home-glow-a {
+  left: -8rem;
+  top: -14rem;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c-t-blue-icon) 38%, transparent),
+    transparent 68%
+  );
+}
+.home-glow-b {
+  left: 32%;
+  top: -17rem;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c-t-violet-icon) 30%, transparent),
+    transparent 68%
+  );
+}
+.home-glow-c {
+  right: -8rem;
+  top: -13rem;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c-t-amber-icon) 34%, transparent),
+    transparent 68%
+  );
+}
+
+/* ------------------------------------------------------------------ greeting */
+.home-greeting {
+  background: linear-gradient(90deg, var(--c-t-grad-a), var(--c-t-grad-b) 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* The tail of "g", "y", "ş" must not be cut by the clip box. */
+  padding-bottom: 0.08em;
+}
+@media (forced-colors: active) {
+  .home-greeting {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+/* ------------------------------------------------------------------ prompt bar */
+.home-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 3.5rem;
+  max-width: 44rem;
+  padding: 0 0.5rem 0 1.25rem;
+  border-radius: 9999px;
+  background: var(--c-card);
+  border: 1px solid var(--c-line);
+  box-shadow:
+    0 1px 2px rgb(11 31 58 / 0.06),
+    0 10px 28px -16px rgb(19 62 114 / 0.35);
+  transition:
+    box-shadow var(--m-med) var(--ease-standard),
+    border-color var(--m-fast) var(--ease-standard);
+}
+.home-prompt:hover {
+  border-color: var(--c-edge);
+}
+.home-prompt:focus-within {
+  border-color: var(--c-focus);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--c-focus) 28%, transparent),
+    0 14px 32px -16px rgb(19 62 114 / 0.45);
+}
+.home-prompt input {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  font-size: 1rem;
+  color: var(--c-ink);
+  outline: none;
+}
+.home-prompt input::placeholder {
+  color: var(--c-ink-3);
+}
+.home-send {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 9999px;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+.home-send:hover {
+  background: var(--c-accent-hover);
+}
+
+/* ------------------------------------------------------------------ tiles */
+.home-tile {
+  --r: 28px;
+  --mx: 50%;
+  --my: 0%;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  height: 100%;
+  min-height: 8.5rem;
+  padding: 1.25rem;
+  text-align: left;
+  border-radius: var(--r);
+  background: var(--tile);
+  color: var(--tile-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-tile:focus-visible {
+  outline: 3px solid var(--c-focus);
+  outline-offset: 3px;
+}
+/* The pointer's light: a soft state layer that follows the cursor. */
+.home-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  background: radial-gradient(
+    18rem circle at var(--mx) var(--my),
+    color-mix(in srgb, var(--tile-ink) 14%, transparent),
+    transparent 70%
+  );
+}
+.home-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  height: 3rem;
+  width: 3rem;
+  /* A rounded "cookie" in the Material 3 Expressive sense: not a circle, not a square. */
+  border-radius: 1.1rem;
+  background: var(--tile-icon);
+  color: var(--tile-on-icon);
+}
+.home-arrow {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  height: 2.25rem;
+  width: 2.25rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--tile-ink) 10%, transparent);
+  color: var(--tile-ink);
+}
+.home-title {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.home-text {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  opacity: 0.82;
+}
+
+/* The tones. */
+.home-t-blue {
+  --tile: var(--c-t-blue);
+  --tile-ink: var(--c-t-blue-ink);
+  --tile-icon: var(--c-t-blue-icon);
+  --tile-on-icon: var(--c-t-blue-on-icon);
+}
+.home-t-green {
+  --tile: var(--c-t-green);
+  --tile-ink: var(--c-t-green-ink);
+  --tile-icon: var(--c-t-green-icon);
+  --tile-on-icon: var(--c-t-green-on-icon);
+}
+.home-t-amber {
+  --tile: var(--c-t-amber);
+  --tile-ink: var(--c-t-amber-ink);
+  --tile-icon: var(--c-t-amber-icon);
+  --tile-on-icon: var(--c-t-amber-on-icon);
+}
+.home-t-violet {
+  --tile: var(--c-t-violet);
+  --tile-ink: var(--c-t-violet-ink);
+  --tile-icon: var(--c-t-violet-icon);
+  --tile-on-icon: var(--c-t-violet-on-icon);
+}
+.home-t-teal {
+  --tile: var(--c-t-teal);
+  --tile-ink: var(--c-t-teal-ink);
+  --tile-icon: var(--c-t-teal-icon);
+  --tile-on-icon: var(--c-t-teal-on-icon);
+}
+.home-t-slate {
+  --tile: var(--c-t-slate);
+  --tile-ink: var(--c-t-slate-ink);
+  --tile-icon: var(--c-t-slate-icon);
+  --tile-on-icon: var(--c-t-slate-on-icon);
+}
+
+/* The lead tile: the one thing most people come here to do. */
+.home-lead {
+  --r: 36px;
+  --tile-ink: #fff;
+  min-height: 15rem;
+  padding: 1.75rem;
+  background: linear-gradient(140deg, var(--c-t-lead-from), var(--c-t-lead-to));
+  color: #fff;
+}
+.home-lead .home-icon {
+  height: 3.75rem;
+  width: 3.75rem;
+  border-radius: 1.4rem;
+  background: #fff;
+  color: var(--c-t-lead-from);
+}
+.home-lead .home-arrow {
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
+}
+.home-lead .home-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.home-lead .home-text {
+  max-width: 22rem;
+  font-size: 1rem;
+  opacity: 0.9;
+}
+.home-lead::before {
+  background: radial-gradient(
+    18rem circle at var(--mx) var(--my),
+    rgb(255 255 255 / 0.2),
+    transparent 70%
+  );
+}
+/* Soft concentric rings behind the corner: decoration only. */
+.home-rings {
+  position: absolute;
+  right: -5rem;
+  top: -5rem;
+  z-index: -1;
+  height: 17rem;
+  width: 17rem;
+  border-radius: 9999px;
+  border: 1.5rem solid rgb(255 255 255 / 0.07);
+  box-shadow:
+    0 0 0 3rem rgb(255 255 255 / 0.05),
+    inset 0 0 0 3rem rgb(255 255 255 / 0.05);
+}
+.home-star {
+  position: absolute;
+  right: 1.75rem;
+  bottom: 1.5rem;
+  z-index: -1;
+  color: rgb(255 255 255 / 0.9);
+}
+
+/* Small tiles on a phone: icon over title, no description (a launcher grid, like an app drawer). */
+@media (max-width: 639px) {
+  .home-tile:not(.home-lead) {
+    min-height: 7rem;
+    padding: 1rem;
+    --r: 24px;
+  }
+  .home-tile:not(.home-lead) .home-text {
+    display: none;
+  }
+  .home-tile:not(.home-lead) .home-icon {
+    height: 2.5rem;
+    width: 2.5rem;
+    border-radius: 0.9rem;
+  }
+  .home-lead {
+    min-height: 12rem;
+    padding: 1.25rem;
+  }
+  /* The star would sit on the description on a narrow screen. */
+  .home-star {
+    display: none;
+  }
+}
+
+/* The arrow: always there on a touch screen, arrives with the pointer on a mouse. */
+@media (hover: hover) {
+  .home-arrow {
+    opacity: 0;
+  }
+  .home-tile:hover .home-arrow,
+  .home-tile:focus-visible .home-arrow {
+    opacity: 1;
+  }
+  .home-tile:hover::before {
+    opacity: 1;
+  }
+}
+@media (hover: none) {
+  .home-tile .home-arrow {
+    opacity: 0.8;
+  }
+  .home-tile:not(.home-lead) .home-arrow {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ chips */
+.home-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 1rem 0 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--c-line);
+  background: var(--c-card);
+  color: var(--c-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.home-chip:hover {
+  background: var(--c-hover);
+  border-color: var(--c-edge);
+}
+.home-chip:focus-visible {
+  outline: 3px solid var(--c-focus);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .home-chip {
+    min-height: 2.75rem;
+  }
+}
+
+/* ------------------------------------------------------------------ motion */
+@media (prefers-reduced-motion: no-preference) {
+  /* Everything arrives: rising, with the small overshoot of the spring. `--i` staggers. */
+  .home-in {
+    animation: home-in 640ms var(--ease-emph) backwards;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+  .home-tile {
+    transition:
+      translate var(--m-med) var(--ease-standard),
+      scale var(--m-fast) var(--ease-standard),
+      border-radius var(--m-med) var(--ease-emph),
+      box-shadow var(--m-med) var(--ease-standard);
+  }
+  .home-icon {
+    transition:
+      scale var(--m-med) var(--ease-spring),
+      rotate var(--m-med) var(--ease-spring),
+      border-radius var(--m-med) var(--ease-emph);
+  }
+  .home-arrow {
+    transition:
+      translate var(--m-med) var(--ease-emph),
+      opacity var(--m-fast) var(--ease-standard);
+    translate: -8px 0;
+  }
+  .home-tile::before {
+    transition: opacity var(--m-med) var(--ease-standard);
+  }
+  .home-tile:active {
+    scale: 0.97;
+    transition-duration: var(--m-instant);
+  }
+  .home-rings,
+  .home-star {
+    transition:
+      rotate var(--m-slow) var(--ease-emph),
+      scale var(--m-slow) var(--ease-emph),
+      translate var(--m-slow) var(--ease-emph);
+  }
+  @media (hover: hover) {
+    /* The tile gives its corners and lifts; the icon tips like a key; the arrow steps in. */
+    .home-tile:hover,
+    .home-tile:focus-visible {
+      --r: 18px;
+      translate: 0 -4px;
+      box-shadow: 0 18px 32px -18px rgb(11 31 58 / 0.5);
+    }
+    .home-lead:hover,
+    .home-lead:focus-visible {
+      --r: 24px;
+    }
+    .home-tile:hover .home-icon,
+    .home-tile:focus-visible .home-icon {
+      scale: 1.08;
+      rotate: -7deg;
+      border-radius: 50%;
+    }
+    .home-tile:hover .home-arrow,
+    .home-tile:focus-visible .home-arrow {
+      translate: 0 0;
+    }
+    .home-lead:hover .home-rings {
+      rotate: 25deg;
+      scale: 1.08;
+      translate: -8px 8px;
+    }
+    .home-lead:hover .home-star {
+      rotate: 72deg;
+      scale: 1.2;
+    }
+  }
+  .home-chip {
+    transition:
+      translate var(--m-fast) var(--ease-standard),
+      background-color var(--m-fast) var(--ease-standard),
+      border-color var(--m-fast) var(--ease-standard);
+  }
+  @media (hover: hover) {
+    .home-chip:hover {
+      translate: 0 -2px;
+    }
+  }
+  .home-chip:active {
+    scale: 0.96;
+  }
+
+  /* A press leaves a ripple that spreads from the finger. */
+  .home-ripple {
+    position: absolute;
+    z-index: -1;
+    height: 1.25rem;
+    width: 1.25rem;
+    border-radius: 9999px;
+    translate: -50% -50%;
+    background: color-mix(in srgb, var(--tile-ink) 22%, transparent);
+    pointer-events: none;
+    animation: home-ripple 650ms var(--ease-standard) both;
+  }
+
+  /* The glow behind the greeting breathes: slow, small, transform only. */
+  .home-glow-a {
+    animation: home-drift-a 24s ease-in-out infinite alternate;
+  }
+  .home-glow-b {
+    animation: home-drift-b 30s ease-in-out infinite alternate;
+  }
+  .home-glow-c {
+    animation: home-drift-c 27s ease-in-out infinite alternate;
+  }
+  /* The gold star in the greeting wakes up once. */
+  .home-wake {
+    animation: home-wake 1100ms var(--ease-spring) 250ms backwards;
+  }
+}
+/* No ripple element is drawn when movement is off. */
+@media (prefers-reduced-motion: reduce) {
+  .home-ripple {
+    display: none;
+  }
+}
+
+@keyframes home-in {
+  from {
+    opacity: 0;
+    translate: 0 22px;
+    scale: 0.96;
+  }
+}
+@keyframes home-ripple {
+  from {
+    scale: 0;
+    opacity: 1;
+  }
+  to {
+    scale: 38;
+    opacity: 0;
+  }
+}
+@keyframes home-drift-a {
+  to {
+    translate: 6rem 2rem;
+  }
+}
+@keyframes home-drift-b {
+  to {
+    translate: -5rem 3rem;
+  }
+}
+@keyframes home-drift-c {
+  to {
+    translate: -4rem 4rem;
+  }
+}
+@keyframes home-wake {
+  from {
+    opacity: 0;
+    rotate: -90deg;
+    scale: 0.2;
+  }
+}

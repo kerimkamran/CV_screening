@@ -354,7 +354,7 @@ export function Results({
       {!data.aiActive && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.',
           )}
         </Notice>
       )}
@@ -369,7 +369,12 @@ export function Results({
             className={btnSecondary}
             aria-haspopup="dialog"
             aria-expanded={drawer}
-            onClick={() => setDrawer(true)}
+            onClick={() => {
+              // What the page said about the last change is now the drawer's to say.
+              setAdjNote('');
+              setAdjError('');
+              setDrawer(true);
+            }}
           >
             {t('Requirements')}
             {adj.changeCount > 0 ? ` ${t('({n} changed)', { n: adj.changeCount })}` : ''}
@@ -402,6 +407,11 @@ export function Results({
             setAdjError('');
           }}
         />
+      )}
+      {/* "Back to original" from the page notice: its answer is shown here, as the drawer is closed (SD-93). */}
+      {!drawer && adjError && <Notice kind="error">{adjError}</Notice>}
+      {!drawer && !adjError && adjNote && adj?.changeCount === 0 && (
+        <Notice kind="info">{adjNote}</Notice>
       )}
       {adj && adj.changeCount > 0 && (
         <Notice kind="info">
@@ -462,7 +472,7 @@ export function Results({
             <ul className="mt-1 max-h-48 list-disc overflow-auto pl-5">
               {skipped.map((x, i) => (
                 <li key={i}>
-                  {x.filename}: {x.reason}
+                  {x.filename}: {t(x.reason)}
                 </li>
               ))}
             </ul>

@@ -16,8 +16,8 @@ export const AZ_REPORT: Record<string, string> = {
     '{total} CV-dən {read} oxunub, bu hesabat yenilənəcək.',
   'Stopped at {read} of {total}. Files not read are listed under Data quality.':
     '{total} CV-dən {read} oxunduqdan sonra dayandırıldı. Oxunmayan fayllar “Məlumatın keyfiyyəti” bölməsində göstərilir.',
-  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.':
-    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu Admin → Süni intellekt modelləri bölməsində quraşdıra bilər.',
+  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.':
+    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu İdarəetmə → Süni intellekt modelləri bölməsində quraşdıra bilər.',
   'A shared link is offered when the scan is done. {read} of {total} read so far.':
     'Skan bitəndə paylaşım linki təklif olunur. İndiyədək {total} CV-dən {read} oxunub.',
   'No candidate has been scored yet, so there is nothing to share.':
@@ -49,8 +49,8 @@ export const AZ_REPORT: Record<string, string> = {
     'Heç bir namizədi qiymətləndirmək mümkün olmadı. Aşağıdakı “Oxunmayanlar” bölməsinə baxın.',
   'Showing all {n} scored': 'Hamısı göstərilir: {n} qiymətləndirilmiş namizəd',
   'Showing {top} of {n} scored': 'Göstərilir: {top} / {n} qiymətləndirilmiş namizəd',
-  'Show only the top {top}': 'Yalnız ilk {top} namizədi göstər',
-  'Show all {n}': 'Hamısını göstər ({n})',
+  'Show only the top {top}': 'Yalnız ilk {top} namizədi göstərin',
+  'Show all {n}': 'Hamısını göstərin ({n})',
   'Data quality': 'Məlumatın keyfiyyəti',
   'Every file was read.': 'Bütün fayllar oxunub.',
   'Not read ({n})': 'Oxunmayanlar ({n})',
@@ -81,8 +81,8 @@ export const AZ_REPORT: Record<string, string> = {
   'For: {requirement}': 'Tələb: {requirement}',
   'page {n}': 'səhifə {n}',
   'Not found in this CV. Searched for: {text}': 'Bu CV-də tapılmadı. Axtarılan: {text}',
-  'Hide details': 'Təfərrüatları gizlət',
-  'Show details': 'Təfərrüatları göstər',
+  'Hide details': 'Təfərrüatları gizlədin',
+  'Show details': 'Təfərrüatları göstərin',
 
   // Shared report
   'Preparing your report…': 'Hesabatınız hazırlanır…',
@@ -123,40 +123,40 @@ export const AZ_REPORT: Record<string, string> = {
   'Could not copy. Select the link and copy it by hand.':
     'Kopyalamaq mümkün olmadı. Linki seçib əl ilə kopyalayın.',
   'Share this report': 'Bu hesabatı paylaşın',
-  Close: 'Bağla',
-  'Share as a link': 'Link kimi paylaş',
+  Close: 'Bağlayın',
+  'Share as a link': 'Link kimi paylaşın',
   'A login-only link to a snapshot taken now. Only the people you name can open it.':
     'İndi çəkilmiş anlıq görüntüyə giriş tələb edən link. Yalnız adını çəkdiyiniz şəxslər aça bilər.',
   'The link is ready. Send it to the people you named; they sign in to open it.':
     'Link hazırdır. Onu adını çəkdiyiniz şəxslərə göndərin; açmaq üçün hesablarına daxil olacaqlar.',
   'Report link': 'Hesabat linki',
   Copied: 'Kopyalandı',
-  'Copy link': 'Linki kopyala',
-  'Share with someone else': 'Başqası ilə paylaş',
+  'Copy link': 'Linki kopyalayın',
+  'Share with someone else': 'Başqası ilə paylaşın',
   'Who can open it': 'Kim aça bilər',
   'People with an account. They must sign in.': 'Hesabı olan şəxslər. Daxil olmalıdırlar.',
   'Search by name or e-mail': 'Ad və ya e-poçtla axtarın',
   'Chosen people': 'Seçilmiş şəxslər',
-  'Remove {name}': '{name} adlı şəxsi sil',
+  'Remove {name}': '{name} adlı şəxsi silin',
   'People found': 'Tapılan şəxslər',
   'No one found.': 'Heç kim tapılmadı.',
   'Link works for': 'Linkin müddəti',
   '{n} days': '{n} gün',
   'Include real names, only for candidates you showed or shortlisted.':
-    'Həqiqi adları daxil et, yalnız göstərdiyiniz və ya qısa siyahıya saldığınız namizədlər üçün.',
+    'Həqiqi adları daxil edin, yalnız göstərdiyiniz və ya qısa siyahıya saldığınız namizədlər üçün.',
   'Real names will be visible to the people you choose.':
     'Həqiqi adlar seçdiyiniz şəxslərə görünəcək.',
-  'Include quotes from the CVs.': 'CV-lərdən sitatları daxil et.',
+  'Include quotes from the CVs.': 'CV-lərdən sitatları daxil edin.',
   'Quotes are text from CVs and count as personal data.':
     'Sitatlar CV-lərdən götürülmüş mətndir və şəxsi məlumat sayılır.',
   'Preparing…': 'Hazırlanır…',
-  'Create link': 'Link yarat',
+  'Create link': 'Link yaradın',
   'Shared so far': 'İndiyədək paylaşılanlar',
   'Snapshot of {date}': '{date} tarixli anlıq görüntü',
   'works until {date}': '{date} tarixinədək işləyir',
   expired: 'müddəti bitib',
   revoked: 'ləğv edilib',
-  Revoke: 'Ləğv et',
+  Revoke: 'Ləğv edin',
   'For {names}.': 'Kimlər üçün: {names}.',
   'no one': 'heç kim',
   'Real names included.': 'Həqiqi adlar daxildir.',

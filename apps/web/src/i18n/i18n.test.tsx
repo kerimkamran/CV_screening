@@ -6,12 +6,14 @@ import { Login } from '../pages/Login';
 import { applyLang, getLang, tr } from './index';
 import { CV_STATUS_LABEL, UPLOAD_CODE_MESSAGE } from '@cv/shared';
 import { AZ } from './az';
+import { AZ_ADMIN } from './az.admin';
 import { AZ_ASSISTANT } from './az.assistant';
 import { AZ_HOME } from './az.home';
 import { AZ_MONITORING } from './az.monitoring';
 import { AZ_POOL } from './az.pool';
 import { AZ_REPORT } from './az.report';
 import { AZ_RESULTS } from './az.results';
+import { AZ_SERVER } from './az.server';
 import { AZ_SHELL } from './az.shell';
 import { AZ_STAGE2 } from './az.stage2';
 
@@ -79,6 +81,8 @@ describe('Azerbaijani interface', () => {
       ['home', AZ_HOME],
       ['results', AZ_RESULTS],
       ['report', AZ_REPORT],
+      ['admin', AZ_ADMIN],
+      ['server', AZ_SERVER],
       ['assistant', AZ_ASSISTANT],
       ['monitoring', AZ_MONITORING],
       ['stage2', AZ_STAGE2],

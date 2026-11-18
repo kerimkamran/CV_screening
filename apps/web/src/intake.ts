@@ -224,8 +224,13 @@ export interface Run {
   items: RunItem[];
   /** A 401 paused the queue; `resumeRun` continues it. */
   paused: boolean;
+  /** Who was signed in when the 401 paused it: only that person's sign-in continues the queue. */
+  pausedFor?: string | null;
   startedAt: number;
 }
+
+/** The person signed in right now (set by `personSignedIn`). */
+let signedIn: string | null = null;
 
 const LANES = 3;
 const RETRY_AFTER_MS = 2000;
@@ -321,7 +326,8 @@ function pump(vacancyId: string) {
         await sendOne(vacancyId, next);
         set({ client: 'sent', error: '', file: null });
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) set({ client: 'waiting' }, { paused: true });
+        if (e instanceof ApiError && e.status === 401)
+          set({ client: 'waiting' }, { paused: true, pausedFor: signedIn });
         else set({ client: 'failed', error: errMsg(e) });
       }
       if (!runActive(live())) letScreenSleep();
@@ -380,10 +386,26 @@ export function resumeRun(vacancyId: string) {
   const run = runs.get(vacancyId);
   if (!run) return;
   run.paused = false;
+  run.pausedFor = null;
   touch(run);
   emitRuns();
   void holdScreenAwake();
   pump(vacancyId);
+  kickBatch(run.batchId);
+}
+
+/**
+ * A person is signed in (at the start, or again after a 401 ended the session). The files this tab
+ * still holds for them go on without being chosen again (SD-26); files held for another person are
+ * dropped, because they belong to that person's batch.
+ */
+export function personSignedIn(userId: string) {
+  signedIn = userId;
+  for (const run of [...runs.values()]) {
+    if (!run.paused) continue;
+    if (run.pausedFor && run.pausedFor !== userId) clearRun(run.vacancyId);
+    else resumeRun(run.vacancyId);
+  }
 }
 
 /** Put the files that failed in THIS tab back in the queue. */
@@ -505,6 +527,13 @@ interface Watch {
 const watches = new Map<string, Watch>();
 const VISIBLE_MS = 4000;
 const HIDDEN_MS = 15000;
+/**
+ * A batch that is settled but still has files that never arrived is looked at again now and then:
+ * the person (or another device) may choose those files and send them, and every open tab of that
+ * batch must follow without a reload (BP-10).
+ */
+const WAITING_VISIBLE_MS = 10000;
+const WAITING_HIDDEN_MS = 30000;
 
 function watchOf(batchId: string): Watch {
   let w = watches.get(batchId);
@@ -549,12 +578,13 @@ async function poll(batchId: string) {
   } finally {
     w.busy = false;
     w.listeners.forEach((l) => l());
+    const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
     if (w.refs > 0 && !w.final) {
+      w.timer = setTimeout(() => void poll(batchId), hidden ? HIDDEN_MS : VISIBLE_MS);
+    } else if (w.refs > 0 && (w.status?.counts.upload.notReceived ?? 0) > 0 && !w.error) {
       w.timer = setTimeout(
         () => void poll(batchId),
-        typeof document !== 'undefined' && document.visibilityState === 'hidden'
-          ? HIDDEN_MS
-          : VISIBLE_MS,
+        hidden ? WAITING_HIDDEN_MS : WAITING_VISIBLE_MS,
       );
     }
   }

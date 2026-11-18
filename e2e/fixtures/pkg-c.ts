@@ -18,6 +18,11 @@ export function T(lang: 'en' | 'az') {
     return vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s;
   };
 }
+/** Like T, for a vacancy's state: 'Open' as a state is 'Açıq' in Azerbaijani, not the button 'Açın' (SD-44). */
+export function S(lang: 'en' | 'az') {
+  const t = T(lang);
+  return (en: string) => (lang === 'az' && en === 'Open' ? 'Açıq' : t(en));
+}
 export const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ------------------------------------------------------------------ data

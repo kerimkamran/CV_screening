@@ -123,7 +123,9 @@ export async function occ(page: Page, opts: { overlay?: string } = {}): Promise<
         const ps = getComputedStyle(p);
         if (/(auto|scroll|hidden|clip)/.test(ps.overflow + ps.overflowY + ps.overflowX)) {
           const pr = p.getBoundingClientRect();
-          if (y < pr.top || y > pr.bottom || x < pr.left || x > pr.right) clipped = true;
+          // A control cut in half by the scroller's edge has its centre on the edge: clipped, not covered.
+          if (y < pr.top + 1 || y > pr.bottom - 1 || x < pr.left + 1 || x > pr.right - 1)
+            clipped = true;
         }
       }
       if (clipped) continue;

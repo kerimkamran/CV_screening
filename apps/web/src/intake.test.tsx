@@ -8,6 +8,7 @@ import {
   DEFAULT_LIMITS,
   matchOpenItems,
   resetIntakeForTests,
+  personSignedIn,
   startBatch,
   watchBatch,
   getRun,
@@ -78,6 +79,29 @@ describe('the check before sending (S2-FE7)', () => {
       'old.doc': 'old_word_format',
       'empty.pdf': 'empty',
       'huge.pdf': 'too_large',
+    });
+  });
+
+  it('accepts PDF, Word, text and Markdown files, in any letter case, and refuses the rest', () => {
+    const r = checkFiles(
+      [
+        file('a.pdf'),
+        file('b.DOCX'),
+        file('c.txt'),
+        file('d.md'),
+        file('E.MD'),
+        file('f.markdown'),
+      ],
+      DEFAULT_LIMITS,
+    );
+    const by = Object.fromEntries(r.added.map((x) => [x.name, x.problem?.code ?? 'ok']));
+    expect(by).toEqual({
+      'a.pdf': 'ok',
+      'b.DOCX': 'ok',
+      'c.txt': 'ok',
+      'd.md': 'ok',
+      'E.MD': 'ok',
+      'f.markdown': 'wrong_type', // only .md; the list on screen says so
     });
   });
 
@@ -213,6 +237,44 @@ describe('sending one file per request, three at a time (S2-FE7)', () => {
     await waitFor(() => expect(getRun('VID')!.paused).toBe(true));
     expect(getRun('VID')!.items.some((i) => i.client === 'failed')).toBe(false);
   });
+
+  it('continues a paused queue when the same person signs in again, and drops another person’s (SD-26)', async () => {
+    let signedAgain = false;
+    const sent: string[] = [];
+    vi.stubGlobal('fetch', async (u: string, init?: RequestInit) => {
+      const url = String(u);
+      const ok = (b: unknown, status = 200) =>
+        new Response(JSON.stringify(b), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url.endsWith('/upload-batches') && init?.method === 'POST') return ok(made(2));
+      if (url.includes('item=')) {
+        if (!signedAgain) return ok({ message: 'Sign in again' }, 401);
+        sent.push(url.split('item=')[1]!);
+        return ok({});
+      }
+      return ok({});
+    });
+    personSignedIn('U1');
+    await startBatch('VID', rows(2));
+    await waitFor(() => expect(getRun('VID')!.paused).toBe(true));
+    expect(getRun('VID')!.pausedFor).toBe('U1');
+    // Another person signs in on this tab: the held files are not theirs and are dropped.
+    personSignedIn('U2');
+    expect(getRun('VID')).toBeNull();
+    // The same person signs in again: the held files go up without being chosen again.
+    personSignedIn('U1');
+    await startBatch('VID', rows(2));
+    await waitFor(() => expect(getRun('VID')!.paused).toBe(true));
+    signedAgain = true;
+    personSignedIn('U1');
+    await waitFor(() =>
+      expect(getRun('VID')!.items.map((i) => i.client)).toEqual(['sent', 'sent']),
+    );
+    expect(sent.sort()).toEqual(['I0', 'I1']);
+    expect(getRun('VID')!.paused).toBe(false);
+  });
 });
 
 describe('the batch watcher (S2-FE8)', () => {
@@ -252,6 +314,58 @@ describe('the batch watcher (S2-FE8)', () => {
     await new Promise((r) => setTimeout(r, 60));
     expect(n).toBe(1);
     stop();
+  });
+
+  it('keeps looking, slowly, at a settled batch that still has files to send, and stops when they arrived (BP-10)', async () => {
+    let n = 0;
+    let missing = 2;
+    vi.stubGlobal('fetch', async () => {
+      n++;
+      return new Response(
+        JSON.stringify({
+          batch: {
+            id: 'B8',
+            vacancyId: 'V',
+            createdAt: '',
+            createdBy: 'x',
+            fileCount: 3,
+            mine: true,
+          },
+          lastReceivedAt: null,
+          counts: {
+            upload: {
+              total: 3,
+              received: 3 - missing,
+              notReceived: missing,
+              vacancyFull: 0,
+              rejected: 0,
+              duplicate: 0,
+            },
+            byStatus: { analyzing: 0, analyzed: 3 - missing, not_sent: missing },
+          },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const seen: number[] = [];
+      const stop = watchBatch('B8', (s) => seen.push(s.counts.upload.notReceived));
+      await waitFor(() => expect(n).toBe(1));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(n, 'not before the slow interval').toBe(1);
+      await vi.advanceTimersByTimeAsync(6000);
+      await waitFor(() => expect(n).toBe(2));
+      // Another device sends the files: the next look sees it, and the watching ends.
+      missing = 0;
+      await vi.advanceTimersByTimeAsync(11000);
+      await waitFor(() => expect(seen).toEqual([2, 2, 0]));
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(n, 'nothing left to wait for').toBe(3);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -492,7 +606,7 @@ describe('Results: one summary line and the skipped list (spec 6.1.4)', () => {
         return {
           body: {
             skipped: [
-              { filename: 'resumes.zip › photo.jpg', reason: 'Only PDF, DOCX and TXT files' },
+              { filename: 'resumes.zip › photo.jpg', reason: 'Only PDF, DOCX, TXT and MD files' },
               { filename: 'old.pdf', reason: 'Already uploaded for this vacancy' },
             ],
           },
@@ -505,7 +619,7 @@ describe('Results: one summary line and the skipped list (spec 6.1.4)', () => {
     expect(await screen.findByText(/2 skipped,/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'see which' }));
     expect(
-      screen.getByText(/resumes\.zip › photo\.jpg: Only PDF, DOCX and TXT files/),
+      screen.getByText(/resumes\.zip › photo\.jpg: Only PDF, DOCX, TXT and MD files/),
     ).toBeInTheDocument();
     expect(screen.getByText(/old\.pdf: Already uploaded for this vacancy/)).toBeInTheDocument();
   });

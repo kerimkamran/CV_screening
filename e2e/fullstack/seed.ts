@@ -1,6 +1,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { api, CONTROL, login, ROOT, tempPasswordFor, type Account, type AccountKey } from './stack';
+import { dirname } from 'node:path';
+import {
+  ACCOUNTS_FILE,
+  api,
+  CONTROL,
+  login,
+  tempPasswordFor,
+  type Account,
+  type AccountKey,
+} from './stack';
 
 /**
  * Global setup of the full-stack journeys (plan 2.4): the accounts, all with invented names, and
@@ -140,7 +148,6 @@ export default async function seed() {
   const act = await admin.put('/admin/ai/active', { modelId: models[0]!.id });
   if (act.status >= 300) throw new Error(`ai active: ${act.status} ${JSON.stringify(act.body)}`);
 
-  const dir = join(ROOT, 'e2e/test-results/uat');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'accounts.json'), JSON.stringify(out, null, 2));
+  mkdirSync(dirname(ACCOUNTS_FILE), { recursive: true });
+  writeFileSync(ACCOUNTS_FILE, JSON.stringify(out, null, 2));
 }

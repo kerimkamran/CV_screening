@@ -60,7 +60,8 @@ const putSchema = z.object({
 const skillSchema = z.object({
   label: z.string().trim().min(1).max(60),
   kind: z.enum(['tool', 'language', 'domain', 'certificate']),
-  aliases: z.array(z.string().trim().min(1).max(60)).min(1).max(20),
+  // A name alone is enough: the service reads the name itself as one way to write it (SX-07).
+  aliases: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   extends: z.string().trim().max(40).nullable().default(null),
 });
 const decideSchema = z.object({

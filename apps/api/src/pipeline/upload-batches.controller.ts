@@ -104,7 +104,7 @@ export class UploadBatchesController {
       limit: this.intake.maxCvs,
       maxFileMb: this.intake.maxFileBytes / 1024 / 1024,
       maxZipMb: this.intake.maxZipBytes / 1024 / 1024,
-      accepts: ['.pdf', '.docx', '.txt', '.zip'],
+      accepts: ['.pdf', '.docx', '.txt', '.md', '.zip'],
       latestBatch: latest
         ? {
             id: latest.id,

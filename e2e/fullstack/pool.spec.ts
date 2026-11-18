@@ -275,13 +275,13 @@ uat(
         } else if (who === 'admin') {
           await expect(
             page.getByText(
-              'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+              'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.',
             ),
           ).toBeVisible();
           await expect(page.getByText(name)).toHaveCount(0);
         } else {
           await expect(
-            page.getByRole('heading', { level: 1, name: 'Reports shared with me' }),
+            page.getByRole('heading', { level: 1, name: 'Shared with me' }),
           ).toBeVisible();
           await expect(page.getByText(name)).toHaveCount(0);
         }

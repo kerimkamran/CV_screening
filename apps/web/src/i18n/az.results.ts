@@ -40,8 +40,8 @@ export const AZ_RESULTS: Record<string, string> = {
   'No CVs yet. Start a screening from': 'Hələ CV yoxdur. Skanı buradan başladın:',
   'New screening': 'Yeni skan',
   ', or upload on the Table tab.': ', yaxud Cədvəl bölməsindən yükləyin.',
-  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.':
-    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu Admin → Süni intellekt modelləri bölməsində quraşdıra bilər.',
+  'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.':
+    'Aktiv süni intellekt provayderi yoxdur, ona görə CV-lər növbədə gözləyir. Administrator bunu İdarəetmə → Süni intellekt modelləri bölməsində quraşdıra bilər.',
   'Your constellation': 'Sizin bürcünüz',
   'Select a star. Brighter means a better fit.':
     'Ulduz seçin. Daha parlaq ulduz daha yaxşı uyğunluq deməkdir.',
@@ -81,7 +81,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'Names are hidden to keep the first look about skills. Show all?':
     'İlk baxış bacarıqlara yönəlsin deyə adlar gizlədilib. Hamısı göstərilsin?',
   'Show all': 'Hamısını göstərin',
-  Cancel: 'Ləğv et',
+  Cancel: 'Ləğv edin',
   'Names are hidden on screen, not removed from the file.':
     'Adlar yalnız ekranda gizlədilir, fayldan silinmir.',
   'Want a first look about skills only?':
@@ -206,7 +206,7 @@ export const AZ_RESULTS: Record<string, string> = {
   'No changes since the first scan.': 'İlk skandan bəri dəyişiklik yoxdur.',
   '{n} change since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
   '{n} changes since the first scan.': 'İlk skandan bəri {n} dəyişiklik.',
-  Close: 'Bağla',
+  Close: 'Bağlayın',
   'Change what counts and the list re-ranks. No CV is read again. A missing must-have lowers the match; it never hides anyone.':
     'Nəyin vacib olduğunu dəyişin, siyahı yenidən sıralanacaq. Heç bir CV təkrar oxunmur. Çatışmayan vacib tələb uyğunluğu azaldır, amma heç kimi gizlətmir.',
   'changed (was {kind})': 'dəyişdirilib (əvvəl: {kind})',

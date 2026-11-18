@@ -1,7 +1,10 @@
 import type { Page } from '@playwright/test';
 import { DID, ME, mockApi, openReview, ROWS } from '../fixtures/api';
+import { ADMIN_ANSWERS, MFA_OFF, openWith } from '../fixtures/pkg-a';
+import { ADMIN_ME } from '../fixtures/pkg-b';
 import { resultsApi, DVID } from '../fixtures/pkg-d';
 import { vacApi, vrow, vview } from '../fixtures/pkg-c';
+import { ulidOf } from '../fixtures/files';
 import { englishOnScreen, press, SENAI_H, T } from '../fixtures/pkg-h';
 import { expect, STD, test, uat } from '../ux/test';
 
@@ -263,6 +266,203 @@ uat(
     await ux.check('vacancy tabs', [...STD, 'AZ']);
     void ME;
     void ROWS;
+  },
+);
+
+// ---------------------------------------------------------------- I18-04
+
+/** Data that stays as entered on the administration pages: people, e-mails, model ids, matter text. */
+const ADMIN_DATA = [
+  /\S+@\S+/,
+  /fake-?\d*/i,
+  /Fake AI/i,
+  /Other AI/i,
+  /claude-[\w-]+/,
+  /Anthropic/,
+  /Nigar Quliyeva|Tural Hasanli|Sabina Rzayeva|Admin Test|Ayla Karimova|Ayten|Ramin|Ilkin/,
+  'Network Engineer',
+  /Core network/,
+  /\bAPI\b|\bAI\b|\bCV\b|\bPDF\b|\bZIP\b/,
+];
+
+uat(
+  'I18-04',
+  'AZ completeness of Admin, Retention, Monitoring and account pages',
+  { on: ['D', 'A'], timeout: 120_000 },
+  async ({ page, ux, meta }) => {
+    test.skip(
+      meta.lang !== 'az',
+      'The completeness check reads the Azerbaijani screens (the EN project has nothing to compare).',
+    );
+    ux.allow(/404|Failed to load resource/);
+    const t = T('az');
+    const table = {
+      ...ADMIN_ANSWERS,
+      'GET /auth/mfa': MFA_OFF,
+      'GET /reports/mine': { reports: [] },
+      // The SenAI monitoring card: its own request, with the paused-reader notice showing.
+      'GET /admin/assistant/monitoring': {
+        days: 30,
+        total: 40,
+        refused: 2,
+        readBy: { rules: 30, model: 10 },
+        unknown: 3,
+        safeMode: 1,
+        byKind: [{ name: 'explain', n: 20 }],
+        byIntent: [{ name: 'compare', n: 5 }],
+        flags: [{ name: 'stale', n: 2 }],
+        breaker: { open: true, until: null },
+      },
+    };
+    const clean = (where: string) => noEnglish(page, where, ADMIN_DATA);
+    // 1) Each administration tab as an administrator.
+    for (const [hash, h1] of [
+      ['#/admin', t('Administration')],
+      ['#/admin/ai', t('Administration')],
+      ['#/admin/assistant', t('Administration')],
+      ['#/admin/monitoring', t('Fairness monitoring')],
+      ['#/admin/retention', t('Administration')],
+    ] as const) {
+      await openWith(page, hash, { me: ADMIN_ME, table });
+      await expect(page.getByRole('heading', { level: 1, name: h1 })).toBeVisible();
+      await page.waitForTimeout(600); // the cards fill in after their own requests
+      await clean(`${hash} as administrator`);
+      await ux.check(`admin ${hash}`, [...STD, 'AZ']);
+    }
+    // The wording the plan names.
+    await openWith(page, '#/admin/assistant', { me: ADMIN_ME, table });
+    for (const en of [
+      'Turn the assistant on',
+      'Test connection',
+      'Words the assistant knows',
+      'What was sent to the model',
+    ])
+      await expect
+        .soft(page.getByText(t(en), { exact: false }).first(), `'${en}' in Azerbaijani`)
+        .toBeVisible();
+    await openWith(page, '#/admin/retention', { me: ADMIN_ME, table });
+    await expect
+      .soft(page.getByText(t('Erase expired files now')).first(), "'Erase expired files now' in AZ")
+      .toBeAttached();
+    // 2) Monitoring as governance, the account pages and the forced password change.
+    await openWith(page, '#/admin/monitoring', { me: { roles: ['GOVERNANCE'] }, table });
+    await expect(
+      page.getByRole('heading', { level: 1, name: t('Fairness monitoring') }),
+    ).toBeVisible();
+    await page.waitForTimeout(600);
+    await clean('#/admin/monitoring as governance');
+    for (const hash of ['#/password', '#/security']) {
+      await openWith(page, hash, { me: { roles: ['TA_PARTNER'] }, table });
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.waitForTimeout(400);
+      await clean(hash);
+      await ux.check(`account ${hash}`, [...STD, 'AZ']);
+    }
+    await openWith(page, '#/', {
+      me: { roles: ['TA_PARTNER'], mustChangePassword: true },
+      table,
+    });
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await clean('forced password change');
+    await ux.check('forced password change', [...STD, 'AZ']);
+  },
+);
+
+// ---------------------------------------------------------------- I18-07
+
+uat(
+  'I18-07',
+  'Dates, times and counts in AZ',
+  { on: ['D'], timeout: 90_000 },
+  async ({ page, ux, meta }) => {
+    ux.allow(/404|Failed to load resource/);
+    const t = T(meta.lang);
+    // The browser says the other language: the screen must follow the UI language, not the browser.
+    const other = meta.lang === 'az' ? 'en-US' : 'az-AZ';
+    await page.addInitScript((l) => {
+      Object.defineProperty(navigator, 'language', { get: () => l });
+      Object.defineProperty(navigator, 'languages', { get: () => [l] });
+    }, other);
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+    const MIN = 60_000;
+    const ages = [
+      30_000,
+      5 * MIN,
+      3 * 60 * MIN,
+      26 * 60 * MIN,
+      5 * 24 * 60 * MIN,
+      40 * 24 * 60 * MIN,
+    ];
+    const titles = ages.map((_, i) => `Age row ${i + 1}`);
+    await vacApi(page, {
+      list: ages.map((a, i) =>
+        vrow({
+          id: ulidOf('AGE', i + 1),
+          title: titles[i],
+          updatedAt: ago(a),
+          documents: [0, 1, 2, 21, 1, 3][i],
+          analyzed: [0, 1, 2, 21, 1, 3][i],
+        }),
+      ),
+      views: [vview()],
+    });
+    await page.goto('/#/vacancies');
+    const li = (i: number) =>
+      page
+        .getByRole('listitem')
+        .filter({ has: page.getByRole('link', { name: titles[i]!, exact: true }) });
+    await expect(li(5)).toBeVisible();
+    const cells = async (i: number) =>
+      (await li(i).locator('> span').allInnerTexts()).map((x) => x.trim());
+    const last = async (i: number) => (await cells(i)).at(-1) ?? '';
+    // 1) Relative times use the words of the UI language.
+    expect.soft(await last(0), 'just now').toBe(t('just now'));
+    expect.soft(await last(1), '5 minutes').toBe(t('{n} min ago', { n: 5 }));
+    expect.soft(await last(2), '3 hours').toBe(t('{n} h ago', { n: 3 }));
+    expect.soft(await last(3), 'a day').toBe(t('yesterday'));
+    expect.soft(await last(4), '5 days').toBe(t('{n} days ago', { n: 5 }));
+    // 2) Older than 14 days: a date in the UI language, not in the browser's.
+    const old = await last(5);
+    if (meta.lang === 'az')
+      expect
+        .soft(old, 'Azerbaijani month name')
+        .toMatch(/^\d{1,2} (yan|fev|mar|apr|may|iyn|iyl|avq|sen|okt|noy|dek) \d{4}$/);
+    else expect.soft(old, 'English (en-GB) date').toMatch(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
+    // 3) Counts read as they should: no '1 CVs', 'of' pairs in the UI language, one number format.
+    const text = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+    expect.soft(text, "no '1 CVs'").not.toMatch(/\b1 CVs\b/);
+    expect.soft(text, 'the 21 of 21 count').toContain(t('{a} of {b}', { a: 21, b: 21 }));
+    expect.soft(text, 'no thousands separators in small counts').not.toMatch(/\d,\d{3}\b/);
+    await ux.check('times and counts', [...STD, 'AZ']);
+    // 4) The Reports page: dates of when a report was shared.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await vacApi(page, {
+      views: [vview()],
+      extra: async (route, url) =>
+        url.pathname === '/reports/mine'
+          ? route
+              .fulfill({
+                json: {
+                  reports: [
+                    {
+                      id: ulidOf('REP', 1),
+                      title: 'Network Engineer report',
+                      sharedBy: 'Aysel Mammadova',
+                      sharedAt: '2026-10-30T09:00:00Z',
+                      expiresAt: '2026-11-30T09:00:00Z',
+                    },
+                  ],
+                },
+              })
+              .then(() => true)
+          : false,
+    });
+    await page.goto('/#/reports');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    const rep = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+    if (meta.lang === 'az') expect.soft(rep, 'Azerbaijani month names').toMatch(/oktyabr|noyabr/);
+    else expect.soft(rep, 'English month names').toMatch(/October|Oct|30\/10|10\/30/);
+    expect.soft(rep).not.toMatch(/\bM1[0-2]\b/); // a browser without data prints "M11" for a month
   },
 );
 

@@ -13,26 +13,41 @@ import {
 export function LanguageSwitch({ signedIn }: { signedIn: boolean }) {
   const t = useT();
   const lang = useLang();
-  function choose(next: Lang) {
+  const [failed, setFailed] = useState(false);
+  async function choose(next: Lang) {
     applyLang(next);
-    if (signedIn) void api.put('/me/preferences', { language: next }).catch(() => undefined);
+    if (!signedIn) return;
+    // The language applies at once; when the account could not keep it, say so (SD-133).
+    try {
+      await api.put('/me/preferences', { language: next });
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
   }
   return (
-    <label className="flex items-center gap-1 text-sm">
-      <span className="sr-only">{t('Language')}</span>
-      <select
-        aria-label={t('Language')}
-        className="rounded border border-edge bg-card px-1.5 py-0.5 text-ink pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-        value={lang}
-        onChange={(e) => choose(e.target.value as Lang)}
-      >
-        {LANGS.map((l) => (
-          <option key={l} value={l} lang={l}>
-            {LANG_NAME[l]}
-          </option>
-        ))}
-      </select>
-    </label>
+    <>
+      <label className="flex items-center gap-1 text-sm">
+        <span className="sr-only">{t('Language')}</span>
+        <select
+          aria-label={t('Language')}
+          className="rounded border border-edge bg-card px-1.5 py-0.5 text-ink pointer-coarse:min-h-11 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+          value={lang}
+          onChange={(e) => void choose(e.target.value as Lang)}
+        >
+          {LANGS.map((l) => (
+            <option key={l} value={l} lang={l}>
+              {LANG_NAME[l]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {failed && (
+        <p role="alert" className="basis-full text-xs text-warn-text">
+          {t('Could not save your choice. It applies on this device only for now.')}
+        </p>
+      )}
+    </>
   );
 }
 

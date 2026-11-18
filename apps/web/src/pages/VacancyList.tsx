@@ -3,7 +3,15 @@ import type { VacancyStatus } from '@cv/shared';
 import { api } from '../api';
 import { go } from '../route';
 import { tr, useT } from '../i18n';
-import { ago, MARK_STYLE, markName, STATUS_STYLE, statusName, type VacancyListItem } from '../pool';
+import {
+  ago,
+  MARK_STYLE,
+  markName,
+  STATUS_STYLE,
+  stateWord,
+  statusName,
+  type VacancyListItem,
+} from '../pool';
 import { btnPrimary, errMsg, input, Notice, UndoBar, useDetailsMenu, useUndoToast } from '../ui';
 
 /**
@@ -221,7 +229,7 @@ export function VacancyList({ canCreate }: { canCreate: boolean }) {
               onClick={() => setChip(c)}
               className={`rounded-full border px-3 py-1 text-sm focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${chip === c ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-card text-ink hover:bg-hover'}`}
             >
-              {t(label)}
+              {stateWord(label)}
             </button>
           ))}
         </div>

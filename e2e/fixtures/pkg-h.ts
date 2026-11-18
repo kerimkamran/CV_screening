@@ -157,11 +157,16 @@ export async function perfProbe(page: Page) {
       __perf: {
         long: { start: number; dur: number }[];
         cls: number;
+        total: number;
         lcp: number;
         shifts: { at: number; value: number; nodes: string[] }[];
       };
     };
-    w.__perf = { long: [], cls: 0, lcp: 0, shifts: [] };
+    w.__perf = { long: [], cls: 0, total: 0, lcp: 0, shifts: [] };
+    // Cumulative layout shift as the web defines it: the worst burst of shifts, where a burst ends
+    // after a second without one or after five seconds. A long walk through the app would otherwise
+    // add up shifts that are minutes apart. `total` keeps the plain sum for the log.
+    let burst = { value: 0, first: 0, last: 0 };
     try {
       new PerformanceObserver((l) => {
         for (const e of l.getEntries())
@@ -178,7 +183,12 @@ export async function perfProbe(page: Page) {
           }[];
         })[])
           if (!e.hadRecentInput) {
-            w.__perf.cls += e.value;
+            burst =
+              burst.value && e.startTime - burst.last < 1000 && e.startTime - burst.first < 5000
+                ? { ...burst, value: burst.value + e.value, last: e.startTime }
+                : { value: e.value, first: e.startTime, last: e.startTime };
+            w.__perf.cls = Math.max(w.__perf.cls, burst.value);
+            w.__perf.total += e.value;
             w.__perf.shifts.push({
               at: Math.round(e.startTime),
               value: Math.round(e.value * 1000) / 1000,
@@ -207,6 +217,7 @@ export async function perfProbe(page: Page) {
 export type Perf = {
   long: { start: number; dur: number }[];
   cls: number;
+  total: number;
   lcp: number;
   shifts: { at: number; value: number; nodes: string[] }[];
 };

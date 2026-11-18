@@ -16,6 +16,7 @@ import {
   vacApi,
   vrow,
   vview,
+  S,
 } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
 import { appDay } from '../fixtures/dates';
@@ -100,7 +101,7 @@ uat(
     const status = ['Draft', 'Open', 'On hold', 'Closed', 'Archived', 'Open'];
     for (let i = 0; i < 6; i++) {
       const c = await cells(li(i));
-      expect.soft(c[1], `row ${i + 1} status`).toBe(t(status[i]!));
+      expect.soft(c[1], `row ${i + 1} status`).toBe(S(meta.lang)(status[i]!));
       expect.soft(c[5], `row ${i + 1} owner`).toBe(OWNER.name);
     }
     // The archived row: a grey badge.
@@ -285,7 +286,7 @@ uat(
     ];
     for (const [label, params] of want) {
       const before = gets().length;
-      await group.getByRole('button', { name: t(label), exact: true }).click();
+      await group.getByRole('button', { name: S(meta.lang)(label), exact: true }).click();
       await expect
         .poll(() => gets().length, { message: `a request for ${label}` })
         .toBeGreaterThan(before);
@@ -311,7 +312,7 @@ uat(
       const labels = await group.getByRole('button').allInnerTexts();
       for (const [i, en] of ['All', 'Draft', 'Open', 'On hold', 'Closed', 'Archived'].entries())
         expect
-          .soft(labels[i] !== en && labels[i] === t(en), `chip ${en} in Azerbaijani`)
+          .soft(labels[i] !== en && labels[i] === S(meta.lang)(en), `chip ${en} in Azerbaijani`)
           .toBe(true);
     }
   },
@@ -346,7 +347,7 @@ uat(
     // The chip is part of what is remembered (step 6 expects it to return to All).
     await page
       .getByRole('group', { name: t('Status') })
-      .getByRole('button', { name: t('Open'), exact: true })
+      .getByRole('button', { name: S(meta.lang)('Open'), exact: true })
       .click();
     await expect
       .poll(() => times.filter((x) => /status=open/.test(x.url)).length)
@@ -387,7 +388,7 @@ uat(
           page.getByRole('group', { name: t('Status') }).locator('[aria-pressed=true]'),
           `${when}: chip`,
         )
-        .toHaveText(t('Open'));
+        .toHaveText(S(meta.lang)('Open'));
       await expect.soft(search, `${when}: search`).toHaveValue('net');
       await expect.soft(page.getByLabel(t('Sort by')), `${when}: sort`).toHaveValue('title');
     };
@@ -693,7 +694,7 @@ uat(
     });
     const header = async () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Network Engineer' })).toBeVisible();
-      await expect.soft(page.locator('h1 + span')).toHaveText(t('Open'));
+      await expect.soft(page.locator('h1 + span')).toHaveText(S(meta.lang)('Open'));
       await expect
         .soft(
           page.getByText(`Network · Bakı · ${t('Owner: {name}', { name: OWNER.name })}`, {

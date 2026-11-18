@@ -31,8 +31,12 @@ export type AccountKey =
   | 'viewer'
   | 'mustChange';
 
+/** Where the seeded accounts are written; a second stack (isolated runs) keeps its own file. */
+export const ACCOUNTS_FILE =
+  process.env.UAT_ACCOUNTS_FILE ?? join(ROOT, 'e2e/test-results/uat/accounts.json');
+
 export function accounts(): Record<AccountKey, Account> {
-  return JSON.parse(readFileSync(join(ROOT, 'e2e/test-results/uat/accounts.json'), 'utf8'));
+  return JSON.parse(readFileSync(ACCOUNTS_FILE, 'utf8'));
 }
 
 export interface Res<T = any> {
@@ -94,7 +98,8 @@ export async function login(a: Pick<Account, 'email' | 'password'>): Promise<str
 }
 
 /** Open the app signed in as this person (the token lives in this tab, as after a real sign-in). */
-export async function openAs(page: Page, a: Account, hash = '#/') {
+/** The vacancy list is the working page; `#/` is Home (the menu) and is opened by name. */
+export async function openAs(page: Page, a: Account, hash = '#/vacancies') {
   const token = await login(a);
   await page.addInitScript((t) => {
     if (!sessionStorage.getItem('uat-token-set')) {
@@ -124,10 +129,16 @@ const control = async <T = any>(path: string, body?: unknown): Promise<T> => {
 export const outbox = () => control<{ to: string; subject?: string; text: string }[]>('/outbox');
 export const clearOutbox = () => control('/outbox/clear', {});
 export const modelCalls = () =>
-  control<{ system: string; user: string; url: string }[]>('/model-calls');
+  control<{ system: string; user: string; url: string; model?: string }[]>('/model-calls');
 export const clearModelCalls = () => control('/model-calls/clear', {});
 export const setAi = (mode: 'scripted' | 'fail' | 'slow', delayMs = 0) =>
   control('/ai', { mode, delayMs });
+/** SenAI's question reader answers with a typed query (true) or with text that is not JSON (false, the default). */
+export const setReader = (on: boolean) => control('/ai', { reader: on });
+/** CVs containing one of these texts are refused by the fake AI (an empty list ends it). */
+export const setFailMarkers = (markers: string[]) => control('/ai', { failMarkers: markers });
+/** Hold every model call until released (CVs stay "being read"); `false` lets them all go. */
+export const holdAi = (on: boolean) => control('/ai', { hold: on });
 /** Wait until the screening queue is empty. */
 export const drain = () => control('/drain', {});
 
@@ -203,6 +214,40 @@ export async function screenedVacancy(
     [id],
   );
   return { id, title, documents: docs };
+}
+
+/**
+ * Grows a vacancy to `total` CVs by cloning its first three (made through the app and analyzed by
+ * the fake AI) in SQL, the way apps/api/src/pipeline/volume.integration.spec.ts does. Owner SQL, for
+ * the volume cases only; every person is invented.
+ */
+export async function growVacancy(vacancyId: string, total: number) {
+  const extra = total - 3;
+  await db(
+    `INSERT INTO cv_document (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, parse_status,
+                             uploaded_by, uploaded_at, page_starts)
+     SELECT upper(substr(md5('d' || g::text || $1), 1, 26)), c.vacancy_id, 'Clone_' || g || '.txt', c.mime,
+            c.size_bytes, encode(sha256(('c' || g::text || $1)::bytea), 'hex'), c.content, c.text,
+            c.parse_status, c.uploaded_by, c.uploaded_at + (g || ' seconds')::interval, c.page_starts
+       FROM generate_series(1, $2::int) g
+       JOIN LATERAL (SELECT * FROM cv_document WHERE vacancy_id = $1 AND filename NOT LIKE 'Clone_%'
+                      ORDER BY id OFFSET (g % 3) LIMIT 1) c ON true`,
+    [vacancyId, extra],
+  );
+  await db(
+    `INSERT INTO screening (id, document_id, requirement_set_id, state, candidate_name, candidate_email, summary,
+                            knockout, knockout_triggered, injection_suspected, score, breakdown, band,
+                            ai_provider, ai_model, created_at, started_at, completed_at)
+     SELECT upper(substr(md5('s' || g::text || $1), 1, 26)), upper(substr(md5('d' || g::text || $1), 1, 26)),
+            s.requirement_set_id, s.state, s.candidate_name || ' ' || g, NULL, s.summary, s.knockout,
+            s.knockout_triggered, s.injection_suspected, LEAST(100, GREATEST(0, s.score + (g % 9) - 4)),
+            s.breakdown, s.band, s.ai_provider, s.ai_model, s.created_at, s.started_at, s.completed_at
+       FROM generate_series(1, $2::int) g
+       JOIN LATERAL (SELECT sc.* FROM screening sc JOIN cv_document d ON d.id = sc.document_id
+                      WHERE d.vacancy_id = $1 AND d.filename NOT LIKE 'Clone_%'
+                      ORDER BY sc.id OFFSET (g % 3) LIMIT 1) s ON true`,
+    [vacancyId, extra],
+  );
 }
 
 /** The invented resumes as upload files. */

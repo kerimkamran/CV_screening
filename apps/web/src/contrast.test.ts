@@ -68,6 +68,13 @@ const PAIRS: [string, string][] = [
   ['warn-ink', 'warn'],
   ['err-ink', 'err'],
   ['cafe-chalk', 'cafe-board'], // the chalk board in the waiting scene (S2-FE11)
+  // Home tiles: text on each tonal container, and the glyph on its strong disc (November 2026)
+  ...['blue', 'green', 'amber', 'violet', 'teal', 'slate'].flatMap((h): [string, string][] => [
+    [`t-${h}-ink`, `t-${h}`],
+    [`t-${h}-on-icon`, `t-${h}-icon`],
+  ]),
+  ['on-accent', 't-lead-from'],
+  ['on-accent', 't-lead-to'],
 ];
 
 describe.each(Object.entries(THEMES))('contrast on the %s background', (_name, t) => {

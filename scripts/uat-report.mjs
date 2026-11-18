@@ -74,7 +74,9 @@ function walk(suite, file) {
       const status =
         t.status === 'flaky' ? 'passed' : last.status === 'passed' ? 'passed' : 'failed';
       // One case can have several tests (a second scenario): each title is judged on its own.
-      const key = `${m[1]}|${t.projectName}|${spec.title}`;
+      // Older runs named the projects 'D-en', newer ones 'D-EN': one project, so the newest run wins.
+      const project = t.projectName.replace(/-(en|az)$/i, (x) => x.toUpperCase());
+      const key = `${m[1]}|${project}|${spec.title}`;
       const at = last.startTime ?? '';
       const prev = latest.get(key);
       if (prev && prev.at > at) continue;

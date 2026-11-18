@@ -12,8 +12,9 @@ import {
 } from './api';
 import { LanguageSwitch } from './Appearance';
 import { applyLang, tr, useT, type Lang } from './i18n';
-import { keepPoolThread, rememberUser } from './assistant';
-import { CandidatePool, CvReview } from './pages/lazy';
+import { keepPoolThread, rememberUser, useAssistantConfig } from './assistant';
+import { personSignedIn } from './intake';
+import { CandidatePool, CvReview, Home } from './pages/lazy';
 import { ChangePassword, Login, SetPassword } from './pages/Login';
 import { Brand, BRAND_FULL } from './brand';
 import { VacancyList } from './pages/VacancyList';
@@ -60,11 +61,13 @@ const isLang = (v: unknown): v is Lang => v === 'en' || v === 'az';
 
 function AdminNav({ route }: { route: string }) {
   const t = useT();
+  // The assistant's tab carries its name (the product name until it is renamed), like its panels do.
+  const assistantName = useAssistantConfig()?.name ?? 'SenAI';
   const tabs: [string, string][] = [
     ['/admin', 'Users'],
     ['/admin/ai', 'AI models'],
-    ['/admin/assistant', 'Assistant'],
-    ['/admin/monitoring', 'Monitoring'],
+    ['/admin/assistant', '{name}'],
+    ['/admin/monitoring', 'Fairness monitoring'],
     ['/admin/retention', 'Data retention'],
   ];
   return (
@@ -75,7 +78,7 @@ function AdminNav({ route }: { route: string }) {
           className={`rounded px-3 py-1.5 ${route === href ? 'bg-accent text-on-accent' : 'bg-card border'}`}
           href={`#${href}`}
         >
-          {t(label)}
+          {t(label, { name: assistantName })}
         </a>
       ))}
     </nav>
@@ -144,6 +147,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
       const m = await api.get<Me>('/me');
       setMe(m);
       rememberUser(m.userId);
+      personSignedIn(m.userId);
       applyBackground(isBackground(m.background) ? m.background : null);
       // A saved language follows the person across devices; none saved follows the browser.
       if (isLang(m.language)) applyLang(m.language);
@@ -248,6 +252,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
   else if (/^\/reports\/[0-9A-Z]{26}$/.test(route))
     body = <SharedReport id={route.split('/')[2]!} key={route} />;
   else if (route === '/reports') body = <SharedList />;
+  else if (route === '/' && (isTa || isAdmin || isGov))
+    // Home: the menu of what this person can do (design, November 2026).
+    body = <Home me={me} isTa={isTa} isAdmin={isAdmin} isGov={isGov} />;
   else if (route === '/admin/monitoring' && (isAdmin || isGov))
     body = isAdmin ? (
       <div className="space-y-4">
@@ -292,7 +299,7 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     body = (
       <Notice kind="info">
         {t(
-          'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
+          'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.',
         )}
       </Notice>
     );

@@ -1,5 +1,6 @@
+import { stepNow, totp } from '../fixtures/pkg-a';
 import { ENDED } from '../fixtures/pkg-b';
-import { expect, test, uat } from '../ux/test';
+import { expect, STD, uat } from '../ux/test';
 import {
   accounts,
   api,
@@ -117,34 +118,61 @@ async function fresh(p: import('@playwright/test').Page) {
   await p.reload();
 }
 
-const blocked: [string, string, string][] = [
-  [
-    'AD-06',
-    'Reset two-step for someone who lost the phone',
-    'Not built: P2, outside the time budget of package B',
-  ],
-  [
-    'AD-12',
-    'AI models for real: add the fake company, switch the active model, the key never reaches the browser',
-    'Blocked: switching and removing the active screening model is a global change that stops screening for every package running on the shared L2 server (no model active → uploads wait); needs an exclusive L2 run',
-  ],
-  [
-    'AD-19',
-    'Data retention for real: preview, hold, erase and certificate',
-    'Not built: needs the global retention period set to 30 days and a real erase run on the shared database; outside the time budget of package B (run it alone)',
-  ],
-  [
-    'AD-21',
-    'First administrator from the environment: created once, must change the password, never reset by a restart',
-    'Blocked: needs an empty database and API restarts; the shared L2 server must not be restarted',
-  ],
-  [
-    'AD-22',
-    'The last active administrator can never be removed, also by two admins at the same moment',
-    'Blocked: revoking ADMIN from the seeded admin/admin+TA accounts would break every other package; needs an exclusive database',
-  ],
-];
-for (const [id, title, why] of blocked)
-  uat(id, title, { on: ['D'], langs: 'EN' }, async () => {
-    test.skip(true, why);
-  });
+uat(
+  'AD-06',
+  'Reset two-step for someone who lost the phone',
+  { on: ['D'], langs: 'EN' },
+  async ({ page, ux }) => {
+    const acc = accounts();
+    const rec = await freshAccount('TA_PARTNER', {
+      name: `Lost Phone ${Date.now().toString(36)}`,
+    });
+    // The recruiter has two-step on (set up through the API, as the Security page does).
+    const rToken = await login(rec);
+    const setup = await api(rToken).post('/auth/mfa/setup');
+    expect(setup.status).toBe(200);
+    const en = await api(rToken).post('/auth/mfa/enable', {
+      code: totp(setup.body.secret, stepNow()),
+    });
+    expect(en.status).toBe(200);
+
+    await openAs(page, acc.admin, '#/admin');
+    const row = page.getByRole('row').filter({ hasText: rec.email });
+    // 1) The row shows the marker; the button explains itself.
+    await expect(row).toContainText('· two-step on');
+    const reset = row.getByRole('button', { name: 'Reset two-step', exact: true });
+    await expect(reset).toHaveAttribute(
+      'title',
+      'For someone who lost their phone and recovery codes',
+    );
+    await ux.check('two-step on', [...STD, 'ERR']);
+    // 2) Press it and confirm in the page's own box.
+    await reset.click();
+    const box = page.getByRole('alertdialog', { name: 'Reset two-step' });
+    await expect(box).toContainText(rec.displayName);
+    await box.getByRole('button', { name: 'Reset two-step', exact: true }).click();
+    await expect(row).not.toContainText('· two-step on');
+    await expect(row.getByRole('button', { name: 'Reset two-step' })).toHaveCount(0);
+    await ux.check('reset done', [...STD, 'ERR']);
+    // The reset is audited, and the account's old sessions stop working.
+    const audited = await db<{ n: number }>(
+      `SELECT count(*)::int AS n FROM audit_event WHERE action = 'auth.mfa_reset' AND entity_id = $1`,
+      [rec.userId],
+    );
+    expect(audited[0]!.n).toBe(1);
+    expect((await api(rToken).get('/me')).status).toBe(401);
+    // 3) The recruiter signs in with the password alone: no code asked.
+    const rToken2 = await login(rec);
+    expect((await api(rToken2).get('/auth/mfa')).body.enabled).toBe(false);
+    // 4) With the recruiter's own token the same call is refused and recorded.
+    const since = new Date(Date.now() - 1000).toISOString();
+    const denied = await api(rToken2).post(`/admin/users/${rec.userId}/mfa-reset`);
+    expect(denied.status).toBe(403);
+    const rows = await db<{ m: string; p: string }>(
+      `SELECT after->>'method' AS m, after->>'resource' AS p FROM audit_event
+        WHERE action = 'access.denied' AND actor_id = $1 AND occurred_at >= $2`,
+      [rec.userId, since],
+    );
+    expect(rows.map((r) => `${r.m} ${r.p}`)).toEqual([`POST /admin/users/${rec.userId}/mfa-reset`]);
+  },
+);

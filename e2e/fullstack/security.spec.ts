@@ -6,7 +6,7 @@ import pg from 'pg';
 import { PDF } from '../fixtures/api';
 import { FILES } from '../fixtures/files';
 import { wordsB } from '../fixtures/pkg-b';
-import { expect, test, uat } from '../ux/test';
+import { expect, uat } from '../ux/test';
 import {
   accounts,
   adminApi,
@@ -197,17 +197,6 @@ uat(
     expect(loaded, 'the app must not render inside a foreign frame').toBe(false);
     ux.allow(/frame-ancestors|Refused to frame/);
     flush();
-  },
-);
-
-uat(
-  'SEC-06',
-  'A token past its lifetime ends the session; refresh does not lengthen it',
-  { on: ['D'], langs: 'EN' },
-  async () => {
-    test_skip(
-      'Blocked: needs its own API process started with LOCAL_SESSION_SECONDS=300 and MAX_TOKEN_LIFETIME_SECONDS=60; the shared L2 server (4320) must not be restarted and no other server may be started for this package.',
-    );
   },
 );
 
@@ -429,7 +418,7 @@ uat(
     await openAs(page, acc.viewer, '#/reports');
     await expect(
       page.getByRole('heading', {
-        name: tx('Reports shared with me', 'Mənimlə paylaşılan hesabatlar'),
+        name: tx('Shared with me', 'Mənimlə paylaşılanlar'),
       }),
     ).toBeVisible();
     await expect(page.getByText(v.title).first()).toBeVisible();
@@ -461,7 +450,7 @@ uat(
       ).toBeVisible();
       await expect(
         p.getByRole('link', {
-          name: tx('Reports shared with me', 'Mənimlə paylaşılan hesabatlar'),
+          name: tx('Shared with me', 'Mənimlə paylaşılanlar'),
         }),
       ).toBeVisible();
       flush();
@@ -657,18 +646,3 @@ uat(
     void outbox;
   },
 );
-
-uat(
-  'SEC-14',
-  'UAT seed tooling loads accounts and data without errors',
-  { on: ['D'], langs: 'EN' },
-  async () => {
-    test_skip(
-      'Not built: P3; running scripts/uat-seed.mjs creates four more accounts and a vacancy in the shared database (time budget).',
-    );
-  },
-);
-
-function test_skip(reason: string) {
-  test.skip(true, reason);
-}

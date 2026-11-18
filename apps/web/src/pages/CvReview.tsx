@@ -45,6 +45,7 @@ import { CandidateLinks } from './CandidateLinks';
 import { CvPane } from './CvPane';
 import { MarkSelect } from './MarkSelect';
 import { DECISION_KEY } from './CandidatePreview';
+import { trServer } from '../i18n/server';
 
 /**
  * The review screen (Stage 2, S2-FE3): one CV, in any state, with the original beside the analysis.
@@ -448,7 +449,7 @@ export function CvReview({
         return (
           <Notice kind="error">
             <p className="font-medium">{t('The analysis of this CV did not finish.')}</p>
-            {d.statusDetail.error && <p className="mt-1">{d.statusDetail.error}</p>}
+            {d.statusDetail.error && <p className="mt-1">{trServer(d.statusDetail.error)}</p>}
             {canMark && d.statusDetail.retryable && !d.vacancy.archived && (
               <button
                 type="button"
@@ -466,7 +467,7 @@ export function CvReview({
         return (
           <Notice kind="warn">
             <p className="font-medium">{t(CV_STATUS_LABEL[d.status])}</p>
-            <p className="mt-1">{d.statusDetail.reason}</p>
+            <p className="mt-1">{trServer(d.statusDetail.reason ?? '')}</p>
             <p className="mt-1">{t('Read the CV and decide yourself.')}</p>
           </Notice>
         );
@@ -501,7 +502,7 @@ export function CvReview({
     <div className="space-y-4" data-testid="analysis-pane">
       {statusPanel}
       {a && d.status === 'needs_look' && d.statusDetail.reason && (
-        <Notice kind="warn">{d.statusDetail.reason}</Notice>
+        <Notice kind="warn">{trServer(d.statusDetail.reason)}</Notice>
       )}
       {a?.outOfDate && (
         <Notice kind="warn">

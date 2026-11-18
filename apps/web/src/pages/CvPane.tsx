@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Boundary, ReloadNote } from '../Boundary';
 import { api, ApiError } from '../api';
 import { tr, useT } from '../i18n';
@@ -8,9 +8,10 @@ import { Segmented } from '../Segmented';
 import { CvText } from './CvText';
 import { EvidenceMap, textSpots, type EvidenceSpot } from './EvidenceMap';
 import type { PdfApi, PdfProblem } from './PdfPages';
+import { PdfPages } from './lazy';
+import { trServer } from '../i18n/server';
 
 // pdf.js is large: it loads the first time a PDF is opened, not with the app.
-const PdfPages = lazy(() => import('./PdfPages'));
 
 type Tab = 'original' | 'text';
 
@@ -336,7 +337,7 @@ export function CvPane({
         {textError && <Notice kind="error">{textError}</Notice>}
         {!canText && (
           <Notice kind="warn">
-            {data.statusDetail.reason ?? t('No text could be read from this file.')}
+            {trServer(data.statusDetail.reason ?? 'No text could be read from this file.')}
           </Notice>
         )}
         {canText && !text && !textError && <p className="text-sm text-ink-3">{t('Loading…')}</p>}

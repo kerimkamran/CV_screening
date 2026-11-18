@@ -60,9 +60,7 @@ const adminOnly = (page: Page) =>
   expect(page.getByRole('alert').filter({ hasText: 'Administrators only.' })).toBeVisible();
 async function commonPages(page: Page) {
   await go(page, '#/reports');
-  await expect(
-    page.getByRole('heading', { level: 1, name: 'Reports shared with me' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Shared with me' })).toBeVisible();
   await go(page, '#/password');
   await expect(page.getByRole('heading', { name: 'Change password' })).toBeVisible();
   await go(page, '#/security');
@@ -89,8 +87,8 @@ async function adminPages(page: Page) {
     await expect(tabs.getByRole('link')).toHaveText([
       'Users',
       'AI models',
-      'Assistant',
-      'Monitoring',
+      'SenAI',
+      'Fairness monitoring',
       'Data retention',
     ]);
     await check[r]!();
@@ -116,7 +114,11 @@ uat(
       await openWith(page, '#/', { me: { roles }, assistant: SENAI_ON, table: TABLE });
       for (const r of [...RECRUITER_ROUTES, ...COMMON_ROUTES, ...ADMIN_ROUTES]) {
         await go(page, r);
-        if (r === '#/' || r === '#/vacancies') {
+        if (r === '#/') {
+          await expect(page.getByRole('heading', { level: 1, name: 'Home' })).toBeAttached();
+          await expect(page.getByRole('region', { name: 'Screen candidates' })).toBeVisible();
+          await expect(page.getByRole('link', { name: /^New vacancy/ })).toBeVisible();
+        } else if (r === '#/vacancies') {
           await expect(page.getByRole('heading', { level: 1, name: 'Vacancies' })).toBeVisible();
           await expect(page.getByRole('link', { name: 'New vacancy' }).first()).toBeVisible();
         } else if (r === '#/vacancies/new')
@@ -133,7 +135,7 @@ uat(
           await expect(mark).toBeEnabled();
         } else if (r === '#/reports')
           await expect(
-            page.getByRole('heading', { level: 1, name: 'Reports shared with me' }),
+            page.getByRole('heading', { level: 1, name: 'Shared with me' }),
           ).toBeVisible();
         else if (r === '#/password')
           await expect(page.getByRole('heading', { name: 'Change password' })).toBeVisible();
@@ -144,7 +146,7 @@ uat(
         await expect(page.getByRole('search'), `${roles[0]} ${r}: Ask bar`).toHaveCount(1);
       }
       const m = await menuLinks(page);
-      expect(m.links).toEqual(['Shared with me', 'Password', 'Security']);
+      expect(m.links).toEqual(['Shared with me', 'Change password', 'Security']);
       await ux.check(`${roles[0]} routes`);
     }
   },
@@ -164,12 +166,14 @@ uat(
     const from = seen.requests.length;
     for (const r of RECRUITER_ROUTES) {
       await go(page, r);
-      await expect(
-        page.getByRole('status').filter({
-          hasText:
-            'Administrators manage users and AI models under Admin. Candidate data is available only to recruiters.',
-        }),
-      ).toBeVisible();
+      const sentence =
+        'Administrators manage users and AI models under Administration. Candidate data is available only to recruiters.';
+      if (r === '#/') {
+        // The landing page is Home: the administration functions, with the same explanation.
+        await expect(page.getByRole('region', { name: 'Administration' })).toBeVisible();
+        await expect(page.getByText(sentence)).toBeVisible();
+        await expect(page.getByRole('link', { name: /^Candidates/ })).toHaveCount(0);
+      } else await expect(page.getByRole('status').filter({ hasText: sentence })).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`${r.replace(/[/#]/g, '\\$&')}$`));
     }
     noCandidateCalls(seen, from, 'no request to candidate data');
@@ -178,9 +182,9 @@ uat(
     await expect(page.locator('nav[aria-label="Main"]')).toHaveCount(0);
     expect((await menuLinks(page)).links).toEqual([
       'Shared with me',
-      'Monitoring',
-      'Admin',
-      'Password',
+      'Fairness monitoring',
+      'Administration',
+      'Change password',
       'Security',
     ]);
     await expect
@@ -209,7 +213,10 @@ uat(
     });
     for (const r of RECRUITER_ROUTES) {
       await go(page, r);
-      if (r === '#/' || r === '#/vacancies')
+      if (r === '#/') {
+        await expect(page.getByRole('region', { name: 'Screen candidates' })).toBeVisible();
+        await expect(page.getByRole('region', { name: 'Administration' })).toBeVisible();
+      } else if (r === '#/vacancies')
         await expect(page.getByRole('link', { name: 'New vacancy' }).first()).toBeVisible();
       else if (r === '#/vacancies/new')
         await expect(page.getByRole('heading', { level: 1, name: 'New vacancy' })).toBeVisible();
@@ -222,9 +229,15 @@ uat(
     await adminPages(page);
     await commonPages(page);
     const m = await menuLinks(page);
-    expect(m.links).toEqual(['Shared with me', 'Monitoring', 'Admin', 'Password', 'Security']);
+    expect(m.links).toEqual([
+      'Shared with me',
+      'Fairness monitoring',
+      'Administration',
+      'Change password',
+      'Security',
+    ]);
     expect(m.remembers).toBe(1);
-    await expect(page.locator('header a[title]').first()).toHaveAttribute('href', '#/vacancies');
+    await expect(page.locator('header a[title]').first()).toHaveAttribute('href', '#/');
     await ux.check('admin+TA');
   },
 );
@@ -239,6 +252,13 @@ uat('RO-04', 'Route matrix: governance', { on: ['D', 'A'], langs: 'EN' }, async 
   const from = seen.requests.length;
   for (const r of [...RECRUITER_ROUTES, '#/admin/monitoring']) {
     await go(page, r);
+    if (r === '#/') {
+      // Home for governance: monitoring, the assistant review and shared reports, nothing else.
+      await expect(page.getByRole('region', { name: 'Oversight' })).toBeVisible();
+      await expect(page.getByRole('link', { name: /^Monitoring/ })).toBeVisible();
+      await expect(page.getByRole('link', { name: /^Users/ })).toHaveCount(0);
+      continue;
+    }
     await expect(
       page.getByRole('heading', { level: 1, name: 'Fairness monitoring' }),
     ).toBeVisible();
@@ -260,8 +280,8 @@ uat('RO-04', 'Route matrix: governance', { on: ['D', 'A'], langs: 'EN' }, async 
   await expect(page.locator('nav[aria-label="Main"]')).toHaveCount(0);
   expect((await menuLinks(page)).links).toEqual([
     'Shared with me',
-    'Monitoring',
-    'Password',
+    'Fairness monitoring',
+    'Change password',
     'Security',
   ]);
   await expect
@@ -288,9 +308,7 @@ uat(
     const from = seen.requests.length;
     for (const r of RECRUITER_ROUTES) {
       await go(page, r);
-      await expect(
-        page.getByRole('heading', { level: 1, name: 'Reports shared with me' }),
-      ).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'Shared with me' })).toBeVisible();
     }
     noCandidateCalls(seen, from, 'no request to candidate endpoints');
     await go(page, `#/reports/${REPORT_ID}`);
@@ -304,7 +322,11 @@ uat(
     await go(page, '#/security');
     await expect(page.getByRole('heading', { name: 'Two-step sign-in' })).toBeVisible();
     await expect(page.locator('nav[aria-label="Main"]')).toHaveCount(0);
-    expect((await menuLinks(page)).links).toEqual(['Shared with me', 'Password', 'Security']);
+    expect((await menuLinks(page)).links).toEqual([
+      'Shared with me',
+      'Change password',
+      'Security',
+    ]);
     await expect
       .soft(page.getByRole('search'), 'no Ask bar for a report viewer, even with SenAI on')
       .toHaveCount(0);

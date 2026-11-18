@@ -249,7 +249,7 @@ export function Report({
       {!data.aiActive && counts.read < counts.total && (
         <Notice kind="warn">
           {t(
-            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Admin → AI models.',
+            'No AI provider is active, so CVs wait in the queue. An administrator can set one up under Administration → AI models.',
           )}
         </Notice>
       )}

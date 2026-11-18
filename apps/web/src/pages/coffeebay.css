@@ -28,6 +28,11 @@
   height: 100%;
 }
 /* The café window: wood frame around the star sky. Percentages follow the 720 x 300 drawing. */
+.cb-part {
+  position: absolute;
+  overflow: visible;
+  will-change: transform, opacity;
+}
 .cb-window {
   position: absolute;
   left: 4.2%;
@@ -41,12 +46,26 @@
 }
 .cb-drop {
   position: absolute;
-  top: 0;
+  inset: 0 0 auto 0;
+  height: 14px;
+  opacity: 0;
+}
+/* Two drops share one layer: one moves, not two. The second starts above the glass, so it arrives later. */
+.cb-drop::before,
+.cb-drop::after {
+  content: '';
+  position: absolute;
   width: 2px;
   height: 14px;
   border-radius: 2px;
   background: rgb(185 200 242 / 0.55);
-  opacity: 0;
+}
+.cb-drop::before {
+  left: 24%;
+}
+.cb-drop::after {
+  left: 68%;
+  top: -38px;
 }
 .cb-wall {
   fill: var(--c-cafe-wall);
@@ -86,12 +105,54 @@
   stroke: var(--c-edge);
   stroke-width: 1.5;
 }
-.cb-steam {
+/* The regular at the counter (original drawing; the colours are the illustration's own). */
+.cb-skin {
+  fill: #f2c5a0;
+}
+.cb-hair {
+  fill: #3b2a24;
+}
+.cb-knit {
+  fill: #f2b544;
+}
+.cb-knit-arm {
   fill: none;
-  stroke: var(--c-card);
-  stroke-width: 3;
+  stroke: #e3a22f;
+  stroke-width: 9;
   stroke-linecap: round;
-  opacity: 0.8;
+  stroke-linejoin: round;
+}
+.cb-face {
+  fill: none;
+  stroke: #3b2a24;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.cb-blush {
+  fill: #f08f7a;
+  opacity: 0.55;
+}
+.cb-mug-handle {
+  fill: none;
+  stroke: #8aa0bf;
+  stroke-width: 2.6;
+}
+.cb-mug .cb-cup {
+  fill: #fbf6ea;
+  stroke: #8aa0bf;
+}
+.cb-mug-band {
+  fill: var(--c-brand);
+}
+.cb-coffee {
+  fill: #6f4a33;
+}
+.cb-steam-line {
+  fill: none;
+  stroke: var(--c-ink-3);
+  stroke-opacity: 0.4;
+  stroke-width: 2.6;
+  stroke-linecap: round;
 }
 .cb-leaf {
   fill: var(--c-ok-line);
@@ -112,50 +173,211 @@
   animation: cb-rise 400ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
 }
 
+/*
+ * Coffee break. One 9 s turn, shared by the arm, the mug, the head and the steam so they stay
+ * together: about five seconds at rest, a sip of a few seconds, then rest again. Each of the four is
+ * one layer (see Part), and only transform and opacity move. Percentages in `translate` are of the
+ * part's own box, so the movement scales with the scene. The mug travels the arc the forearm draws
+ * (31 units from the elbow): rest, 35 and 65 degrees up, then at the mouth.
+ */
+.cb-arm,
+.cb-mug,
+.cb-head,
+.cb-steam {
+  --turn: 9s;
+}
+
+@keyframes cb-arm {
+  0%,
+  50% {
+    transform: rotate(0);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  55% {
+    transform: rotate(-29.5deg);
+    animation-timing-function: linear;
+  }
+  59% {
+    transform: rotate(-59.5deg);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  63%,
+  74% {
+    transform: rotate(-78.5deg);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  78% {
+    transform: rotate(-59.5deg);
+    animation-timing-function: linear;
+  }
+  82% {
+    transform: rotate(-29.5deg);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  86%,
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes cb-mug {
+  0%,
+  50% {
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  55% {
+    transform: translate(-25%, -74%) rotate(0);
+    animation-timing-function: linear;
+  }
+  59% {
+    transform: translate(-81%, -126%) rotate(-6deg);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  63%,
+  74% {
+    transform: translate(-126%, -139%) rotate(-22deg);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  78% {
+    transform: translate(-81%, -126%) rotate(-8deg);
+    animation-timing-function: linear;
+  }
+  82% {
+    transform: translate(-25%, -74%) rotate(0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  86%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+}
+/* The head sways a little all the time, and leans into the sip. */
+@keyframes cb-head {
+  0% {
+    transform: rotate(0);
+  }
+  18% {
+    transform: rotate(-1.2deg);
+  }
+  36% {
+    transform: rotate(1.2deg);
+  }
+  50% {
+    transform: rotate(0);
+  }
+  58% {
+    transform: rotate(1deg);
+  }
+  63%,
+  74% {
+    transform: rotate(5deg) translate(0, 12%);
+  }
+  80% {
+    transform: rotate(1.5deg);
+  }
+  90% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+.cb-arm {
+  animation: cb-arm var(--turn) cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+.cb-mug {
+  animation: cb-mug var(--turn) cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+.cb-head {
+  animation: cb-head var(--turn) cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+/* Steam: puffs while the mug is on the counter; gone while it is up, and starts again when it is
+   back. Its own turn begins when the mug lands (86 % of the arm's turn), hence the head start. */
 @keyframes cb-steam {
   0% {
     opacity: 0;
     transform: translate(0, 0);
   }
-  25% {
-    opacity: 0.8;
-    transform: translate(3px, -7px);
+  7% {
+    opacity: 0.85;
+    transform: translate(8%, -14%);
+  }
+  14% {
+    opacity: 0.55;
+    transform: translate(-8%, -35%);
+  }
+  20% {
+    opacity: 0;
+    transform: translate(0, -70%);
+  }
+  20.01% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  27% {
+    opacity: 0.85;
+    transform: translate(8%, -14%);
+  }
+  34% {
+    opacity: 0.55;
+    transform: translate(-8%, -35%);
+  }
+  40% {
+    opacity: 0;
+    transform: translate(0, -70%);
+  }
+  40.01% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  47% {
+    opacity: 0.85;
+    transform: translate(8%, -14%);
+  }
+  54% {
+    opacity: 0.55;
+    transform: translate(-8%, -35%);
   }
   60% {
-    opacity: 0.6;
-    transform: translate(-3px, -17px);
+    opacity: 0;
+    transform: translate(0, -70%);
   }
   100% {
     opacity: 0;
-    transform: translate(0, -28px);
+    transform: translate(0, -70%);
   }
 }
 .cb-steam {
-  animation: cb-steam 4.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
-  transform-box: fill-box;
-}
-.cb-steam:nth-of-type(2) {
-  animation-delay: 1.6s;
-}
-.cb-steam:nth-of-type(3) {
-  animation-delay: 3.2s;
+  opacity: 0.8;
+  animation: cb-steam var(--turn) linear infinite;
+  animation-delay: -1.26s;
 }
 
-@keyframes cb-sway {
-  from {
-    transform: rotate(-1.5deg);
-  }
+/* Finished: she raises the mug in a toast and smiles; the steam fades over 1.2 s. */
+@keyframes cb-arm-cheers {
   to {
-    transform: rotate(1.5deg);
+    transform: rotate(-59.5deg);
   }
 }
-.cb-lamp {
-  transform-box: fill-box;
-  transform-origin: 50% 0;
-  animation: cb-sway 7s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+@keyframes cb-mug-cheers {
+  to {
+    transform: translate(-81%, -126%) rotate(-6deg);
+  }
 }
-.cb-lamp-2 {
-  animation-duration: 9s;
+@keyframes cb-head-cheers {
+  to {
+    transform: rotate(-2.5deg) translate(0, -6%);
+  }
+}
+.cb-scene[data-finished='true'] .cb-arm {
+  animation: cb-arm-cheers 1.1s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+.cb-scene[data-finished='true'] .cb-mug {
+  animation: cb-mug-cheers 1.1s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+.cb-scene[data-finished='true'] .cb-head {
+  animation: cb-head-cheers 1.1s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
 @keyframes cb-glow {
@@ -186,26 +408,7 @@
   }
 }
 .cb-drop {
-  animation: cb-drizzle 14s cubic-bezier(0.37, 0, 0.63, 1) infinite;
-}
-.cb-drop:nth-child(1) {
-  left: 20%;
-  animation-duration: 11s;
-}
-.cb-drop:nth-child(2) {
-  left: 45%;
-  animation-duration: 14s;
-  animation-delay: 3s;
-}
-.cb-drop:nth-child(3) {
-  left: 70%;
-  animation-duration: 17s;
-  animation-delay: 6s;
-}
-.cb-drop:nth-child(4) {
-  left: 88%;
-  animation-duration: 13s;
-  animation-delay: 9s;
+  animation: cb-drizzle 13s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 
 /* Finished: the steam fades over 1.2 s. */
@@ -218,7 +421,6 @@
   animation: cb-steam-out 1.2s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 /* Twelve seconds after the finish every loop stops (WCAG 2.2.2). */
-.cb-scene[data-still='true'] .cb-lamp,
 .cb-scene[data-still='true'] .cb-glow,
 .cb-scene[data-still='true'] .cb-drop,
 .cb-scene[data-still='true'] .sky-twinkle {
@@ -243,8 +445,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cb-panel,
+  .cb-arm,
+  .cb-mug,
+  .cb-head,
   .cb-steam,
-  .cb-lamp,
   .cb-glow,
   .cb-drop {
     animation: none;
