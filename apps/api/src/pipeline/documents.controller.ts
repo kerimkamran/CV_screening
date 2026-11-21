@@ -19,6 +19,7 @@ import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/multipart';
 import { eraseDocumentData } from './erase-document';
+import { activeRun, requestCancel } from '../integrations/import-runs';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -328,6 +329,9 @@ export class DocumentsController {
             AND sc.state = 'queued' AND sc.cancelled_at IS NULL`,
         [vid],
       );
+      // S3-INT-13 (8): Stop also asks an active Oracle import to cancel, in the same transaction.
+      const run = await activeRun(tx, vid);
+      const importCancelled = run ? (await requestCancel(tx, run.id, p.userId)).requested : false;
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -335,9 +339,9 @@ export class DocumentsController {
         action: 'screening.stopped',
         entityType: 'vacancy',
         entityId: vid,
-        after: { stopped: r.rowCount },
+        after: { stopped: r.rowCount, ...(importCancelled ? { importRunId: run!.id } : {}) },
       });
-      return { stopped: r.rowCount };
+      return { stopped: r.rowCount, ...(importCancelled ? { importCancelled: true } : {}) };
     });
   }
 
@@ -505,8 +509,8 @@ export class DocumentsController {
     const did = parse(ulidSchema, id);
     await this.scope.assertDocument(p, did);
     return this.db.withTx(async (tx) => {
-      if (!(await eraseDocumentData(tx, this.reports, did, p.userId)))
-        throw new ConflictException('Already erased');
+      const done = await eraseDocumentData(tx, this.reports, did, p.userId, 'erase');
+      if (!done) throw new ConflictException('Already erased');
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -514,6 +518,8 @@ export class DocumentsController {
         action: 'document.erase',
         entityType: 'document',
         entityId: did,
+        // S3-INT-02 (7): the CV is erased even when its tombstone copy failed; the trail says so.
+        ...(done.tombstonePending ? { after: { tombstonePending: 1 } } : {}),
       });
       return { erased: true };
     });

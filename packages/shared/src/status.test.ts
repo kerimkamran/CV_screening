@@ -9,6 +9,10 @@ import {
   isUploadFinal,
   MAX_ANNOUNCE_FILES,
   RETRYABLE_CODES,
+  IMPORT_RUN_CODES,
+  IMPORT_ERROR_MESSAGE,
+  IMPORT_ERROR_UNKNOWN,
+  importErrorMessage,
   UPLOAD_CODES,
   UPLOAD_CODE_MESSAGE,
   UPLOAD_OUTCOMES,
@@ -60,8 +64,12 @@ describe('cvStatus (S2-BE1)', () => {
     expect(Object.values(c).reduce((a, b) => a + b, 0)).toBe(4);
   });
 
-  it('the retryable list is exactly vacancy_full and server_error in Phase 1 (S3-UP-02)', () => {
-    expect([...RETRYABLE_CODES].sort()).toEqual(['server_error', 'vacancy_full']);
+  it('the retryable list is exactly vacancy_full, server_error and source_unavailable (S3-UP-02, S3-INT-05)', () => {
+    expect([...RETRYABLE_CODES].sort()).toEqual([
+      'server_error',
+      'source_unavailable',
+      'vacancy_full',
+    ]);
     expect(MAX_ANNOUNCE_FILES).toBe(500);
   });
 
@@ -76,6 +84,31 @@ describe('cvStatus (S2-BE1)', () => {
     expect(uploadStatus('skipped', 'cancelled')).toBe('cancelled');
     expect(uploadStatus('skipped', 'server_error')).toBe('not_sent');
     expect(uploadStatus('skipped', 'wrong_type')).toBe('rejected');
+  });
+
+  it('maps every code on an Oracle batch (S3-INT-05 (3))', () => {
+    for (const code of UPLOAD_CODES)
+      for (const outcome of UPLOAD_OUTCOMES)
+        expect(CV_STATUSES).toContain(uploadStatus(outcome, code, 'oracle_hcm'));
+    expect(uploadStatus(null, null, 'oracle_hcm')).toBe('not_fetched');
+    expect(uploadStatus('skipped', 'source_unavailable', 'oracle_hcm')).toBe('not_fetched');
+    expect(uploadStatus('skipped', 'server_error', 'oracle_hcm')).toBe('not_fetched');
+    for (const code of ['cancelled', 'superseded', 'source_gone'])
+      expect(uploadStatus('skipped', code, 'oracle_hcm')).toBe('cancelled');
+    expect(uploadStatus('skipped', 'vacancy_full', 'oracle_hcm')).toBe('vacancy_full');
+    expect(uploadStatus('rejected', 'crash_limit', 'oracle_hcm')).toBe('rejected');
+    expect(isFinalItem('rejected', 'crash_limit')).toBe(true);
+    // On a browser batch a server error stays open for sending again.
+    expect(uploadStatus('skipped', 'server_error', 'browser')).toBe('not_sent');
+    expect(CV_STATUS_ACTION.not_fetched).toBeNull();
+  });
+
+  it('has one sentence for each of the thirteen run codes (S3-INT-05 (8))', () => {
+    expect(IMPORT_RUN_CODES).toHaveLength(13);
+    for (const c of IMPORT_RUN_CODES) expect(importErrorMessage(c)).not.toBe(IMPORT_ERROR_UNKNOWN);
+    expect(importErrorMessage('something_else')).toBe(IMPORT_ERROR_UNKNOWN);
+    expect(importErrorMessage(null)).toBe(IMPORT_ERROR_UNKNOWN);
+    expect(new Set(Object.values(IMPORT_ERROR_MESSAGE)).size).toBe(13);
   });
 
   it('isFinalItem is false only for an empty item or a retryable skip (S3-UP-02)', () => {

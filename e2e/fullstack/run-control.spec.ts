@@ -34,7 +34,7 @@ async function callsPerCv(prefix: string) {
 
 uat(
   'RS-14',
-  'Stop the scan and Continue reading; Report and Runs agree',
+  'Stop analysis and Continue reading; Report and Runs agree',
   { on: ['D', 'A'] },
   async ({ page, ux, meta }) => {
     const t = T(meta.lang);
@@ -78,7 +78,7 @@ uat(
       const gaps = gets.slice(1).map((x, i) => x - gets[i]!);
       expect(Math.min(...gaps.slice(-2))).toBeGreaterThan(3000);
       expect(Math.max(...gaps.slice(-2))).toBeLessThan(6500);
-      // 2) When about 10 are read, press 'Stop the scan'.
+      // 2) When about 10 are read, press 'Stop analysis'.
       await expect
         .poll(
           async () => {
@@ -92,7 +92,7 @@ uat(
           { timeout: 40_000, intervals: [500] },
         )
         .toBeGreaterThanOrEqual(10);
-      await page.getByRole('button', { name: t('Stop the scan') }).click();
+      await page.getByRole('button', { name: t('Stop analysis') }).click();
       await expect.poll(() => posts.filter((p) => p === `/vacancies/${v.id}/stop`).length).toBe(1);
       // 3) The CVs in progress finish; the waiting ones become Stopped.
       const stoppedLine = page.getByText(

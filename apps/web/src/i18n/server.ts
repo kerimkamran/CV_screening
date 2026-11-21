@@ -23,6 +23,11 @@ export const SERVER_TEMPLATES: ServerTemplate[] = [
   { en: 'Up to {max} CVs per download.' },
   // Wording key upload.limit.server: the 413 TOO_MANY_FILES backstop (S3-UP-01).
   { en: 'Up to {max} files per upload.' },
+  // Stage 3, Phase 7: SenAI's copy into a full vacancy is refused with the upload cap's sentence.
+  { en: 'This vacancy holds at most {n} CVs' },
+  // Stage 3, Oracle import: the address rule (result.not_oracle_address) and the refresh wait.
+  { en: 'This is not an Oracle address. It must start with https:// and end in {suffix}.' },
+  { en: 'You can refresh again at {time}.' },
   { en: 'Changed by {name} at {time}. Reload to see their version.', translate: ['name'] },
   { en: '{feature} is switched off', translate: ['feature'] },
   { en: 'provider responded {status}' },

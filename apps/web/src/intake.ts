@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import { MAX_ANNOUNCE_FILES, type CvStatus, type UploadCode } from '@cv/shared';
+import { MAX_ANNOUNCE_FILES, type BatchSource, type CvStatus, type UploadCode } from '@cv/shared';
 import { api, ApiError } from './api';
 import { errMsg } from './ui';
 
@@ -196,6 +196,8 @@ export interface IntakeInfo {
   maxZipMb: number;
   accepts: string[];
   latestBatch: LatestBatch | null;
+  /** Stage 3 (S3-INT-05): an Oracle import that is still running; its batch is null while it lists. */
+  activeImport?: { runId: string; state: string; phase: string; batchId: string | null } | null;
 }
 export interface LatestBatch {
   id: string;
@@ -203,6 +205,7 @@ export interface LatestBatch {
   createdBy: string;
   fileCount: number;
   mine: boolean;
+  source?: BatchSource;
 }
 export interface BatchItemView {
   itemId: string;
@@ -227,6 +230,8 @@ export interface BatchStatus {
     mine: boolean;
     /** Set once someone pressed "Stop sending files" (S3-UP-05). */
     cancelledAt?: string | null;
+    /** Stage 3 (S3-INT-05): a batch made by the Oracle import, or by a browser upload. */
+    source?: BatchSource;
   };
   lastReceivedAt: string | null;
   counts: {
@@ -303,6 +308,30 @@ if (typeof window !== 'undefined')
 
 export function getRun(vacancyId: string): Run | null {
   return runs.get(vacancyId) ?? null;
+}
+
+// ------------------------------------------------------------------ an import's batch (S3-INT-14)
+
+/**
+ * A batch the server made for an Oracle import: the strip adopts it when the run gets one, so the
+ * batch panel shows it at once, with no reload. Same store pattern as the runs.
+ */
+const adopted = new Map<string, string>();
+const adoptedListeners = new Set<() => void>();
+export function adoptBatch(vacancyId: string, batchId: string | null) {
+  if (batchId === (adopted.get(vacancyId) ?? null)) return;
+  if (batchId) adopted.set(vacancyId, batchId);
+  else adopted.delete(vacancyId);
+  adoptedListeners.forEach((l) => l());
+}
+export function useAdopted(vacancyId: string): string | null {
+  return useSyncExternalStore(
+    (l) => {
+      adoptedListeners.add(l);
+      return () => adoptedListeners.delete(l);
+    },
+    () => adopted.get(vacancyId) ?? null,
+  );
 }
 
 export function useRun(vacancyId: string): Run | null {
@@ -712,6 +741,8 @@ function watchOf(batchId: string): Watch {
 /** Nothing left to wait for: no CV is being read and this tab holds no file to send. */
 export function isFinal(s: BatchStatus, run: Run | null): boolean {
   if (runActive(run)) return false;
+  // An Oracle batch with a file the runner has yet to fetch keeps its watcher alive.
+  if (s.batch.source === 'oracle_hcm' && s.counts.upload.notReceived > 0) return false;
   return s.counts.byStatus.analyzing === 0;
 }
 

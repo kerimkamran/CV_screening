@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { DOCX_MAX_ENTRIES, DOCX_MAX_UNPACKED } from './documents';
 
 /**
  * A Word file is untrusted input (Stage 2, S2-BE7). Before LibreOffice ever opens one, this keeps
@@ -29,8 +30,8 @@ const MAIN_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml',
 ];
-const MAX_ENTRIES = 2_000;
-const MAX_UNPACKED = 120 * 1024 * 1024;
+const MAX_ENTRIES = DOCX_MAX_ENTRIES;
+const MAX_UNPACKED = DOCX_MAX_UNPACKED;
 const DANGEROUS_FIELDS =
   /^\s*(INCLUDETEXT|INCLUDEPICTURE|LINK|DDEAUTO|DDE|IMPORT|AUTOTEXT|AUTOTEXTLIST|DATABASE|SUBSCRIBER)\b/i;
 const HYPERLINK = /\/relationships\/hyperlink$/;

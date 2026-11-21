@@ -430,9 +430,9 @@ uat(
       'Already in this vacancy',
     ])
       await expect.soft(list, `row status '${w}'`).toContainText(t(w));
-    // The ZIP rows name the server's limit, not a fixed 10.
+    // The ZIP rows name the server's limit (twice the vacancy cap, S3-UP-06), not a fixed 10.
     await expect
-      .soft(list.getByText(t('The ZIP holds more than {n} files', { n: 500 })).first())
+      .soft(list.getByText(t('The ZIP holds more than {n} files', { n: 1000 })).first())
       .toBeVisible();
     expect
       .soft(await list.getByText(t('The ZIP holds more than {n} files', { n: 10 })).count())

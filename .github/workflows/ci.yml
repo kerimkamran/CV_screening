@@ -118,6 +118,12 @@ jobs:
       - run: docker build -f docker/api.Dockerfile -t cv-api:ci .
       - run: docker build -f docker/web.Dockerfile -t cv-web:ci .
       - run: docker build -f docker/render.Dockerfile -t cv-render:ci .
+      # Stage 3, S3-OPS-04: the gate copy's image; and the production image carries no test code.
+      - run: docker build -f docker/gate.Dockerfile -t cv-gate:ci .
+      - run: |
+          if docker run --rm --entrypoint sh cv-render:ci -c 'test -e /repo/e2e || test -e /repo/apps/api/src/testing'; then
+            echo "the production image carries test code"; exit 1
+          fi
 
   terraform:
     name: Terraform fmt and validate
@@ -134,3 +140,48 @@ jobs:
         working-directory: infra/terraform
       - run: terraform validate
         working-directory: infra/terraform
+
+  # Stage 3, S3-UP-10: full-stack journeys (UAT L2) against the compiled API, Postgres, pdftotext,
+  # LibreOffice and the fake AI. One device and one language keep the job inside its budget; the
+  # full matrix runs locally before a release (docs/uat/e2e-test-plan.md).
+  e2e-full:
+    name: End-to-end full stack (UAT L2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: cv
+          POSTGRES_PASSWORD: cv
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cv -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      UAT_RESET: '1'
+      UAT_DEVICES: D
+      UAT_LANGS: en
+      UAT_WORKERS: '2'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: PDF text, LibreOffice and psql (used by the server under test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e:full
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-l2
+          path: e2e/test-results
+          retention-days: 7

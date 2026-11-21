@@ -37,6 +37,9 @@ const AssistantSettings = lazy(() =>
   import('./pages/Admin').then((m) => ({ default: m.AssistantSettings })),
 );
 const Users = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Users })));
+const OracleSettings = lazy(() =>
+  import('./pages/Admin').then((m) => ({ default: m.OracleSettings })),
+);
 const Monitoring = lazy(() =>
   import('./pages/Monitoring').then((m) => ({ default: m.Monitoring })),
 );
@@ -69,6 +72,7 @@ function AdminNav({ route }: { route: string }) {
     ['/admin/assistant', '{name}'],
     ['/admin/monitoring', 'Fairness monitoring'],
     ['/admin/retention', 'Data retention'],
+    ['/admin/oracle', 'Oracle import'],
   ];
   return (
     <nav className="flex flex-wrap gap-2 text-sm" aria-label={t('Administration')}>
@@ -282,6 +286,8 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
           <AssistantSettings />
         ) : route === '/admin/retention' ? (
           <Retention />
+        ) : route === '/admin/oracle' ? (
+          <OracleSettings />
         ) : (
           <Users meId={me.userId} />
         )}

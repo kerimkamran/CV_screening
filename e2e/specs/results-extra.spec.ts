@@ -446,10 +446,10 @@ uat(
       .soft(['none', 'matrix(1, 0, 0, 1, 0, 0)'], 'the star does not grow on hover')
       .toContain(grown);
     await ux.check('reduced motion', [...STD, 'RM', 'AZ']);
-    // 3) Azerbaijani: the tab is Azerbaijani, for example Stop.
+    // 3) Azerbaijani: the tab is Azerbaijani, for example Stop ("Stop analysis" since S3-INT-14).
     if (meta.lang === 'az')
-      await expect(page.getByRole('button', { name: 'Skanı dayandırın' })).toBeVisible();
-    else await expect(page.getByRole('button', { name: t('Stop the scan') })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Təhlili dayandırın' })).toBeVisible();
+    else await expect(page.getByRole('button', { name: t('Stop analysis') })).toBeVisible();
   },
 );
 

@@ -60,6 +60,7 @@ uat(
       'SenAI',
       'Fairness monitoring',
       'Data retention',
+      'Oracle import',
     ]);
     await expect(tabs.getByRole('link', { name: 'Users' })).toHaveClass(/bg-accent/);
     // The form.

@@ -27,6 +27,13 @@ export interface RetentionResult {
 }
 
 const SYSTEM_SUBJECT = 'retention-job';
+/**
+ * The retention clock of a CV (S3-INT-02 (9)): the earlier of its upload date and, for a CV imported
+ * from Oracle, the date the candidate applied there. A CV imported today for a 200-day-old
+ * application is due under a 180-day rule.
+ */
+export const RETENTION_CLOCK = `LEAST(d.uploaded_at, COALESCE(
+  (SELECT min(ii.external_applied_at) FROM import_item ii WHERE ii.document_id = d.id), d.uploaded_at))`;
 const HOUR = 3_600_000;
 
 /**
@@ -94,7 +101,7 @@ export class RetentionService implements OnApplicationBootstrap, OnModuleDestroy
       `SELECT count(*) FILTER (WHERE NOT v.legal_hold) AS due,
               count(*) FILTER (WHERE v.legal_hold) AS held
          FROM cv_document d JOIN vacancy v ON v.id = d.vacancy_id
-        WHERE d.erased_at IS NULL AND d.uploaded_at < $1`,
+        WHERE d.erased_at IS NULL AND ${RETENTION_CLOCK} < $1`,
       [cutoff],
     );
     return {
@@ -123,13 +130,13 @@ export class RetentionService implements OnApplicationBootstrap, OnModuleDestroy
       const sys = await this.systemUser();
       const { rows: due } = await this.db.query<{ id: string; vacancy_id: string }>(
         `SELECT d.id, d.vacancy_id FROM cv_document d JOIN vacancy v ON v.id = d.vacancy_id
-          WHERE d.erased_at IS NULL AND d.uploaded_at < $1 AND NOT v.legal_hold
-          ORDER BY d.uploaded_at LIMIT 5000`,
+          WHERE d.erased_at IS NULL AND ${RETENTION_CLOCK} < $1 AND NOT v.legal_hold
+          ORDER BY ${RETENTION_CLOCK} LIMIT 5000`,
         [cutoff],
       );
       const held = await this.db.query<{ n: string }>(
         `SELECT count(*) AS n FROM cv_document d JOIN vacancy v ON v.id = d.vacancy_id
-          WHERE d.erased_at IS NULL AND d.uploaded_at < $1 AND v.legal_hold`,
+          WHERE d.erased_at IS NULL AND ${RETENTION_CLOCK} < $1 AND v.legal_hold`,
         [cutoff],
       );
       let documents = 0;
@@ -142,14 +149,20 @@ export class RetentionService implements OnApplicationBootstrap, OnModuleDestroy
             [d.vacancy_id],
           );
           if (hold.rows[0]?.legal_hold) return;
-          if (!(await eraseDocumentData(tx, this.reports, d.id, sys))) return;
+          const done = await eraseDocumentData(tx, this.reports, d.id, sys, 'purge');
+          if (!done) return;
           await this.audit.record(tx, {
             actorId: actor,
             actorType: actorId ? 'human' : 'service',
             action: 'document.purge',
             entityType: 'document',
             entityId: d.id,
-            after: { reason: 'retention', days, trigger },
+            after: {
+              reason: 'retention',
+              days,
+              trigger,
+              ...(done.tombstonePending ? { tombstonePending: 1 } : {}),
+            },
           });
           documents++;
           vacancies.add(d.vacancy_id);

@@ -2,6 +2,7 @@ import { AZ_ADMIN } from './az.admin';
 import { AZ_ASSISTANT } from './az.assistant';
 import { AZ_HOME } from './az.home';
 import { AZ_MONITORING } from './az.monitoring';
+import { AZ_ORACLE } from './az.oracle';
 import { AZ_POOL } from './az.pool';
 import { AZ_REPORT } from './az.report';
 import { AZ_RESULTS } from './az.results';
@@ -22,5 +23,6 @@ export const AZ: Record<string, string> = {
   ...AZ_MONITORING,
   ...AZ_ADMIN,
   ...AZ_SERVER,
+  ...AZ_ORACLE,
   ...AZ_STAGE2,
 };

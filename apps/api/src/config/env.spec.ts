@@ -55,4 +55,33 @@ describe('loadEnv (PLAT-05)', () => {
     const env = loadEnv({ ...OIDC, DATABASE_URL: 'postgres://h/d' });
     expect(Object.keys(env).join(' ')).not.toMatch(/api_?key|gemini|openai|anthropic/i);
   });
+
+  // Stage 3, S3-INT-02 (3): the three Oracle import settings.
+  it('keeps the Oracle import off by default, with a 1 GB database budget', () => {
+    const env = loadEnv({ ...OIDC, DATABASE_URL: 'postgres://h/d' });
+    expect(env.ORACLE_IMPORT_ENABLED).toBe('false');
+    expect(env.DB_SIZE_LIMIT_MB).toBe(1024);
+    expect(env.IMPORT_TOMBSTONE_KEY).toBeUndefined();
+  });
+
+  it('needs a tombstone key of 32+ characters when the import is switched on, and names only the variable', () => {
+    const base = { ...OIDC, DATABASE_URL: 'postgres://h/d', ORACLE_IMPORT_ENABLED: 'true' };
+    expect(() => loadEnv(base)).toThrow(/IMPORT_TOMBSTONE_KEY/);
+    const short = 'short-secret-value';
+    try {
+      loadEnv({ ...base, IMPORT_TOMBSTONE_KEY: short });
+      throw new Error('expected a refusal');
+    } catch (e) {
+      expect((e as Error).message).toMatch(/IMPORT_TOMBSTONE_KEY/);
+      expect((e as Error).message).not.toContain(short);
+    }
+    expect(() => loadEnv({ ...base, IMPORT_TOMBSTONE_KEY: `2:${'n'.repeat(32)},1:short` })).toThrow(
+      /IMPORT_TOMBSTONE_KEY/,
+    );
+    const ok = loadEnv({
+      ...base,
+      IMPORT_TOMBSTONE_KEY: `2:${'n'.repeat(32)},1:${'o'.repeat(32)}`,
+    });
+    expect(ok.ORACLE_IMPORT_ENABLED).toBe('true');
+  });
 });

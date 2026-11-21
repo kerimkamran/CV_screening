@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeFetch, state } from './fake-ai.mjs';
+import { loadFakeOracle } from './fake-oracle.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const require = createRequire(join(root, 'apps/api/package.json'));
@@ -35,6 +36,8 @@ if (!existsSync(envFile)) {
         BOOTSTRAP_ADMIN_PASSWORD: pw(),
         ADMIN_PASSWORD: pw(),
         PASSWORD: pw(),
+        IMPORT_TOMBSTONE_KEY: randomBytes(32).toString('base64'),
+        ORACLE_TEST_PASSWORD: pw(),
       },
       null,
       2,
@@ -42,6 +45,16 @@ if (!existsSync(envFile)) {
   );
 }
 const secrets = JSON.parse(readFileSync(envFile, 'utf8'));
+// Older local files predate Stage 3: add the tombstone key once, in place.
+if (!secrets.IMPORT_TOMBSTONE_KEY || !secrets.ORACLE_TEST_PASSWORD) {
+  secrets.IMPORT_TOMBSTONE_KEY ??= randomBytes(32).toString('base64');
+  secrets.ORACLE_TEST_PASSWORD ??= `Uat-${randomBytes(9).toString('base64url')}-1a`;
+  writeFileSync(envFile, JSON.stringify(secrets, null, 2));
+}
+// Stage 3: the fake Oracle only when the database is on this machine (never against a real pod).
+const dbHost = new URL(OWNER_URL).hostname;
+const ORACLE_FAKE =
+  process.env.UAT_FAKE_ORACLE !== '0' && ['127.0.0.1', 'localhost', '::1'].includes(dbHost);
 
 if (process.env.UAT_RESET === '1') {
   const db = new URL(OWNER_URL);
@@ -82,6 +95,9 @@ Object.assign(process.env, {
   // Every browser of the run signs in from 127.0.0.1: the per-address brake would trip between tests.
   AUTH_IP_LIMIT_PER_MIN: process.env.AUTH_IP_LIMIT_PER_MIN ?? '600',
   APP_BASE_URL: `http://127.0.0.1:${PORT}`,
+  ORACLE_IMPORT_ENABLED: ORACLE_FAKE ? 'true' : 'false',
+  IMPORT_TOMBSTONE_KEY: secrets.IMPORT_TOMBSTONE_KEY,
+  DB_SIZE_LIMIT_MB: process.env.DB_SIZE_LIMIT_MB ?? '100000',
 });
 
 require('reflect-metadata');
@@ -104,6 +120,23 @@ if (process.env.UAT_FAKE_AI !== '0') app.get(AiGateway).fetcher = fakeFetch;
 // Link review reads a fake page on this machine: the reader refuses loopback unless told otherwise
 // (the same switch the API's own tests use, LinkReader({ allowLoopback: true })).
 if (process.env.UAT_LINK_LOOPBACK === '1') app.get(LINK_READER).o.allowLoopback = true;
+// Stage 3: the one fake Oracle behind the real client; the browser tests lift the pace.
+let oracle = null;
+if (ORACLE_FAKE) {
+  const { createFakeOracle } = loadFakeOracle();
+  const { OracleHcmClient } = require(
+    join(root, 'apps/api/dist/integrations/oracle/oracle-hcm.client.js'),
+  );
+  oracle = createFakeOracle(Number(process.env.UAT_ORACLE_SEED_NUMBER ?? 1));
+  // The fake accepts the local test password only (e2e/.env.uat.local); no spec writes it.
+  oracle.set({ password: secrets.ORACLE_TEST_PASSWORD });
+  if (process.env.UAT_ORACLE_SEED)
+    oracle.seed(JSON.parse(readFileSync(process.env.UAT_ORACLE_SEED, 'utf8')));
+  const client = app.get(OracleHcmClient);
+  client.fetcher = oracle.fetch;
+  client.lookup = oracle.lookup;
+  client.pace = { concurrency: 2, perSecond: 200 };
+}
 await app.listen(PORT, '127.0.0.1');
 console.log(
   `uat: full stack on http://127.0.0.1:${PORT} (fake AI ${process.env.UAT_FAKE_AI !== '0' ? 'on' : 'off'})`,
@@ -150,6 +183,37 @@ const control = createServer(async (req, res) => {
     return reply(200, { ok: true });
   }
   if (u.pathname === '/secrets') return reply(200, secrets); // local test values only
+  // Stage 3: the fake Oracle's control routes (scoped by requisition number where they can be).
+  if (oracle && u.pathname === '/oracle/seed') {
+    for (const r of body.requisitions ?? []) oracle.addRequisition(r);
+    return reply(200, { ok: true, switches: oracle.state.switches });
+  }
+  if (oracle && u.pathname === '/oracle/info') {
+    const { FAKE_ORIGIN } = loadFakeOracle();
+    return reply(200, { origin: FAKE_ORIGIN, user: oracle.state.switches.user });
+  }
+  if (oracle && u.pathname === '/oracle') {
+    oracle.set(body);
+    return reply(200, oracle.state.switches);
+  }
+  if (oracle && u.pathname === '/oracle/change') {
+    const req = oracle.state.requisitions.get(body.number);
+    const app = req?.applications[body.index ?? 0];
+    if (!app) return reply(404, { message: 'no such application' });
+    oracle[body.change](app.id);
+    return reply(200, { ok: true });
+  }
+  if (oracle && u.pathname === '/oracle/calls') return reply(200, oracle.calls);
+  if (oracle && u.pathname === '/oracle/calls/clear')
+    return reply(200, ((oracle.calls.length = 0), { ok: true }));
+  if (oracle && u.pathname === '/drain-imports') {
+    const { ImportRunnerService } = require(
+      join(root, 'apps/api/dist/integrations/import-runner.service.js'),
+    );
+    await app.get(ImportRunnerService).drainRuns();
+    await app.get(ProcessorService).drain();
+    return reply(200, { ok: true });
+  }
   return reply(404, { message: 'unknown control path' });
 });
 control.listen(PORT + 1, '127.0.0.1');

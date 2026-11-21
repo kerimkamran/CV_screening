@@ -82,10 +82,13 @@ export function progressOf(s: BatchStatus, run: Run | null): Progress {
   const notSent = n('not_sent') + n('could_not_send') + n('vacancy_full');
   const ready = analyzed + needsLook;
   const done = ready + failed + n('stopped');
-  const open = notSent + n('sending') + n('waiting_to_send') + analyzing;
+  // An Oracle batch whose runner still has files to fetch is in the sending phase, never finished.
+  const oracleWaiting = s.batch.source === 'oracle_hcm' ? s.counts.upload.notReceived : 0;
+  const open = notSent + n('sending') + n('waiting_to_send') + analyzing + oracleWaiting;
   const p = Math.min(Math.max((total - open) / total, 0), 1);
   const sent = Math.min(s.counts.upload.received, total);
-  const phase: Phase = runActive(run) ? 'sending' : analyzing > 0 ? 'reading' : 'finished';
+  const phase: Phase =
+    runActive(run) || oracleWaiting > 0 ? 'sending' : analyzing > 0 ? 'reading' : 'finished';
   return {
     total,
     sent,

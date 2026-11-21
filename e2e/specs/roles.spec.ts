@@ -90,6 +90,7 @@ async function adminPages(page: Page) {
       'SenAI',
       'Fairness monitoring',
       'Data retention',
+      'Oracle import',
     ]);
     await check[r]!();
   }

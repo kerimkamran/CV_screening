@@ -39,16 +39,29 @@ export function Field({
   label,
   children,
   hint,
+  error,
+  errorId,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
+  /**
+   * Stage 3 (S3-INT-14): an error line tied to the input. Give the input
+   * `aria-invalid` and `aria-describedby={errorId}`; the line gets that id and role="alert".
+   */
+  error?: string;
+  errorId?: string;
 }) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block font-medium text-ink-2">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-ink-3">{hint}</span>}
+      {error && (
+        <span id={errorId} role="alert" className="mt-1 block text-xs font-medium text-err-ink">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

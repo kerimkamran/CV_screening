@@ -23,6 +23,14 @@ export const FORBIDDEN = [
     name: 'Direct provider endpoint',
     re: /api\.openai\.com|api\.anthropic\.com|\.openai\.azure\.com|\.cognitiveservices\.azure\.com|aiplatform\.googleapis\.com/,
   },
+  // Stage 3, S3-OPS-03: nothing Oracle-related in the browser. The example address and the allowed
+  // ending reach the admin card as values from the API (S3-INT-09 (13)), never from the web source.
+  { name: 'Oracle host', re: /oraclecloud\.com/i },
+  { name: 'Oracle REST path', re: /hcmRestApi|recruitingJob/ },
+  {
+    name: 'Oracle import server setting',
+    re: /\bORACLE_IMPORT_ENABLED\b|\bIMPORT_TOMBSTONE_KEY\b/,
+  },
 ];
 
 const TEXT_EXT = /\.(js|mjs|cjs|css|html|json|map|txt|svg)$/i;

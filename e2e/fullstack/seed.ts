@@ -148,6 +148,34 @@ export default async function seed() {
   const act = await admin.put('/admin/ai/active', { modelId: models[0]!.id });
   if (act.status >= 300) throw new Error(`ai active: ${act.status} ${JSON.stringify(act.body)}`);
 
+  // Stage 3: the Oracle import against the one fake Oracle (plan 18.2). Activated once through the
+  // admin route with the local test values; requireEuAi switched off, because the stack's AI model
+  // is an Anthropic connection the catalogue cannot mark as EU-resident; retention on (an import
+  // needs it). Skipped when the stack runs without the fake.
+  const info = await fetch(`${CONTROL}/oracle/info`);
+  if (info.ok) {
+    const o = (await info.json()) as { origin: string; user: string };
+    const cur = (await admin.get('/admin/integrations/oracle')).body as {
+      connection: { enabled: boolean } | null;
+    };
+    if (!cur.connection?.enabled) {
+      await fetch(`${CONTROL}/oracle/seed`, {
+        method: 'POST',
+        body: JSON.stringify({ requisitions: [{ number: 'UAT-SEED-0', applications: 1 }] }),
+      });
+      const a = await admin.post('/admin/integrations/oracle/activate', {
+        address: o.origin,
+        user: o.user,
+        password: secrets.ORACLE_TEST_PASSWORD,
+        notice: true,
+      });
+      if ((a.body as { code?: string }).code !== 'ok')
+        throw new Error(`oracle activate: ${a.status} ${JSON.stringify(a.body)}`);
+    }
+    await admin.put('/admin/integrations/oracle/settings', { requireEuAi: false });
+    await admin.put('/admin/retention', { enabled: true, days: 365 });
+  }
+
   mkdirSync(dirname(ACCOUNTS_FILE), { recursive: true });
   writeFileSync(ACCOUNTS_FILE, JSON.stringify(out, null, 2));
 }

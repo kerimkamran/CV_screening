@@ -149,3 +149,44 @@ export async function readVacancyDocx(buf: Buffer, filename: string): Promise<st
   if (text.length < 20) throw new VacancyFileProblem("Couldn't find text in this file");
   return text.slice(0, 40_000);
 }
+
+/** The limits the Word cleaner uses (docx-sanitize.ts): more entries or bytes than this is refused. */
+export const DOCX_MAX_ENTRIES = 2_000;
+export const DOCX_MAX_UNPACKED = 120 * 1024 * 1024;
+
+/**
+ * Stage 3, S3-INT-04 (5): a cheap look at a Word file's ZIP directory before any text is read. A
+ * file with more than 2,000 entries, more than 120 MB unpacked, or no readable directory is not
+ * opened at all (a zip bomb costs nothing). Reads the central directory only; never inflates.
+ */
+export function docxStructureOk(buf: Buffer): boolean {
+  const EOCD = 0x06054b50;
+  const CEN = 0x02014b50;
+  const min = Math.max(0, buf.length - 22 - 0xffff);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= min; i--) {
+    if (buf.readUInt32LE(i) === EOCD) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return false;
+  const entries = buf.readUInt16LE(eocd + 10);
+  const cdSize = buf.readUInt32LE(eocd + 12);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  // ZIP64 markers: a Word file never needs them; treat them as over the limit.
+  if (entries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) return false;
+  if (entries > DOCX_MAX_ENTRIES) return false;
+  if (cdOffset + cdSize > eocd) return false;
+  let p = cdOffset;
+  let unpacked = 0;
+  for (let n = 0; n < entries; n++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== CEN) return false;
+    const size = buf.readUInt32LE(p + 24);
+    if (size === 0xffffffff) return false;
+    unpacked += size;
+    if (unpacked > DOCX_MAX_UNPACKED) return false;
+    p += 46 + buf.readUInt16LE(p + 28) + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+  }
+  return true;
+}

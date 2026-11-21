@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import { AZ } from './az';
 
 /**
  * Interface language (design spec 13): English and Azerbaijani. Text is written in English in the
@@ -34,6 +33,24 @@ let current: Lang = initial();
 if (typeof document !== 'undefined') document.documentElement.lang = current;
 const listeners = new Set<() => void>();
 
+// The Azerbaijani sentences are their own file (PF-07: the first route stays under its size
+// limit). main.tsx waits for it before the first paint when the page opens in Azerbaijani; a
+// switch to Azerbaijani loads it and re-renders once it is in (English shows for that moment).
+let AZ: Record<string, string> | null = null;
+let loading: Promise<void> | null = null;
+export function loadAz(): Promise<void> {
+  loading ??= import('./az').then(
+    (m) => {
+      AZ = m.AZ;
+      listeners.forEach((l) => l());
+    },
+    () => {
+      loading = null; // a failed fetch is tried again on the next switch
+    },
+  );
+  return loading;
+}
+
 export const getLang = (): Lang => current;
 
 /** `null` clears the choice and follows the browser again. */
@@ -54,6 +71,7 @@ export function applyLang(next: Lang | null): void {
     }
   }
   if (typeof document !== 'undefined') document.documentElement.lang = current;
+  if (current === 'az' && !AZ) void loadAz();
   listeners.forEach((l) => l());
 }
 
@@ -64,7 +82,7 @@ const fill = (s: string, vars?: Vars) =>
 
 /** Translate now (for code outside components). */
 export function tr(en: string, vars?: Vars): string {
-  return fill(current === 'az' ? (AZ[en] ?? en) : en, vars);
+  return fill(current === 'az' ? (AZ?.[en] ?? en) : en, vars);
 }
 
 const subscribe = (cb: () => void) => {
@@ -72,8 +90,12 @@ const subscribe = (cb: () => void) => {
   return () => listeners.delete(cb);
 };
 
+// The snapshot also changes when the Azerbaijani file arrives, so open screens re-render.
+const snapshot = (): string => (current === 'az' && !AZ ? 'az-loading' : current);
+
 export function useLang(): Lang {
-  return useSyncExternalStore(subscribe, getLang, getLang);
+  useSyncExternalStore(subscribe, snapshot, snapshot);
+  return current;
 }
 
 /** The translate function, re-rendering the component when the language changes. */

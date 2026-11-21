@@ -433,9 +433,14 @@ uat(
       const tabs = page.getByRole('navigation', { name: t('Administration') }).getByRole('link');
       await expect(tabs.first()).toBeVisible();
       const got = (await tabs.allInnerTexts()).map((x) => x.trim());
-      const want = ['Users', 'AI models', name, 'Fairness monitoring', 'Data retention'].map((x) =>
-        t(x),
-      );
+      const want = [
+        'Users',
+        'AI models',
+        name,
+        'Fairness monitoring',
+        'Data retention',
+        'Oracle import',
+      ].map((x) => t(x));
       if (JSON.stringify(got) !== JSON.stringify(want))
         problems.push(
           `Admin tabs for '${name}': ${JSON.stringify(got)}, not ${JSON.stringify(want)}`,

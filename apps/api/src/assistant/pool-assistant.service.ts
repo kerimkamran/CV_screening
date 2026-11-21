@@ -1,3 +1,4 @@
+import { IntakeService } from '../pipeline/intake.service';
 import {
   ConflictException,
   ForbiddenException,
@@ -218,6 +219,7 @@ export class PoolAssistantService {
     private readonly search: PoolSearch,
     private readonly tools: PoolTools,
     private readonly deep: DeepTools,
+    private readonly intake: IntakeService,
   ) {}
 
   /**
@@ -263,56 +265,28 @@ export class PoolAssistantService {
     if (!d || !d.content || !d.text) throw new NotFoundException();
     await this.scope.assert(p, d.vacancyId);
     if (d.vacancyId === vacancyId) throw new ConflictException('This CV is already here');
-    const dup = await this.db.query<{ id: string }>(
-      `SELECT id FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2`,
-      [vacancyId, d.sha],
-    );
-    if (dup.rows[0]) throw new ConflictException('This CV is already in this vacancy');
     const set = await this.db.query<{ id: string }>(
       `SELECT id FROM requirement_set WHERE vacancy_id = $1 AND frozen_at IS NOT NULL ORDER BY version DESC LIMIT 1`,
       [vacancyId],
     );
     if (!set.rows[0])
       throw new ConflictException('Add the requirements to this vacancy first, then analyze');
-    const docId = newId();
-    await this.db.withTx(async (tx) => {
-      await tx.query(
-        `INSERT INTO cv_document
-           (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
-            parse_status, uploaded_by, page_starts, copied_from, rendition_pdf, rendition_state)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'parsed',$10,$11,$12,$13,$14)`,
-        [
-          docId,
-          vacancyId,
-          d.filename,
-          d.mime,
-          d.size,
-          d.sha,
-          d.content,
-          d.text,
-          d.truncated,
-          p.userId,
-          d.pageStarts ? JSON.stringify(d.pageStarts) : null,
-          d.id,
-          // The pages made for the original come with the copy (S2-BE7).
-          d.renditionState === 'ready' ? d.renditionPdf : null,
-          d.renditionState === 'ready' ? 'ready' : d.renditionState ? 'pending' : null,
-        ],
-      );
-      await tx.query(
-        `INSERT INTO screening (id, document_id, requirement_set_id, state) VALUES ($1,$2,$3,'queued')`,
-        [newId(), docId, set.rows[0]!.id],
-      );
-      await this.audit.record(tx, {
-        actorId: p.userId,
-        actorType: p.actorType,
-        sourceIp: ip,
-        action: 'assistant.rediscovery_analyze',
-        entityType: 'document',
-        entityId: docId,
-        after: { vacancyId, copiedFrom: d.id, fromVacancyId: d.vacancyId },
-      });
-    });
+    // Stage 3, Phase 7: the copy goes through intake (gate, lock, cap, live-only duplicate check).
+    const docId = await this.intake.admitCopy(
+      p,
+      vacancyId,
+      { ...d, content: d.content, text: d.text },
+      (tx, id) =>
+        this.audit.record(tx, {
+          actorId: p.userId,
+          actorType: p.actorType,
+          sourceIp: ip,
+          action: 'assistant.rediscovery_analyze',
+          entityType: 'document',
+          entityId: id,
+          after: { vacancyId, copiedFrom: d.id, fromVacancyId: d.vacancyId },
+        }),
+    );
     return { documentId: docId, vacancyId, vacancyTitle: target.rows[0].title, queued: true };
   }
 

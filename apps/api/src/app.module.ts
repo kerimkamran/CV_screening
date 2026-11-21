@@ -6,6 +6,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { PipelineModule } from './pipeline/pipeline.module';
 import { VacancyModule } from './vacancy/vacancy.module';
 import { HealthController } from './health/health.controller';
@@ -26,6 +27,7 @@ class ConfigModule {}
     AiModule,
     VacancyModule,
     PipelineModule,
+    IntegrationsModule,
     AssistantModule,
     MonitoringModule,
   ],

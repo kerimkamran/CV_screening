@@ -14,6 +14,7 @@ import { ENV, type Env } from '../config/env';
 import { DbService, type Queryable } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
 import {
+  docxStructureOk,
   extractTextWithPages,
   MAX_TEXT_CHARS,
   MIN_READABLE_CHARS,
@@ -62,6 +63,22 @@ export interface IntakeCtx {
   /** The upload item this file answers (item route). */
   itemId?: string;
   batchId?: string;
+  /**
+   * Stage 3, S3-INT-04: a file fetched by the Oracle import. `label` ("Oracle application 7") is
+   * what the permanent skip list keeps instead of the candidate's file name; `via` and `runId` go on
+   * the audit row; `claimId` must still be the run's claim when the CV is stored.
+   */
+  label?: string;
+  via?: 'oracle_hcm';
+  runId?: string;
+  claimId?: string;
+}
+
+/** The import run lost its claim while this file was being read: the runner stops, nothing is written. */
+export class ClaimLostError extends Error {
+  constructor() {
+    super('import run claim lost');
+  }
 }
 
 export const MSG = {
@@ -206,13 +223,13 @@ export class IntakeService implements OnModuleInit {
     return frozen.id;
   }
 
-  /** The item, if it belongs to this vacancy. */
+  /** The item, if it belongs to this vacancy and to a browser batch (an Oracle item is the runner's alone). */
   async itemOf(vid: string, itemId: string) {
     return (
       await this.db.query<{ batchId: string; filename: string; size: number }>(
         `SELECT i.batch_id AS "batchId", i.filename, i.size_bytes::float AS size
            FROM upload_item i JOIN upload_batch b ON b.id = i.batch_id
-          WHERE i.id = $1 AND b.vacancy_id = $2 AND i.parent_item_id IS NULL`,
+          WHERE i.id = $1 AND b.vacancy_id = $2 AND i.parent_item_id IS NULL AND b.source = 'browser'`,
         [itemId, vid],
       )
     ).rows[0];
@@ -395,7 +412,7 @@ export class IntakeService implements OnModuleInit {
 
   /** Skipped files are never dropped silently: keep the list with the vacancy (spec 6.1.4). */
   async skipRecord(
-    ctx: Pick<IntakeCtx, 'vacancyId' | 'principal' | 'itemId'>,
+    ctx: Pick<IntakeCtx, 'vacancyId' | 'principal' | 'itemId' | 'label'>,
     r: IntakeResult,
     tx?: PoolClient,
   ): Promise<void> {
@@ -407,12 +424,94 @@ export class IntakeService implements OnModuleInit {
       [
         newId(),
         ctx.vacancyId,
-        r.filename.slice(0, 300),
+        (ctx.label ?? r.filename).slice(0, 300),
         (r.message ?? 'Skipped').slice(0, 300),
         ctx.principal.userId,
         ctx.itemId ?? null,
       ],
     );
+  }
+
+  // ------------------------------------------------------------------ a copy from another vacancy
+
+  /**
+   * Stage 3, Phase 7 (plan 14.5, decision 1): SenAI's "Analyze for this vacancy" copies a CV that is
+   * already read in another vacancy. It goes through the same rules as an upload: the upload gate
+   * (edit right, not archived, notice confirmed, criteria frozen), the vacancy lock, the CV cap, and
+   * the duplicate check on live CVs only (an erased CV with the same bytes does not block it).
+   * `record` writes the caller's audit row in the same transaction.
+   */
+  async admitCopy(
+    p: Principal,
+    vacancyId: string,
+    src: {
+      id: string;
+      filename: string;
+      mime: string;
+      size: number;
+      sha: string;
+      content: Buffer;
+      text: string;
+      truncated: boolean;
+      pageStarts: unknown;
+      renditionPdf: Buffer | null;
+      renditionState: string | null;
+    },
+    record: (tx: PoolClient, documentId: string) => Promise<void>,
+  ): Promise<string> {
+    const setId = await this.gate(p, vacancyId);
+    const docId = newId();
+    await this.db.withTx(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`intake:${vacancyId}`]);
+      const dup = await tx.query(
+        `SELECT 1 FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2 AND erased_at IS NULL`,
+        [vacancyId, src.sha],
+      );
+      if (dup.rowCount) throw new ConflictException('This CV is already in this vacancy');
+      const live = Number(
+        (
+          await tx.query<{ n: string }>(
+            `SELECT count(*) AS n FROM cv_document WHERE vacancy_id = $1 AND erased_at IS NULL`,
+            [vacancyId],
+          )
+        ).rows[0]!.n,
+      );
+      if (live >= this.maxCvs)
+        throw new ConflictException(`This vacancy holds at most ${this.maxCvs} CVs`);
+      await tx.query(
+        `INSERT INTO cv_document
+           (id, vacancy_id, filename, mime, size_bytes, sha256, content, text, text_truncated,
+            parse_status, uploaded_by, page_starts, copied_from, rendition_pdf, rendition_state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'parsed',$10,$11,$12,$13,$14)`,
+        [
+          docId,
+          vacancyId,
+          src.filename,
+          src.mime,
+          src.size,
+          src.sha,
+          src.content,
+          src.text,
+          src.truncated,
+          p.userId,
+          src.pageStarts ? JSON.stringify(src.pageStarts) : null,
+          src.id,
+          // The pages made for the original come with the copy (S2-BE7).
+          src.renditionState === 'ready' ? src.renditionPdf : null,
+          src.renditionState === 'ready' ? 'ready' : src.renditionState ? 'pending' : null,
+        ],
+      );
+      await tx.query(
+        `INSERT INTO screening (id, document_id, requirement_set_id, state) VALUES ($1,$2,$3,'queued')`,
+        [newId(), docId, setId],
+      );
+      await tx.query(`UPDATE vacancy SET status = 'open' WHERE id = $1 AND status = 'draft'`, [
+        vacancyId,
+      ]);
+      await record(tx, docId);
+    });
+    this.processor.nudge();
+    return docId;
   }
 
   // ------------------------------------------------------------------ one file
@@ -473,8 +572,11 @@ export class IntakeService implements OnModuleInit {
     let pageStarts: number[] | null = null;
     let parseStatus: 'parsed' | 'empty' | 'failed' = 'parsed';
     let parseError: string | null = null;
+    // S3-INT-04 (5): a Word file whose directory is too big is stored unread (no extraction, no pages).
+    const docxRefused = kind === 'docx' && !docxStructureOk(buf);
     const release = permitHeld ? () => undefined : await this.permits.acquire(1);
     try {
+      if (docxRefused) throw new Error('docx structure over the limits');
       ({ text, pageStarts } = await extractTextWithPages(buf, kind));
       if (text.length < MIN_READABLE_CHARS) parseStatus = 'empty'; // e.g. a scanned PDF: no OCR in the MVP
     } catch (e) {
@@ -537,7 +639,23 @@ export class IntakeService implements OnModuleInit {
             };
           }
         }
-        if (cancelled) {
+        // S3-INT-04 (3): an import file re-reads its run and the vacancy under the lock. A claim
+        // that is no longer the run's writes nothing; a cancel or an archive ends the item cancelled.
+        let runStopped = false;
+        if (ctx.runId) {
+          const run = (
+            await tx.query<{ claim_id: string | null; cancel: boolean; archived: boolean }>(
+              `SELECT r.claim_id, (r.cancel_requested_at IS NOT NULL OR r.state <> 'running') AS cancel,
+                      (v.archived_at IS NOT NULL) AS archived
+                 FROM import_run r JOIN vacancy v ON v.id = r.vacancy_id
+                WHERE r.id = $1 FOR SHARE OF r, v`,
+              [ctx.runId],
+            )
+          ).rows[0];
+          if (!run || (ctx.claimId && run.claim_id !== ctx.claimId)) throw new ClaimLostError();
+          runStopped = run.cancel || run.archived;
+        }
+        if (cancelled || runStopped) {
           const r: IntakeResult = {
             filename,
             status: 'skipped',
@@ -607,7 +725,7 @@ export class IntakeService implements OnModuleInit {
             ctx.principal.userId,
             readable && pageStarts ? JSON.stringify(pageStarts) : null,
             // A Word file waits for its pages (S2-BE7); everything else has none to make.
-            kind === 'docx' ? 'pending' : null,
+            kind === 'docx' && !docxRefused ? 'pending' : null,
           ],
         );
         await tx.query(
@@ -636,7 +754,12 @@ export class IntakeService implements OnModuleInit {
           action: 'document.upload',
           entityType: 'document',
           entityId: docId,
-          after: { vacancyId: ctx.vacancyId, sha256: hash, parseStatus },
+          after: {
+            vacancyId: ctx.vacancyId,
+            sha256: hash,
+            parseStatus,
+            ...(ctx.via ? { via: ctx.via, runId: ctx.runId } : {}),
+          },
         });
         return r;
       });

@@ -42,8 +42,51 @@ export function checkIsolation(dir = join(here, '..', 'infra', 'environments')) 
   return problems;
 }
 
+/**
+ * Stage 3, S3-OPS-03 (plan 15.3 note 5): the Oracle import switch belongs to the production service
+ * alone. It may not be named in any file that sets up another environment, and `render.yaml` may
+ * declare it only with `sync: false` (set by hand on the production service, never by a sync).
+ */
+export function checkOracleSwitch(root = join(here, '..')) {
+  const problems = [];
+  const NAME = /ORACLE_IMPORT_ENABLED/;
+  const read = (f) => {
+    try {
+      return readFileSync(join(root, f), 'utf8');
+    } catch {
+      return null;
+    }
+  };
+  const list = (d) => {
+    try {
+      return readdirSync(join(root, d)).map((f) => `${d}/${f}`);
+    } catch {
+      return [];
+    }
+  };
+  const files = [
+    '.env.example',
+    'docker-compose.yml',
+    'render.gate.yaml',
+    ...list('docker').filter((f) => /Dockerfile$/.test(f)),
+    ...list('infra/environments'),
+  ];
+  for (const f of files) {
+    const text = read(f);
+    if (text !== null && NAME.test(text))
+      problems.push(`${f} names ORACLE_IMPORT_ENABLED (production only)`);
+  }
+  const render = read('render.yaml') ?? '';
+  const block = /-\s*key:\s*ORACLE_IMPORT_ENABLED\s*\n((?:\s+[a-zA-Z]+:.*\n?)*)/.exec(render);
+  if (block && !/^\s+sync:\s*false\s*$/m.test(block[1]))
+    problems.push('render.yaml gives ORACLE_IMPORT_ENABLED a value (use sync: false)');
+  if (block && /^\s+(value|generateValue):/m.test(block[1]))
+    problems.push('render.yaml gives ORACLE_IMPORT_ENABLED a value (use sync: false)');
+  return problems;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const problems = checkIsolation();
+  const problems = [...checkIsolation(), ...checkOracleSwitch()];
   if (problems.length) {
     problems.forEach((p) => console.error(`FAIL  ${p}`));
     process.exit(1);

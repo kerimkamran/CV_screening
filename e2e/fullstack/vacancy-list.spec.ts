@@ -469,7 +469,7 @@ uat(
     await ux.check('criteria', [...STD, 'AZ']);
     // 4) Results: the Requirements drawer and the mark.
     await tabs.getByRole('tab', { name: t('Results') }).click();
-    await expect.soft(panel.getByRole('button', { name: t('Stop the scan') })).toHaveCount(0);
+    await expect.soft(panel.getByRole('button', { name: t('Stop analysis') })).toHaveCount(0);
     await expect
       .soft(
         panel.getByRole('button', {

@@ -1,3 +1,4 @@
+import { activeRun, finishRun } from '../integrations/import-runs';
 import {
   BadRequestException,
   ConflictException,
@@ -583,6 +584,18 @@ export class VacancyService {
         [vid],
       );
       if (running.rowCount) throw new ConflictException('Stop the running screening first');
+      // S3-INT-13 (9): an import that is fetching files is stopped with Stop first, as screenings
+      // are; one that is still listing or waiting for the recruiter ends here, code `archived`.
+      const run = await activeRun(tx, vid);
+      if (run && !run.cancel_requested_at && run.phase === 'fetching')
+        throw new ConflictException('Stop the running screening first');
+      if (run)
+        await finishRun(
+          tx,
+          run.id,
+          'cancelled',
+          run.cancel_requested_at ? run.error_code : 'archived',
+        );
       await tx.query(
         `UPDATE vacancy SET archived_at = COALESCE(archived_at, now()), archived_by = $2,
                 version = version + 1, updated_at = now(), updated_by = $2 WHERE id = $1`,

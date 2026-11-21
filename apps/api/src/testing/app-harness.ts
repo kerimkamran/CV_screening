@@ -98,26 +98,43 @@ export function multipart(files: { name: string; type: string; data: Buffer }[])
 export const cv = (name: string, lines: string[]) =>
   `Name: ${name}\n${lines.join('\n')}\n${'Padding text for length. '.repeat(10)}`;
 
+export interface BootOptions {
+  /** Extra environment for this app (e.g. the Oracle import switch). */
+  env?: Record<string, string>;
+  /** Start a second app on the database of an earlier harness (restart specs). Its close() keeps the database. */
+  shareDb?: Harness['db'];
+}
+
+/** A fixed test value: the Oracle import specs need a tombstone key; it never leaves the test database. */
+export const TEST_TOMBSTONE_KEY = 't'.repeat(40);
+
 export async function boot(
   tag: string,
   model: (system: string, user: string) => string = scriptedModel,
+  opts: BootOptions = {},
 ): Promise<Harness> {
   const ADMIN = 'admin@azerconnect.test';
   const PW = 'Bootstrap-Passw0rd!';
   const NEW_PW = 'A-much-longer-secret-1';
-  const db = await createDb(tag);
+  const db = opts.shareDb ?? (await createDb(tag));
+  const encryptionKey = opts.shareDb
+    ? process.env['SETTINGS_ENCRYPTION_KEY']!
+    : randomBytes(32).toString('base64');
   Object.assign(process.env, {
     DATABASE_URL: db.apiUrl,
     AUTH_MODE: 'local',
     SESSION_SECRET: 'z'.repeat(48),
     BOOTSTRAP_ADMIN_EMAIL: ADMIN,
     BOOTSTRAP_ADMIN_PASSWORD: PW,
-    SETTINGS_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+    SETTINGS_ENCRYPTION_KEY: encryptionKey,
     WORKER_ENABLED: 'false',
     RENDITION_ENABLED: 'false',
     VACANCY_VISIBILITY: process.env['TEST_VISIBILITY'] ?? 'granted',
     VACANCY_EDIT: process.env['TEST_VACANCY_EDIT'] ?? 'everyone',
-    LOG_LEVEL: 'silent',
+    LOG_LEVEL: process.env['TEST_LOG_LEVEL'] ?? 'silent',
+    ORACLE_IMPORT_ENABLED: 'false',
+    IMPORT_TOMBSTONE_KEY: TEST_TOMBSTONE_KEY,
+    ...(opts.env ?? {}),
   });
   const sent: { to: string; text: string }[] = [];
   const modelCalls: { system: string; user: string }[] = [];
@@ -152,7 +169,7 @@ export async function boot(
     });
     return c.json().token as string;
   };
-  const adminToken = await signIn(ADMIN, PW, NEW_PW);
+  const adminToken = opts.shareDb ? await signIn(ADMIN, NEW_PW) : await signIn(ADMIN, PW, NEW_PW);
   const as = (token: string): Api => ({
     get: (url: string) =>
       app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } }),
@@ -187,13 +204,15 @@ export async function boot(
     const me = (await as(token).get('/me')).json() as { userId: string };
     return { token, userId: me.userId, api: as(token) };
   }
-  await admin.post('/admin/ai/connections', {
-    company: 'anthropic',
-    apiKey: 'sk-ant-testtesttest',
-    models: [{ modelId: 'claude-test' }],
-  });
-  const models = (await admin.get('/admin/ai')).json().connections[0].models;
-  await admin.put('/admin/ai/active', { modelId: models[0].id });
+  if (!opts.shareDb) {
+    await admin.post('/admin/ai/connections', {
+      company: 'anthropic',
+      apiKey: 'sk-ant-testtesttest',
+      models: [{ modelId: 'claude-test' }],
+    });
+    const models = (await admin.get('/admin/ai')).json().connections[0].models;
+    await admin.put('/admin/ai/active', { modelId: models[0].id });
+  }
 
   /** A frozen vacancy with the notice confirmed and the given CVs uploaded and fully screened. */
   async function scenario(
@@ -236,7 +255,7 @@ export async function boot(
     },
     async close() {
       await app.close();
-      await db.drop();
+      if (!opts.shareDb) await db.drop();
     },
   };
 }

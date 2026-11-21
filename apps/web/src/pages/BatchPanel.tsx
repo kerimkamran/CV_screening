@@ -18,6 +18,7 @@ import {
 } from '../coffeebay-logic';
 import { stopTracking, trackBatch } from '../done-signals';
 import { tr, useT } from '../i18n';
+import { trServer } from '../i18n/server';
 import {
   attachFiles,
   cancelRun,
@@ -29,6 +30,7 @@ import {
   retryCancel,
   runActive,
   useBatchStatus,
+  useAdopted,
   useRun,
   type BatchItemView,
   type IntakeInfo,
@@ -53,6 +55,8 @@ const NEEDS_ATTENTION: CvStatus[] = [
   'unreadable',
   'needs_look',
   'stopped',
+  // An Oracle file that was not fetched: Refresh in the Oracle strip fetches it (no row button).
+  'not_fetched',
 ];
 const OPEN_FOR_SEND: CvStatus[] = ['not_sent', 'could_not_send', 'vacancy_full'];
 
@@ -116,8 +120,17 @@ export function BatchPanel({
     fetchIntakeInfo(vacancy.id).then(setInfo, () => undefined);
   }, [vacancy.id, run?.batchId]);
 
-  const batchId = run?.batchId ?? info?.latestBatch?.id ?? null;
-  const mine = run ? true : !!info?.latestBatch?.mine;
+  // This tab's run first, then a batch the import just made (adopted without a reload), then the latest.
+  const adopted = useAdopted(vacancy.id);
+  useEffect(() => {
+    if (adopted) fetchIntakeInfo(vacancy.id).then(setInfo, () => undefined);
+  }, [adopted, vacancy.id]);
+  const batchId = run?.batchId ?? adopted ?? info?.latestBatch?.id ?? null;
+  const oracleBatch =
+    (adopted && batchId === adopted) ||
+    (info?.latestBatch?.id === batchId && info?.latestBatch?.source === 'oracle_hcm');
+  // The waiting scene is for files this person sends; an Oracle import shows the plain panel.
+  const mine = run ? true : !!info?.latestBatch?.mine && !oracleBatch;
 
   // The saved choice for this batch; a batch started in this tab always opens in full.
   useEffect(() => {
@@ -175,7 +188,12 @@ export function BatchPanel({
     setError('');
     try {
       retryFailedFiles(vacancy.id);
-      await api.post(`/vacancies/${vacancy.id}/retry-failed`, { batchId });
+      const r = await api.post<{
+        refresh?: { runId?: string; refused?: string; message?: string };
+      }>(`/vacancies/${vacancy.id}/retry-failed`, { batchId });
+      // S3-INT-13 (13): on an Oracle batch the server may start a refresh, or say why it could not.
+      if (r?.refresh?.runId) window.dispatchEvent(new Event('cv-oracle-changed'));
+      if (r?.refresh?.refused) setError(trServer(r.refresh.message ?? ''));
       kickBatch(batchId);
       onChanged();
     } catch (e) {
@@ -256,6 +274,7 @@ export function BatchPanel({
   };
   const toggleDetails = () => setDetailsOpen((v) => !v);
   const started = status.batch;
+  const oracle = status.batch.source === 'oracle_hcm';
   // Files left out because the vacancy is full are not offered again while it is still full (SD-57).
   const stillFull = !!info && info.used >= info.limit;
   const waitingFiles = pr.notSent - (stillFull ? (status.counts.byStatus.vacancy_full ?? 0) : 0);
@@ -290,12 +309,13 @@ export function BatchPanel({
         />
       ) : (
         <section
-          aria-label={t('Latest upload')}
+          aria-label={oracle ? t('Latest import from Oracle') : t('Latest upload')}
           className="space-y-2 rounded-2xl border border-line bg-card p-4 text-sm"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-semibold">
-              {t('Latest upload')} · {when(started.createdAt)} · {started.createdBy}
+              {oracle ? t('Latest import from Oracle') : t('Latest upload')} ·{' '}
+              {when(started.createdAt)} · {started.createdBy}
             </h2>
             {mine && view === 'hidden' && (
               <button
@@ -309,8 +329,10 @@ export function BatchPanel({
             )}
           </div>
           <p className="tabular-nums">
-            {t('Sent {sent} of {total}', { sent: pr.sent, total: pr.total })} ·{' '}
-            {t('Analyzed {done} of {total}', { done: pr.done, total: pr.total })}
+            {oracle
+              ? t('Fetched {sent} of {total}', { sent: pr.sent, total: pr.total })
+              : t('Sent {sent} of {total}', { sent: pr.sent, total: pr.total })}{' '}
+            · {t('Analyzed {done} of {total}', { done: pr.done, total: pr.total })}
           </p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className={btnSecondary} onClick={openResults}>
@@ -370,7 +392,7 @@ export function BatchPanel({
         </Notice>
       )}
 
-      {canEdit && waitingFiles > 0 && !holding && !cancelled && (
+      {canEdit && !oracle && waitingFiles > 0 && !holding && !cancelled && (
         <Notice kind="warn">
           <span>
             {t('{n} files are not sent yet. Choose them again and only those are sent.', {

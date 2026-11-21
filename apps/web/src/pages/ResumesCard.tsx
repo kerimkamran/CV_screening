@@ -1,3 +1,6 @@
+import { Suspense } from 'react';
+import { type OracleState } from '../oracle';
+import { OracleLink } from './lazy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_ANNOUNCE_FILES, UPLOAD_CODE_MESSAGE } from '@cv/shared';
 import { api } from '../api';
@@ -52,6 +55,8 @@ export function ResumesCard({
   roleDirty,
   onStarted,
   user,
+  oracle,
+  onOracleStarted,
 }: {
   vacancy: VacancyView;
   /** The Role card has changes that are not saved yet. */
@@ -59,6 +64,9 @@ export function ResumesCard({
   onStarted: () => void;
   /** Who is signed in (for the "ready" signals). */
   user: { id: string };
+  /** Stage 3: the vacancy's Oracle state (null or unavailable hides the Oracle field). */
+  oracle?: OracleState | null;
+  onOracleStarted?: () => void;
 }) {
   const t = useT();
   const [rows, setRows] = useState<Checked[]>([]);
@@ -162,6 +170,8 @@ export function ResumesCard({
   if (!hasResumes) needs.push(t('Add at least one CV.'));
   if (!noticeOk) needs.push(t('Confirm the candidate notice.'));
 
+  // The Oracle button asks for the same things, except a CV: it brings them (B3).
+  const oracleNeeds = needs.filter((n) => n !== t('Add at least one CV.'));
   const button = everRan ? t('Re-analyze') : t('Find the best fit →');
   const problems = rows.filter((r) => r.problem);
   const readyRows = rows.filter((r) => !r.problem);
@@ -277,6 +287,19 @@ export function ResumesCard({
                 }}
               />
             </div>
+            {/* Stage 3, S3-INT-14 (B2): the Oracle field and button, only when the API says available. */}
+            {oracle?.available && (
+              <Suspense fallback={null}>
+                <OracleLink
+                  vacancy={vacancy}
+                  oracle={oracle}
+                  needs={oracleNeeds}
+                  noticeTickedNow={notice && !confirmed}
+                  userId={user.id}
+                  onStarted={() => onOracleStarted?.()}
+                />
+              </Suspense>
+            )}
 
             {truncated && (
               <Notice kind="warn">
