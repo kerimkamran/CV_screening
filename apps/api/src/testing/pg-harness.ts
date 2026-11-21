@@ -30,7 +30,12 @@ export async function createDb(tag: string) {
   await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.query(`CREATE DATABASE ${dbName}`);
   const exists = await admin.query(`SELECT 1 FROM pg_roles WHERE rolname='cv_api_it'`);
-  if (!exists.rowCount) await admin.query(`CREATE ROLE cv_api_it LOGIN PASSWORD 'it'`);
+  // Parallel workers on a fresh server can both see no role and race to create it (CI): the loser's
+  // duplicate error is harmless, the role exists either way.
+  if (!exists.rowCount)
+    await admin.query(`CREATE ROLE cv_api_it LOGIN PASSWORD 'it'`).catch((e: { code?: string }) => {
+      if (e.code !== '23505' && e.code !== '42710') throw e;
+    });
   await admin.end();
 
   const ownerUrl = withDb(adminUrl!, dbName);
