@@ -33,3 +33,18 @@ Notes from the build team, to be verified by the owners and not relied on: Anthr
 2. Press Test connection, then Use this.
 3. Run the paired-CV test (Admin > Monitoring) and record the result with the date and model name.
 4. File the signed DPA and the assessment where the DPO keeps them; note the reference here: [ ]
+
+## Source system: Oracle Fusion HCM (Stage 3, proposed)
+
+**Draft by the build team, 20 November 2026. Not legal advice.** Oracle is not a column in the table above, because it does not receive data from Parallax. It is where the applications already are: the planned import reads them from Oracle and writes nothing back.
+
+The import is not built and not switched on (ADR 0011, proposed; `docs/stage-3/development-plan.md`). These items are to be complete before it is switched on. The matching DPIA rows are in section 6 of `dpia-fria-draft.md`.
+
+| Item                                                                                                                                                                                | Status |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Where the Oracle environment is hosted (country and region) is known                                                                                                                | [ ]    |
+| Azerconnect's contract with Oracle allows reading applications and CV files through the API                                                                                         | [ ]    |
+| A dedicated read-only account is used, limited to the recruiting organisations in scope, with confidential vacancies excluded (the Oracle team confirms in writing; a go-live gate) | [ ]    |
+| Render (already a column above) now also stores CVs copied from Oracle, and its column covers that                                                                                  | [ ]    |
+| Azerbaijani law on moving this data from Oracle to Render Frankfurt checked (localisation, registration or consent duties)                                                          | [ ]    |
+| Approved by (DPO / Legal) and date                                                                                                                                                  | [ ]    |
