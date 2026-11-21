@@ -37,8 +37,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: PDF text extraction tool (used by the pipeline tests)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      # pdftotext for the pipeline tests; LibreOffice for the Word rendition tests (S2-BE7).
+      - name: PDF text extraction and LibreOffice (used by the pipeline tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui
       - run: npm ci
 
       - name: Lint and format
