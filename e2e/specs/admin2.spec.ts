@@ -785,7 +785,9 @@ uat(
     await expect(page.getByRole('heading', { level: 1, name: t('Administration') })).toBeVisible();
     const tabs = page.getByRole('navigation', { name: t('Administration') });
     await expect(tabs.getByRole('link')).toHaveText(
-      ['Users', 'AI models', 'SenAI', 'Fairness monitoring', 'Data retention'].map((x) => t(x)),
+      ['Users', 'AI models', 'SenAI', 'Fairness monitoring', 'Data retention', 'Oracle import'].map(
+        (x) => t(x),
+      ),
     );
     // 'Link copied.' shown on Users.
     await page

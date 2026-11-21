@@ -3,21 +3,27 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   NotFoundException,
   Param,
   Post,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import {
   countByStatus,
   cvStatus,
+  MAX_ANNOUNCE_FILES,
   newId,
+  RETRYABLE_CODES,
   uploadStatus,
+  type BatchSource,
   type CvStatus,
   type UploadOutcome,
 } from '@cv/shared';
-import type { FastifyRequest } from 'fastify';
+import { ModuleRef } from '@nestjs/core';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
@@ -25,7 +31,8 @@ import type { Principal } from '../auth/principal';
 import { parse, ulidSchema } from '../common/validate';
 import { DbService } from '../db/db.service';
 import { VacancyScope } from '../vacancy/vacancy-scope.service';
-import { IntakeService, isFinalItem } from './intake.service';
+import { IntakeService, isFinalItem, itemOpen } from './intake.service';
+import { batchReportCsv } from './batch-report';
 import { ProcessorService } from './processor.service';
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
@@ -40,8 +47,16 @@ const batchBody = z.object({
       }),
     )
     .min(1)
-    .max(500),
+    // The cap is checked by hand below: a typed 413 TOO_MANY_FILES, not a zod 400 (S3-UP-01).
+    .max(1_000_000),
 });
+
+/** The server sentence for the 500-per-upload backstop (Wording key `upload.limit.server`). */
+export const tooManyFiles = () =>
+  new HttpException(
+    { message: `Up to ${MAX_ANNOUNCE_FILES} files per upload.`, code: 'TOO_MANY_FILES' },
+    413,
+  );
 
 interface ItemRow {
   id: string;
@@ -76,6 +91,7 @@ export class UploadBatchesController {
     private readonly scope: VacancyScope,
     private readonly intake: IntakeService,
     private readonly processor: ProcessorService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   /** How full the vacancy is, the file rules, and the latest upload (for the Resumes card). */
@@ -91,11 +107,20 @@ export class UploadBatchesController {
         createdBy: string;
         createdByName: string;
         fileCount: number;
+        source: BatchSource;
       }>(
         `SELECT b.id, b.created_at AS "createdAt", b.created_by AS "createdBy",
-                u.display_name AS "createdByName", b.file_count AS "fileCount"
+                u.display_name AS "createdByName", b.file_count AS "fileCount", b.source
            FROM upload_batch b JOIN app_user u ON u.id = b.created_by
           WHERE b.vacancy_id = $1 ORDER BY b.created_at DESC, b.id DESC LIMIT 1`,
+        [vid],
+      )
+    ).rows[0];
+    // S3-INT-05 (1): an import that is listing has no batch yet; latestBatch stays the earlier one.
+    const active = (
+      await this.db.query<{ runId: string; state: string; phase: string; batchId: string | null }>(
+        `SELECT id AS "runId", state, phase, batch_id AS "batchId" FROM import_run
+          WHERE vacancy_id = $1 AND state IN ('queued','running','awaiting_confirm')`,
         [vid],
       )
     ).rows[0];
@@ -112,8 +137,10 @@ export class UploadBatchesController {
             createdBy: latest.createdByName,
             fileCount: latest.fileCount,
             mine: latest.createdBy === p.userId,
+            source: latest.source,
           }
         : null,
+      activeImport: active ?? null,
     };
   }
 
@@ -129,23 +156,28 @@ export class UploadBatchesController {
     const vid = parse(ulidSchema, id);
     await this.intake.gate(p, vid);
     const { files } = parse(batchBody, body);
+    // The web never sends more than 500 (it announces a slice); this serves stale tabs and scripts.
+    if (files.length > MAX_ANNOUNCE_FILES) throw tooManyFiles();
     const used = await this.used(vid);
     const room = Math.max(this.intake.maxCvs - used, 0);
 
     const batchId = newId();
     let counted = 0;
+    const full = {
+      outcome: 'skipped' as UploadOutcome,
+      code: 'vacancy_full',
+      message: `This vacancy holds at most ${this.intake.maxCvs} CVs`,
+    };
     const items = files.map((f, position) => {
       const itemId = newId();
       let pre: { outcome: UploadOutcome; code: string; message: string } | undefined;
       const bad = this.intake.precheck(f.name, f.size);
       if (bad) pre = { outcome: bad.outcome, code: bad.code, message: bad.message };
-      else if (counted++ >= room) {
-        pre = {
-          outcome: 'skipped',
-          code: 'vacancy_full',
-          message: `This vacancy holds at most ${this.intake.maxCvs} CVs`,
-        };
-      }
+      // Loose files use the room in announce order. A ZIP does not use a slot (its entries meet the
+      // cap when they are taken in); it is marked now only when there is no room at all.
+      else if (this.intake.isZipName(f.name)) {
+        if (room === 0) pre = full;
+      } else if (counted++ >= room) pre = full;
       return { itemId, position, f, pre };
     });
 
@@ -228,9 +260,12 @@ export class UploadBatchesController {
         createdBy: string;
         createdByName: string;
         fileCount: number;
+        cancelledAt: Date | null;
+        source: BatchSource;
       }>(
         `SELECT b.id, b.vacancy_id AS "vacancyId", b.created_at AS "createdAt", b.created_by AS "createdBy",
-                u.display_name AS "createdByName", b.file_count AS "fileCount"
+                u.display_name AS "createdByName", b.file_count AS "fileCount", b.cancelled_at AS "cancelledAt",
+                b.source
            FROM upload_batch b JOIN app_user u ON u.id = b.created_by WHERE b.id = $1`,
         [bid],
       )
@@ -262,20 +297,42 @@ export class UploadBatchesController {
               ? { state: r.state, cancelled: r.cancelled, band: r.band, scored: r.scored }
               : null,
           })
-        : uploadStatus(r.outcome, r.code);
+        : uploadStatus(r.outcome, r.code, b.source);
 
     const top = rows.filter((r) => !r.parentId);
     // A ZIP is a container: its entries carry the statuses, the ZIP itself only "arrived".
     const leaves = rows.filter((r) => r.code !== 'zip');
     const byStatus = countByStatus(leaves.map(statusOf));
-    const received = top.filter((r) => isFinalItem(r.outcome, r.code)).length;
+    const isCancelled = (r: ItemRow) =>
+      r.outcome === 'skipped' &&
+      (r.code === 'cancelled' || r.code === 'superseded' || r.code === 'source_gone');
+    const oracle = b.source === 'oracle_hcm';
+    // Received: every final item except a cancelled one ("Sent 220 of 500" after a stop at 220).
+    const received = top.filter((r) => isFinalItem(r.outcome, r.code) && !isCancelled(r)).length;
     const upload = {
       total: b.fileCount,
       received,
-      notReceived: top.filter((r) => r.outcome === null).length,
+      // Not received: empty, or a retryable skip other than "vacancy full" (e.g. server_error).
+      // On an Oracle batch only a file still waiting for the runner is "not received": a file the
+      // runner could not fetch is "not fetched" (Refresh fetches it), not something still coming.
+      notReceived: top.filter((r) =>
+        b.source === 'oracle_hcm'
+          ? r.outcome === null
+          : !isFinalItem(r.outcome, r.code) &&
+            !(r.outcome === 'skipped' && r.code === 'vacancy_full'),
+      ).length,
       vacancyFull: top.filter((r) => r.outcome === 'skipped' && r.code === 'vacancy_full').length,
+      cancelled: top.filter(isCancelled).length,
       rejected: leaves.filter((r) => r.outcome === 'rejected').length,
       duplicate: leaves.filter((r) => r.outcome === 'duplicate').length,
+      // S3-INT-05 (2): files of an Oracle batch that were not fetched (Refresh fetches them).
+      ...(oracle
+        ? {
+            notFetched: top.filter(
+              (r) => uploadStatus(r.outcome, r.code, b.source) === 'not_fetched',
+            ).length,
+          }
+        : {}),
     };
     const lastReceivedAt = rows.reduce<Date | null>(
       (m, r) => (r.receivedAt && (!m || r.receivedAt > m) ? r.receivedAt : m),
@@ -289,6 +346,8 @@ export class UploadBatchesController {
         createdBy: b.createdByName,
         fileCount: b.fileCount,
         mine: b.createdBy === p.userId,
+        cancelledAt: b.cancelledAt ? new Date(b.cancelledAt).toISOString() : null,
+        source: b.source,
       },
       lastReceivedAt: lastReceivedAt ? new Date(lastReceivedAt).toISOString() : null,
       counts: { upload, byStatus },
@@ -371,6 +430,7 @@ export class UploadBatchesController {
     let resend: { itemId: string; filename: string; size: number }[] = [];
     if (batchId) {
       const room = Math.max(this.intake.maxCvs - (await this.used(vid)), 0);
+      // The same open-item rule as the guarded write; a cancelled batch sends nothing again.
       const open = await this.db.query<{
         id: string;
         filename: string;
@@ -378,18 +438,161 @@ export class UploadBatchesController {
         outcome: string | null;
         code: string | null;
       }>(
-        `SELECT id, filename, size_bytes::float AS size, outcome, code FROM upload_item
-          WHERE batch_id = $1 AND parent_item_id IS NULL
-            AND (outcome IS NULL OR (outcome = 'skipped' AND code = 'vacancy_full'))
-          ORDER BY position`,
-        [batchId],
+        `SELECT i.id, i.filename, i.size_bytes::float AS size, i.outcome, i.code
+           FROM upload_item i JOIN upload_batch b ON b.id = i.batch_id
+          WHERE i.batch_id = $1 AND i.parent_item_id IS NULL AND b.cancelled_at IS NULL
+            AND b.source = 'browser'
+            AND ${itemOpen(2).replaceAll('outcome', 'i.outcome').replaceAll('code', 'i.code')}
+          ORDER BY i.position`,
+        [batchId, RETRYABLE_CODES],
       );
       let full = 0;
       resend = open.rows
-        .filter((r) => r.outcome === null || full++ < room)
+        .filter((r) => r.code !== 'vacancy_full' || full++ < room)
         .map((r) => ({ itemId: r.id, filename: r.filename, size: r.size }));
     }
-    return { requeued, resend };
+    // S3-INT-13 (13): on an Oracle batch with files not fetched, Retry failed starts a refresh run
+    // through the import's start service, looked up at call time (no module import). A refusal is
+    // returned in the same answer; the analyses are re-queued either way.
+    let refresh: { runId?: string; refused?: string; message?: string } | undefined;
+    if (batchId) {
+      const b = (
+        await this.db.query<{ source: string; open: string }>(
+          `SELECT b.source, count(i.id) FILTER (WHERE i.outcome IS NULL OR (i.outcome = 'skipped' AND i.code IN ('source_unavailable','server_error'))) AS open
+             FROM upload_batch b LEFT JOIN upload_item i ON i.batch_id = b.id AND i.parent_item_id IS NULL
+            WHERE b.id = $1 GROUP BY b.source`,
+          [batchId],
+        )
+      ).rows[0];
+      if (b?.source === 'oracle_hcm' && Number(b.open) > 0) {
+        const svc = this.moduleRef.get<{
+          start: (
+            p: Principal,
+            vid: string,
+            body: { estimate?: number },
+            ip?: string,
+            o?: { mode?: 'refresh' },
+          ) => Promise<{ runId: string }>;
+        }>('ORACLE_IMPORT_START', { strict: false });
+        try {
+          refresh = await svc.start(p, vid, { estimate: Number(b.open) }, req.ip, {
+            mode: 'refresh',
+          });
+        } catch (e) {
+          const code = (e as { getResponse?: () => unknown }).getResponse?.() as
+            { code?: string } | undefined;
+          refresh = { refused: code?.code ?? 'ORACLE_UNAVAILABLE' };
+        }
+      }
+    }
+    return { requeued, resend, ...(refresh ? { refresh } : {}) };
+  }
+
+  /**
+   * "Stop sending files" (S3-UP-05): the batch takes nothing more. Every item that is empty or
+   * retryable becomes `skipped / cancelled`; final items are untouched; nothing about the analysis
+   * changes (Stop analysis is a different action). Lock order: the batch row first, then the items,
+   * so a file being stored either finishes before the cancel or sees it. Idempotent: a second call
+   * answers `{cancelled: 0}`, keeps the first time and person, and writes no audit row.
+   */
+  @Post('upload-batches/:id/cancel')
+  @HttpCode(200)
+  async cancel(
+    @Param('id') id: string,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const bid = parse(ulidSchema, id);
+    const vid = (
+      await this.db.query<{ vacancyId: string }>(
+        `SELECT vacancy_id AS "vacancyId" FROM upload_batch WHERE id = $1`,
+        [bid],
+      )
+    ).rows[0]?.vacancyId;
+    if (!vid) throw new NotFoundException();
+    // Edit right needed; allowed on an archived vacancy (stopping never changes the vacancy).
+    await this.scope.assertEdit(p, vid);
+    return this.db.withTx(async (tx) => {
+      const first = await tx.query(
+        `UPDATE upload_batch SET cancelled_at = now(), cancelled_by = $2
+          WHERE id = $1 AND cancelled_at IS NULL`,
+        [bid, p.userId],
+      );
+      if (!first.rowCount) return { cancelled: 0 };
+      const r = await tx.query(
+        `UPDATE upload_item SET outcome = 'skipped', code = 'cancelled', message = 'Cancelled', received_at = now()
+          WHERE batch_id = $1 AND ${itemOpen(2)}`,
+        [bid, RETRYABLE_CODES],
+      );
+      const n = r.rowCount ?? 0;
+      await this.audit.record(tx, {
+        actorId: p.userId,
+        actorType: p.actorType,
+        sourceIp: req.ip,
+        action: 'upload_batch.cancelled',
+        entityType: 'upload_batch',
+        entityId: bid,
+        after: { vacancyId: vid, cancelled: n },
+      });
+      return { cancelled: n };
+    });
+  }
+
+  /**
+   * "Download report" (S3-UP-09): one CSV row per row of the batch's Details, as it stands now.
+   * Anyone who may read the vacancy may download it; the audit row (counts only) is written before
+   * the bytes leave.
+   */
+  @Get('upload-batches/:id/report.csv')
+  async report(
+    @Param('id') id: string,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const bid = parse(ulidSchema, id);
+    const got = (await this.batch(bid, '1', p)) as Awaited<ReturnType<typeof this.batch>> & {
+      items: {
+        itemId: string;
+        parentItemId: string | null;
+        position: number;
+        filename: string;
+        clientPath: string | null;
+        status: CvStatus;
+        message: string | null;
+        documentId: string | null;
+        container: boolean;
+      }[];
+    };
+    const csv = batchReportCsv(
+      got.items.map((i) => ({
+        id: i.itemId,
+        parentId: i.parentItemId,
+        position: i.position,
+        filename: i.filename,
+        clientPath: i.clientPath,
+        status: i.status,
+        message: i.message,
+        documentId: i.documentId,
+        container: i.container,
+      })),
+    );
+    const rows = csv.split('\r\n').length - 2;
+    await this.audit.record(this.db, {
+      actorId: p.userId,
+      actorType: p.actorType,
+      sourceIp: req.ip,
+      action: 'upload_batch.report_downloaded',
+      entityType: 'upload_batch',
+      entityId: bid,
+      after: { vacancyId: got.batch.vacancyId, rows },
+    });
+    return reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header('content-disposition', `attachment; filename="upload-report-${bid}.csv"`)
+      .header('cache-control', 'no-store')
+      .header('x-content-type-options', 'nosniff')
+      .send(csv);
   }
 
   private async used(vid: string): Promise<number> {

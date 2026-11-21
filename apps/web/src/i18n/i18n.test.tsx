@@ -4,7 +4,14 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Login } from '../pages/Login';
 import { applyLang, getLang, tr } from './index';
-import { CV_STATUS_LABEL, UPLOAD_CODE_MESSAGE } from '@cv/shared';
+import {
+  CV_STATUS_LABEL,
+  IMPORT_ERROR_MESSAGE,
+  IMPORT_ERROR_UNKNOWN,
+  IMPORT_WAIT_MESSAGE,
+  IMPORT_WAIT_UNKNOWN,
+  UPLOAD_CODE_MESSAGE,
+} from '@cv/shared';
 import { AZ } from './az';
 import { AZ_ADMIN } from './az.admin';
 import { AZ_ASSISTANT } from './az.assistant';
@@ -16,6 +23,7 @@ import { AZ_RESULTS } from './az.results';
 import { AZ_SERVER } from './az.server';
 import { AZ_SHELL } from './az.shell';
 import { AZ_STAGE2 } from './az.stage2';
+import { AZ_ORACLE } from './az.oracle';
 
 const SRC = join(process.cwd(), 'src');
 const files = (dir: string): string[] =>
@@ -85,6 +93,7 @@ describe('Azerbaijani interface', () => {
       ['server', AZ_SERVER],
       ['assistant', AZ_ASSISTANT],
       ['monitoring', AZ_MONITORING],
+      ['oracle', AZ_ORACLE],
       ['stage2', AZ_STAGE2],
     ];
     for (const [file, dict] of parts) {
@@ -98,10 +107,14 @@ describe('Azerbaijani interface', () => {
     expect(conflicts).toEqual([]);
   });
 
-  it('has an Azerbaijani text for every CV status label and upload message', () => {
+  it('has an Azerbaijani text for every CV status label, upload message and import run sentence', () => {
     const missing = [
       ...Object.values(CV_STATUS_LABEL),
       ...Object.values(UPLOAD_CODE_MESSAGE),
+      ...Object.values(IMPORT_ERROR_MESSAGE),
+      ...Object.values(IMPORT_WAIT_MESSAGE),
+      IMPORT_ERROR_UNKNOWN,
+      IMPORT_WAIT_UNKNOWN,
     ].filter((en) => !(en in AZ));
     expect(missing).toEqual([]);
   });

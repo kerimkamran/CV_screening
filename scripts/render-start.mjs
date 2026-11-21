@@ -2,7 +2,9 @@
 // Container entrypoint for the single-service deploy (Render): migrate, set up the least-privilege
 // database login if the host allows it, then start the API as PID-child with signals forwarded.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statfsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -32,6 +34,30 @@ if (!ownerUrl) {
     console.log(`Memory limit: ${/^\d+$/.test(v) ? `${Math.round(Number(v) / 2 ** 20)} MB` : v}`);
     break;
   }
+  // Stage 3, S3-OPS-04 (a): the platform facts the gates need, on every boot.
+  if (existsSync('/sys/fs/cgroup/cpu.max')) {
+    const [quota, period] = String(
+      spawnSync('cat', ['/sys/fs/cgroup/cpu.max'], { encoding: 'utf8' }).stdout,
+    )
+      .trim()
+      .split(/\s+/);
+    console.log(
+      `CPU limit: ${quota === 'max' ? 'none' : (Number(quota) / Number(period)).toFixed(2)}`,
+    );
+  }
+  try {
+    const tmp = statfsSync(tmpdir());
+    const mounts = existsSync('/proc/mounts') ? readFileSync('/proc/mounts', 'utf8') : '';
+    const memBacked = mounts
+      .split('\n')
+      .some((l) => l.split(' ')[1] === tmpdir() && l.split(' ')[2] === 'tmpfs');
+    console.log(
+      `Temp folder: ${Math.round((tmp.bavail * tmp.bsize) / 2 ** 20)} MB free, ${memBacked ? 'memory-backed' : 'on disk'}`,
+    );
+  } catch {
+    /* not every platform reports it */
+  }
+  console.log(`Boot ID: ${randomUUID()}`);
 }
 
 // 1. Migrations run as the database owner.
@@ -84,7 +110,11 @@ if (pdf.error) {
     'WARNING: pdftotext (poppler-utils) is not installed here, so PDF CVs cannot be read and will be sent to manual review. Deploy with docker/render.Dockerfile (Runtime: Docker) to fix this.',
   );
 }
-const child = spawn(process.execPath, [join(here, '..', 'apps', 'api', 'dist', 'main.js')], {
+// Optional first argument: the file to start (the gate launcher, S3-OPS-04). Not a setting.
+const entry = process.argv[2]
+  ? join(here, '..', process.argv[2])
+  : join(here, '..', 'apps', 'api', 'dist', 'main.js');
+const child = spawn(process.execPath, [entry], {
   stdio: 'inherit',
   env: { ...process.env, DATABASE_URL: appUrl },
 });

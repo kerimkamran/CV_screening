@@ -95,7 +95,7 @@ export function isBlockedAddress(ip: string, allowLoopback = false): boolean {
 }
 
 /** `net` calls this to resolve the name; refusing here covers the address really connected to. */
-function guardedLookup(allowLoopback: boolean) {
+export function guardedLookup(allowLoopback: boolean) {
   return (
     host: string,
     options: dns.LookupOptions | number | undefined,

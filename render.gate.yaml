@@ -1,0 +1,57 @@
+# Stage 3, S3-OPS-04: the TEMPORARY gate copy for G-11 to G-14 (docs/stage-3/development-plan.md 17.3).
+# Same plans and region as render.yaml (a guard test checks it). Test data only, the fake AI and the
+# fake Oracle inside the process; never a real CV and never a real Oracle address. Deleted after the
+# gates; the date is written in docs/performance-run.md. The import switch is NOT declared here: the
+# launcher sets it inside its own process and refuses to start if it is given from outside.
+databases:
+  - name: cv-screening-gate-db
+    region: frankfurt
+    plan: basic-256mb
+    databaseName: cv_gate
+    user: cv_owner
+    postgresMajorVersion: '17'
+    ipAllowList: []
+
+services:
+  - type: web
+    name: cv-screening-gate
+    runtime: docker
+    dockerfilePath: ./docker/gate.Dockerfile
+    dockerContext: .
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_MODE
+        value: local
+      - key: TRUST_PROXY
+        value: 'true'
+      - key: GATE_COPY
+        value: '1'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cv-screening-gate-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SETTINGS_ENCRYPTION_KEY
+        generateValue: true
+      - key: APP_DB_PASSWORD
+        generateValue: true
+      - key: IMPORT_TOMBSTONE_KEY
+        generateValue: true
+      - key: GATE_ORACLE_PASSWORD
+        generateValue: true
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: console
+      - key: DB_SIZE_LIMIT_MB
+        value: '1024'

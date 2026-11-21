@@ -38,6 +38,8 @@ function SENT_AS_DATA(rel: string, key: string, owner?: ts.ObjectLiteralExpressi
   if (rel === 'pipeline/intake.service.ts') return key === 'parseError';
   if (rel === 'ai/ai-admin.controller.ts') return key === 'error';
   if (rel === 'assistant/assistant-admin.controller.ts') return key === 'detail';
+  // Stage 3: the Oracle refusals are one table of { status, message } (refuse() passes them on).
+  if (rel === 'integrations/oracle/oracle-refusals.ts') return key === 'message';
   return false;
 }
 
@@ -161,9 +163,16 @@ const passwordRules = () =>
   );
 
 /** Not shown to a person: the load balancer's health probe. */
-const NOT_SHOWN = ['health/health.controller.ts'];
+// The fake Oracle (testing/) is test code that never reaches a person: compiled only for specs and
+// the browser-test stack, and left out of dist by tsconfig.build.json.
+const NOT_SHOWN = ['health/health.controller.ts', 'testing/fake-oracle.ts'];
 /** Messages passed on from another call, whose own sources are listed above. */
-const PASSED_ON = ['(e as Error).message', 'e.message'];
+const PASSED_ON = [
+  '(e as Error).message',
+  'e.message',
+  // refuse(): the sentence comes from the REFUSAL table, read above as data.
+  'integrations/oracle/oracle-refusals.ts: { message, code, ...extra }',
+];
 
 describe('server messages (I18-05)', () => {
   afterEach(() => applyLang('en'));

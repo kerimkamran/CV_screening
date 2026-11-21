@@ -437,7 +437,7 @@ export function Results({
                 disabled={busy}
                 onClick={() => void runControl('stop')}
               >
-                {t('Stop the scan')}
+                {t('Stop analysis')}
               </button>
             )}
           </div>

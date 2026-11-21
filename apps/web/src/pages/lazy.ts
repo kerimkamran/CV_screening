@@ -50,3 +50,11 @@ export function preloadFor(hash: string): void {
   } else if (route === '/candidates' || /^\/vacancies\/[0-9A-Z]{26}$/.test(route))
     quiet(CandidatePool.preload());
 }
+
+// Stage 3, S3-INT-14: the Oracle field and strip load only when the API says the import is available.
+export const OracleLink = eager(() =>
+  import('./OracleLink').then((m) => ({ default: m.OracleLink })),
+);
+export const OracleStrip = eager(() =>
+  import('./OracleStrip').then((m) => ({ default: m.OracleStrip })),
+);

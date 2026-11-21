@@ -76,7 +76,7 @@ const EnvSchema = z.object({
   RENDITION_SOFFICE: z.string().default('soffice'),
   /** "Download CVs" (S2-BE8): ZIP downloads streamed at once; a further one waits its turn. */
   DOWNLOAD_MAX_CONCURRENT: z.coerce.number().int().min(1).max(8).default(2),
-  /** CVs being read (text extraction) at once across all uploads; a ZIP takes every permit. */
+  /** CVs being read (text extraction) at once across all uploads; a ZIP takes one permit (S3-UP-06). */
   INTAKE_MAX_CONCURRENT: z.coerce.number().int().min(1).max(8).default(3),
   /**
    * IAM-06: bounded session lifetime. Tokens whose own lifetime (exp - iat) exceeds this are
@@ -89,6 +89,20 @@ const EnvSchema = z.object({
    * sign-in, but ONLY while no active ADMIN exists. Unset it once an admin is in place.
    */
   BOOTSTRAP_ADMIN_SUBJECT: z.string().min(1).optional(),
+  /**
+   * Stage 3, Oracle CV import (plan 15.1, design note 5). The deploy switch: set 'true' on the
+   * production service only, after ADR 0011 is Accepted and the owner exception and DPO sign-off
+   * exist (docs/deploy-render.md). Off: every Oracle route answers 404 and the runner claims nothing.
+   * No Oracle address, user name or password is ever read from a setting.
+   */
+  ORACLE_IMPORT_ENABLED: z.enum(['true', 'false']).default('false'),
+  /**
+   * HMAC key for the hashes that keep erased candidates from returning (tombstones). A bare value is
+   * version 1; `2:<new>,1:<old>` hashes with the first and matches every listed version.
+   */
+  IMPORT_TOMBSTONE_KEY: z.string().min(1).optional(),
+  /** The database plan's disk size; an import whose projection passes 70 % of it is refused. */
+  DB_SIZE_LIMIT_MB: z.coerce.number().int().min(100).max(10_000_000).default(1_024),
   /** PLAT-07: readiness fails if the database does not answer within this budget. */
   READINESS_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2_000),
 });
@@ -110,6 +124,19 @@ const Refined = EnvSchema.superRefine((e, ctx) => {
       'SETTINGS_ENCRYPTION_KEY',
       'must be at least 32 characters (a 32-byte base64 value is used as is; any other secret is hashed to 256 bits)',
     );
+  }
+  if (e.ORACLE_IMPORT_ENABLED === 'true') {
+    need(
+      e.IMPORT_TOMBSTONE_KEY,
+      'IMPORT_TOMBSTONE_KEY',
+      'required when ORACLE_IMPORT_ENABLED=true',
+    );
+    if (e.IMPORT_TOMBSTONE_KEY !== undefined)
+      need(
+        e.IMPORT_TOMBSTONE_KEY.split(',').every((k) => k.replace(/^\d+:/, '').trim().length >= 32),
+        'IMPORT_TOMBSTONE_KEY',
+        'each key must be at least 32 characters',
+      );
   }
   if (e.EMAIL_PROVIDER === 'smtp') need(e.SMTP_HOST, 'SMTP_HOST', 'required for smtp');
   if (e.EMAIL_PROVIDER === 'resend')

@@ -1783,3 +1783,6 @@ function SkillsCard({ assistantName }: { assistantName: string }) {
     </Card>
   );
 }
+
+// Stage 3, S3-INT-14a: the Oracle import card (its own file; exported here with the other admin screens).
+export { OracleSettings } from './OracleAdmin';

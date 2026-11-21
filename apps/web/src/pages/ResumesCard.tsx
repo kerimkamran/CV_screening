@@ -1,10 +1,14 @@
+import { Suspense } from 'react';
+import { type OracleState } from '../oracle';
+import { OracleLink } from './lazy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { UPLOAD_CODE_MESSAGE } from '@cv/shared';
+import { MAX_ANNOUNCE_FILES, UPLOAD_CODE_MESSAGE } from '@cv/shared';
 import { api } from '../api';
 import { useT, tr } from '../i18n';
 import { useAssistantConfig } from '../assistant';
 import { trackBatch, prepareSignals } from '../done-signals';
 import {
+  announceSlice,
   checkFiles,
   DEFAULT_LIMITS,
   fetchIntakeInfo,
@@ -17,7 +21,9 @@ import {
   useRun,
   type Checked,
   type IntakeInfo,
+  isZip,
 } from '../intake';
+import { estimateZipCvs } from '../zip-count';
 import { type VacancyView } from '../pool';
 import { btnPrimary, btnSecondary, Card, errMsg, Notice } from '../ui';
 import { NOTICE_TEXT } from './Vacancy';
@@ -27,6 +33,9 @@ import { skillCount } from './RoleCard';
  * The CVs card (Stage 2, S2-FE7): add CVs to this vacancy and run the analysis. Every file is checked
  * before anything is sent (wrong type, empty, too big, old Word format), the person sees how many
  * CVs the vacancy already holds, and a long list is summarised instead of printed.
+ * Stage 3 (S3-UP-01, 07, 08): one picker takes loose files and ZIPs together; an upload announces
+ * at most 500 files and at most the room left (a ZIP costs one slot), and what is left out is said
+ * before the click; each ZIP shows "about n CVs" from its directory.
  * "Find the best fit" the first time, "Re-analyze" when the requirements changed or CVs were added.
  */
 
@@ -46,6 +55,8 @@ export function ResumesCard({
   roleDirty,
   onStarted,
   user,
+  oracle,
+  onOracleStarted,
 }: {
   vacancy: VacancyView;
   /** The Role card has changes that are not saved yet. */
@@ -53,6 +64,9 @@ export function ResumesCard({
   onStarted: () => void;
   /** Who is signed in (for the "ready" signals). */
   user: { id: string };
+  /** Stage 3: the vacancy's Oracle state (null or unavailable hides the Oracle field). */
+  oracle?: OracleState | null;
+  onOracleStarted?: () => void;
 }) {
   const t = useT();
   const [rows, setRows] = useState<Checked[]>([]);
@@ -66,8 +80,9 @@ export function ResumesCard({
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
   const [info, setInfo] = useState<IntakeInfo | null>(null);
+  /** "About n CVs" per ZIP row, by row key: a number, or null when it cannot tell. */
+  const [estimates, setEstimates] = useState<Record<string, number | null>>({});
   const fileRef = useRef<HTMLInputElement>(null);
-  const zipRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const run = useRun(vacancy.id);
   const assistant = useAssistantConfig()?.name ?? 'parallax';
@@ -95,6 +110,8 @@ export function ResumesCard({
     const have = new Set(rows.map((r) => r.key));
     const r = checkFiles(list, limits, have);
     setRows((cur) => [...cur, ...r.added]);
+    for (const z of r.added.filter((x) => isZip(x) && !x.problem))
+      void estimateZipCvs(z.file).then((n) => setEstimates((cur) => ({ ...cur, [z.key]: n })));
     setIgnored(r.ignored);
     setRepeated(r.repeated);
     setTruncated(wasTruncated);
@@ -113,17 +130,25 @@ export function ResumesCard({
         confirmNotice: noticeOk,
       });
       if (sum.ready > 0) {
-        const batchId = await startBatch(vacancy.id, rows);
+        const started = await startBatch(vacancy.id, rows, info ? room : null);
         trackBatch({
           vacancyId: vacancy.id,
-          batchId,
+          batchId: started.batchId,
           userId: user.id,
           assistant,
         });
         setRows([]);
+        setEstimates({});
         setIgnored(0);
         setRepeated(0);
-        setDone(t('Started. The CVs are being read.'));
+        setDone(
+          started.leftOut > 0
+            ? t('Started. {sent} files are being sent. {n} were left out.', {
+                sent: started.sent,
+                n: started.leftOut,
+              })
+            : t('Started. The CVs are being read.'),
+        );
       } else {
         setDone(
           r.queued > 0
@@ -145,10 +170,23 @@ export function ResumesCard({
   if (!hasResumes) needs.push(t('Add at least one CV.'));
   if (!noticeOk) needs.push(t('Confirm the candidate notice.'));
 
+  // The Oracle button asks for the same things, except a CV: it brings them (B3).
+  const oracleNeeds = needs.filter((n) => n !== t('Add at least one CV.'));
   const button = everRan ? t('Re-analyze') : t('Find the best fit →');
   const problems = rows.filter((r) => r.problem);
   const readyRows = rows.filter((r) => !r.problem);
-  const overRoom = Math.max(readyRows.length - room, 0);
+  // The same slice the start button will announce (S3-UP-01), so every left-out row is named first.
+  const slice = announceSlice(readyRows, info ? room : null);
+  const fullKeys = new Set(slice.beyondRoom.map((r) => r.key));
+  const limitKeys = new Set(slice.beyondLimit.map((r) => r.key));
+  const overRoom = slice.beyondRoom.length;
+  const overLimit = slice.beyondLimit.length;
+  // "About n CVs": loose files plus the ZIP estimates (S3-UP-08). A hint only: it never blocks.
+  const zipRows = readyRows.filter((r) => isZip(r));
+  const looseReady = readyRows.length - zipRows.length;
+  const zipKnown = zipRows.reduce((n, r) => n + (estimates[r.key] ?? 0), 0);
+  const aboutCvs = looseReady + zipKnown;
+  const hasEstimate = zipRows.some((r) => typeof estimates[r.key] === 'number');
   // Short lists without problems are shown in full; longer ones, or ones with problems, collapse to the
   // problems with a toggle. One list either way, so no file is ever listed twice (UP-03).
   const collapsible = rows.length > COLLAPSE_ABOVE || problems.length > 0;
@@ -221,13 +259,6 @@ export function ResumesCard({
                     {t('Choose a folder')}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className={btnSecondary}
-                  onClick={() => zipRef.current?.click()}
-                >
-                  {t('Add a ZIP')}
-                </button>
               </div>
               <input
                 ref={folderRef}
@@ -247,19 +278,8 @@ export function ResumesCard({
                 ref={fileRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.txt,.md,.doc"
-                aria-label={t('Choose CV files')}
-                className="sr-only"
-                onChange={(e) => {
-                  addFiles(Array.from(e.target.files ?? []));
-                  e.target.value = '';
-                }}
-              />
-              <input
-                ref={zipRef}
-                type="file"
-                accept=".zip"
-                aria-label={t('Choose a ZIP of CVs')}
+                accept=".pdf,.docx,.txt,.md,.doc,.zip"
+                aria-label={t('Choose CV files or ZIPs')}
                 className="sr-only"
                 onChange={(e) => {
                   addFiles(Array.from(e.target.files ?? []));
@@ -267,6 +287,19 @@ export function ResumesCard({
                 }}
               />
             </div>
+            {/* Stage 3, S3-INT-14 (B2): the Oracle field and button, only when the API says available. */}
+            {oracle?.available && (
+              <Suspense fallback={null}>
+                <OracleLink
+                  vacancy={vacancy}
+                  oracle={oracle}
+                  needs={oracleNeeds}
+                  noticeTickedNow={notice && !confirmed}
+                  userId={user.id}
+                  onStarted={() => onOracleStarted?.()}
+                />
+              </Suspense>
+            )}
 
             {truncated && (
               <Notice kind="warn">
@@ -298,16 +331,17 @@ export function ResumesCard({
                     plural(sum.files, '{n} file', '{n} files'),
                     mb(sum.bytes),
                     t('{n} ready', { n: sum.ready }),
+                    hasEstimate ? t('about {n} CVs', { n: aboutCvs }) : '',
                     sum.problems > 0 ? t('{n} need attention', { n: sum.problems }) : '',
                   ]
                     .filter(Boolean)
                     .join(' · ')}
                 </p>
-                {sum.ready > RECOMMENDED_PER_UPLOAD && (
+                {aboutCvs > RECOMMENDED_PER_UPLOAD && (
                   <Notice kind="warn">
                     {t(
                       'You chose {n} CVs. Up to {rec} per upload is recommended so results arrive sooner. You can still send all of them.',
-                      { n: sum.ready, rec: RECOMMENDED_PER_UPLOAD },
+                      { n: aboutCvs, rec: RECOMMENDED_PER_UPLOAD },
                     )}
                   </Notice>
                 )}
@@ -319,11 +353,28 @@ export function ResumesCard({
                     })}
                   </Notice>
                 )}
+                {overLimit > 0 && (
+                  <Notice kind="warn">
+                    {t('One upload takes up to {max} files. The last {n} will not be sent.', {
+                      max: MAX_ANNOUNCE_FILES,
+                      n: overLimit,
+                    })}
+                  </Notice>
+                )}
+                {hasEstimate && info && aboutCvs > room && overRoom === 0 && (
+                  <Notice kind="warn">
+                    {t(
+                      'About {n} CVs chosen; {room} more fit in this vacancy. CVs that do not fit are marked “Vacancy full” after sending.',
+                      { n: aboutCvs, room },
+                    )}
+                  </Notice>
+                )}
                 {shownRows.length > 0 && (
                   <ul className="max-h-64 divide-y divide-line overflow-auto text-sm">
                     {shownRows.map((r) => {
-                      const idx = readyRows.indexOf(r);
-                      const full = !r.problem && idx >= room;
+                      const full = fullKeys.has(r.key);
+                      const out = limitKeys.has(r.key);
+                      const est = isZip(r) ? estimates[r.key] : undefined;
                       return (
                         <li key={r.key} className="flex items-center justify-between gap-2 py-1.5">
                           <span className="min-w-0 flex-1">
@@ -331,11 +382,13 @@ export function ResumesCard({
                               {r.path}
                             </span>
                             <span
-                              className={`block text-xs ${r.problem || full ? 'text-err-ink' : 'text-ink-3'}`}
+                              className={`block text-xs ${r.problem || full || out ? 'text-err-ink' : 'text-ink-3'}`}
                             >
                               {mb(r.size)}
+                              {typeof est === 'number' && ` · ${t('about {n} CVs', { n: est })}`}
                               {r.problem && ` · ${problemText(r.problem)}`}
                               {full && ` · ${t('Vacancy full')}`}
+                              {out && ` · ${t('Not in this upload')}`}
                             </span>
                           </span>
                           <button

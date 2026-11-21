@@ -5,6 +5,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   Logger,
   NotFoundException,
   Param,
@@ -18,6 +19,7 @@ import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/multipart';
 import { eraseDocumentData } from './erase-document';
+import { activeRun, requestCancel } from '../integrations/import-runs';
 import { AuditService } from '../audit/audit.service';
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
@@ -34,6 +36,8 @@ import { ReportService } from './report.service';
 import { ExportService } from './export.service';
 import { LinkProblem, LinkReader } from './link-reader';
 import { IntakeService, type IntakeResult } from './intake.service';
+import { freeTempBytes, removeSpool, spoolToTemp } from './zip-spool';
+import { readFile } from 'node:fs/promises';
 import { ProcessorService } from './processor.service';
 
 const HUMAN = ['TA_PARTNER', 'TA_LEAD'] as const;
@@ -145,23 +149,63 @@ export class DocumentsController {
     const maxFile = this.intake.maxFileBytes;
 
     // The part limit is the larger ZIP limit; the reader below holds each file to its own cap.
+    // A ZIP goes to a private temp file (S3-UP-06), never into memory; no permit is held while its
+    // bytes arrive. Reading the body stays outside the catch below: a dropped connection is not a
+    // server error, and the item must stay "Not sent".
+    type Read = {
+      filename: string;
+      buf: Buffer;
+      tooLarge: boolean;
+      zip: boolean;
+      spool?: { dir: string; path: string; isZip: boolean };
+      noRoom?: boolean;
+    };
     const read = async (part: {
-      file: AsyncIterable<Buffer> & { truncated?: boolean };
+      file: AsyncIterable<Buffer> & { truncated?: boolean; resume?: () => void };
       filename?: string;
-    }) => {
+    }): Promise<Read> => {
       const filename = (part.filename || 'cv').slice(0, 200);
       const zip = this.intake.isZipName(filename);
-      const r = await this.intake.readCapped(part.file, zip ? maxZip : maxFile);
+      if (zip) {
+        const free = await freeTempBytes();
+        if (free !== null && free < maxZip + 64 * 1024 * 1024) {
+          // Not enough temp space: nothing is written; the file may be sent again later.
+          for await (const _ of part.file) void _;
+          return { filename, buf: Buffer.alloc(0), tooLarge: false, zip, noRoom: true };
+        }
+        const sp = await spoolToTemp(part.file, maxZip);
+        const isZip = sp.head[0] === 0x50 && sp.head[1] === 0x4b;
+        const tooLarge = sp.tooLarge || !!part.file.truncated;
+        // A ".zip" that is not one is judged as a loose file (it is rejected as the wrong type).
+        let buf = Buffer.alloc(0);
+        if (!isZip && !tooLarge && sp.bytes <= maxFile) buf = await readFile(sp.path);
+        return {
+          filename,
+          buf,
+          tooLarge: tooLarge || (!isZip && sp.bytes > maxFile),
+          zip,
+          spool: { dir: sp.dir, path: sp.path, isZip },
+        };
+      }
+      const r = await this.intake.readCapped(part.file, maxFile);
       return { filename, buf: r.buf, tooLarge: r.tooLarge || !!part.file.truncated, zip };
     };
     const take = async (
       c: typeof ctx & { itemId?: string; batchId?: string },
-      f: Awaited<ReturnType<typeof read>>,
-    ) => {
-      if (f.tooLarge) return [await this.intake.rejectTooLarge(c, f.filename)];
-      if (f.zip && f.buf[0] === 0x50 && f.buf[1] === 0x4b)
-        return this.intake.admitZip(c, f.filename, f.buf);
-      return [await this.intake.admit(c, f.filename, f.buf)];
+      f: Read,
+    ): Promise<IntakeResult[]> => {
+      try {
+        if (f.noRoom) throw new Error('not enough temp space for this ZIP');
+        if (f.tooLarge) return [await this.intake.rejectTooLarge(c, f.filename)];
+        if (f.spool?.isZip) return await this.intake.admitZip(c, f.filename, f.spool.path);
+        return [await this.intake.admit(c, f.filename, f.buf)];
+      } catch (e) {
+        // Gate errors (403, 404, 409) are not server errors: they pass through unchanged.
+        if (e instanceof HttpException) throw e;
+        return [await this.intake.serverError(c, f.filename, e)];
+      } finally {
+        await removeSpool(f.spool?.dir);
+      }
     };
 
     if (itemQ) {
@@ -208,7 +252,9 @@ export class DocumentsController {
             AND (s.upload_item_id IS NOT NULL OR NOT EXISTS (
               SELECT 1 FROM cv_document d
                WHERE d.vacancy_id = s.vacancy_id
-                 AND d.filename = regexp_replace(s.filename, '^.* › ', '')
+                 AND (d.filename = regexp_replace(s.filename, '^.* › ', '')
+                      -- an erased CV keeps only the hash of its name (S3-UP-04)
+                      OR d.erased_name_sha = encode(sha256(convert_to(regexp_replace(s.filename, '^.* › ', ''), 'UTF8')), 'hex'))
                  AND d.uploaded_at > s.skipped_at))
             AND (s.upload_item_id IS NULL OR NOT EXISTS (
               SELECT 1 FROM upload_item i
@@ -283,6 +329,9 @@ export class DocumentsController {
             AND sc.state = 'queued' AND sc.cancelled_at IS NULL`,
         [vid],
       );
+      // S3-INT-13 (8): Stop also asks an active Oracle import to cancel, in the same transaction.
+      const run = await activeRun(tx, vid);
+      const importCancelled = run ? (await requestCancel(tx, run.id, p.userId)).requested : false;
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -290,9 +339,9 @@ export class DocumentsController {
         action: 'screening.stopped',
         entityType: 'vacancy',
         entityId: vid,
-        after: { stopped: r.rowCount },
+        after: { stopped: r.rowCount, ...(importCancelled ? { importRunId: run!.id } : {}) },
       });
-      return { stopped: r.rowCount };
+      return { stopped: r.rowCount, ...(importCancelled ? { importCancelled: true } : {}) };
     });
   }
 
@@ -460,8 +509,8 @@ export class DocumentsController {
     const did = parse(ulidSchema, id);
     await this.scope.assertDocument(p, did);
     return this.db.withTx(async (tx) => {
-      if (!(await eraseDocumentData(tx, this.reports, did, p.userId)))
-        throw new ConflictException('Already erased');
+      const done = await eraseDocumentData(tx, this.reports, did, p.userId, 'erase');
+      if (!done) throw new ConflictException('Already erased');
       await this.audit.record(tx, {
         actorId: p.userId,
         actorType: p.actorType,
@@ -469,6 +518,8 @@ export class DocumentsController {
         action: 'document.erase',
         entityType: 'document',
         entityId: did,
+        // S3-INT-02 (7): the CV is erased even when its tombstone copy failed; the trail says so.
+        ...(done.tombstonePending ? { after: { tombstonePending: 1 } } : {}),
       });
       return { erased: true };
     });

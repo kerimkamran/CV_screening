@@ -38,6 +38,16 @@ services:
         generateValue: true
       - key: APP_DB_PASSWORD
         generateValue: true
+      # Stage 3, Oracle CV import (docs/oracle-import-runbook.md). The deploy switch is set by hand on
+      # this service only (sync: false: a Blueprint sync never resets it), and only after ADR 0011 is
+      # Accepted and the owner's written exception and the DPO sign-off exist (docs/deploy-render.md). IMPORT_TOMBSTONE_KEY is generated once and never changed: it keeps
+      # erased candidates from coming back. DB_SIZE_LIMIT_MB is the database plan's disk size.
+      - key: ORACLE_IMPORT_ENABLED
+        sync: false
+      - key: IMPORT_TOMBSTONE_KEY
+        generateValue: true
+      - key: DB_SIZE_LIMIT_MB
+        value: '1024'
       # First administrator (created only while no admin exists; must change password at first sign-in).
       - key: BOOTSTRAP_ADMIN_EMAIL
         sync: false

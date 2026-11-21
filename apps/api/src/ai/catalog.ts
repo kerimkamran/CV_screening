@@ -230,3 +230,16 @@ export function validateSettings(
   }
   return out;
 }
+
+/**
+ * Stage 3, S3-INT-10 (11): does this company, with these settings, process in the EU? It feeds the
+ * Oracle import's `requireEuAi` refusal (AI_NOT_EU). Today only OpenAI has an EU switch (a project
+ * with European data residency); every other company in the catalogue answers false.
+ */
+export function euResident(
+  company: string,
+  settings: Record<string, unknown> | null | undefined,
+): boolean {
+  if (company === 'openai') return settings?.['dataRegion'] === 'eu';
+  return false;
+}

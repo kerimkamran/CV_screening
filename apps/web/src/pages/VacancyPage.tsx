@@ -5,7 +5,8 @@ import { tr, useT } from '../i18n';
 import { go } from '../route';
 import { ago, STATUS_STYLE, statusName, type VacancyView } from '../pool';
 import { btnSecondary, errMsg, Notice, tapLink, when } from '../ui';
-import { CandidatePool, Report } from './lazy';
+import { CandidatePool, OracleStrip, Report } from './lazy';
+import { useOracle } from '../oracle';
 import { BatchPanel } from './BatchPanel';
 import { ResumesCard } from './ResumesCard';
 import { Results } from './Results';
@@ -132,6 +133,9 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
   // While the batch panel watches an upload it brings the numbers; this page's own poll rests.
   const [batchWatching, setBatchWatching] = useState(false);
   const [justStarted, setJustStarted] = useState(false);
+  // Stage 3: one request for the Oracle state per page load; it polls only while an import runs.
+  const { state: oracle, reload: reloadOracle } = useOracle(creating ? null : id);
+  const [oracleStarted, setOracleStarted] = useState(false);
 
   // While resumes are being read, the counts move: look again every few seconds.
   const running = v?.counts.running ?? 0;
@@ -258,6 +262,12 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
       </div>
 
       {error && <Notice kind="error">{error}</Notice>}
+      {/* Above the batch panel, outside the fold-away set-up, so it stays in view (S3-INT-14). */}
+      {oracle?.available && oracle.link && (
+        <Suspense fallback={null}>
+          <OracleStrip vacancy={v} oracle={oracle} reload={reloadOracle} focus={oracleStarted} />
+        </Suspense>
+      )}
       {me && (
         <BatchPanel
           vacancy={v}
@@ -372,6 +382,12 @@ export function VacancyPage({ id, tab }: { id: string | 'new'; tab: Tab }) {
           vacancy={v}
           roleDirty={dirty}
           user={{ id: me?.userId ?? '' }}
+          oracle={oracle}
+          onOracleStarted={() => {
+            setOracleStarted(true);
+            void reload();
+            void reloadOracle();
+          }}
           onStarted={() => {
             setJustStarted(true);
             void reload();

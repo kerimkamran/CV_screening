@@ -14,6 +14,8 @@ export const CV_STATUSES = [
   'rejected',
   'duplicate',
   'vacancy_full',
+  'cancelled',
+  'not_fetched',
   'analyzing',
   'stopped',
   'failed',
@@ -41,6 +43,8 @@ export const CV_STATUS_LABEL: Record<CvStatus, string> = {
   rejected: 'Not accepted',
   duplicate: 'Already in this vacancy',
   vacancy_full: 'Vacancy full',
+  cancelled: 'Cancelled',
+  not_fetched: 'Not fetched',
   analyzing: 'Being analyzed',
   stopped: 'Stopped',
   failed: 'Analysis failed',
@@ -63,6 +67,9 @@ export const CV_STATUS_ACTION: Record<
   rejected: null,
   duplicate: 'open',
   vacancy_full: 'resend',
+  cancelled: null,
+  // An Oracle file that was not fetched has no button of its own: Refresh in the Oracle strip fetches it.
+  not_fetched: null,
   analyzing: null,
   stopped: 'continue',
   failed: 'retry',
@@ -111,6 +118,12 @@ export const UPLOAD_CODES = [
   'no_text',
   'read_failed',
   'server_error',
+  'cancelled',
+  // Stage 3, Oracle import (S3-INT-05, S3-INT-12).
+  'source_unavailable',
+  'source_gone',
+  'superseded',
+  'crash_limit',
 ] as const;
 export type UploadCode = (typeof UPLOAD_CODES)[number];
 
@@ -133,13 +146,111 @@ export const UPLOAD_CODE_MESSAGE: Record<UploadCode, string> = {
   no_text: 'No readable text',
   read_failed: 'The text could not be read',
   server_error: 'The server could not process this file',
+  cancelled: 'Cancelled',
+  source_unavailable: 'Oracle did not answer',
+  source_gone: 'No longer in Oracle',
+  superseded: 'Replaced by a newer import',
+  crash_limit: 'Failed twice, so it was left out',
 };
 
-/** Map an upload outcome to the status the file shows before any analysis exists. */
-export function uploadStatus(outcome: UploadOutcome | null, code?: string | null): CvStatus {
+/**
+ * The only list of codes that may be sent again (S3-UP-02). A `skipped` item with one of these codes
+ * is not final: the browser may send the file again and the server processes it. Every other stored
+ * outcome is final. `source_unavailable` (S3-INT-05) is an Oracle file the runner could not fetch.
+ */
+export const RETRYABLE_CODES: readonly UploadCode[] = [
+  'vacancy_full',
+  'server_error',
+  'source_unavailable',
+];
+
+/** Where a batch came from: the recruiter's browser, or the Oracle import (S3-INT-05). */
+export type BatchSource = 'browser' | 'oracle_hcm';
+
+/**
+ * Stage 3, S3-INT-05 (8): the codes the import runner writes to `import_run.error_code` or
+ * `wait_reason`. Each one has exactly one sentence on screen (plan 16.4).
+ */
+export const IMPORT_RUN_CODES = [
+  'oracle_unavailable',
+  'oracle_budget',
+  'capacity_unavailable',
+  'storage_low',
+  'sign_in',
+  'vacancy_gone',
+  'schema_changed',
+  'actor_revoked',
+  'did_not_finish',
+  'not_confirmed',
+  'switched_off',
+  'abandoned',
+  'archived',
+] as const;
+export type ImportRunCode = (typeof IMPORT_RUN_CODES)[number];
+
+/** One English sentence per run error code; anything else reads as `IMPORT_ERROR_UNKNOWN`. */
+export const IMPORT_ERROR_MESSAGE: Record<ImportRunCode, string> = {
+  oracle_unavailable:
+    'Oracle did not answer for 2 hours, so the import stopped. Try Refresh later.',
+  oracle_budget:
+    "Today's limit of calls to Oracle is used up. The import waits and goes on by itself tomorrow.",
+  capacity_unavailable:
+    'The service was too busy for 2 hours, so the import stopped. Try Refresh later.',
+  storage_low:
+    'There is not enough storage room for these CVs, so nothing was copied. Tell an administrator.',
+  sign_in:
+    'Sign-in to Oracle failed, so the import stopped. Ask an administrator to check the Oracle connection.',
+  vacancy_gone: 'Oracle no longer has this vacancy. Check the ID in Oracle.',
+  schema_changed:
+    'Oracle answered in a form this version does not understand. Tell an administrator.',
+  actor_revoked:
+    'The import stopped because the person who started it can no longer change this vacancy.',
+  did_not_finish:
+    'The import stopped 5 times without moving on. Tell an administrator before you try again.',
+  not_confirmed: 'Nobody answered within 2 hours, so the import was cancelled. Nothing was copied.',
+  switched_off: 'The Oracle import was switched off, so the import was cancelled.',
+  abandoned: 'An administrator stopped this import.',
+  archived:
+    'The import stopped because the vacancy was archived. Restore the vacancy, then refresh.',
+};
+export const IMPORT_ERROR_UNKNOWN =
+  'The import did not finish. Try Refresh, or tell an administrator.';
+
+/** The sentence for a wait reason while a run is parked (plan 16.4, `wait.*`). */
+export const IMPORT_WAIT_MESSAGE: Record<string, string> = {
+  oracle_unavailable: 'Oracle is not answering. The import waits and tries again by itself.',
+  capacity_unavailable: 'The service is busy. The import waits and goes on by itself.',
+  storage_low: 'Storage room is low. The import waits and tries again by itself.',
+  oracle_budget:
+    "Today's limit of calls to Oracle is used up. The import waits and goes on by itself tomorrow.",
+};
+export const IMPORT_WAIT_UNKNOWN = 'The import is waiting. It goes on by itself.';
+
+export const importErrorMessage = (code: string | null | undefined) =>
+  (code && (IMPORT_ERROR_MESSAGE as Record<string, string>)[code]) || IMPORT_ERROR_UNKNOWN;
+
+/** One upload announces at most this many files (S3-UP-01). The API and the web share it. */
+export const MAX_ANNOUNCE_FILES = 500;
+
+/** True when an upload item's stored outcome is final: nothing about it may change any more. */
+export const isFinalItem = (outcome: string | null, code: string | null | undefined) =>
+  outcome !== null &&
+  !(outcome === 'skipped' && code != null && (RETRYABLE_CODES as readonly string[]).includes(code));
+
+/**
+ * Map an upload outcome to the status the file shows before any analysis exists. On an Oracle batch
+ * (S3-INT-05) a file that was not fetched shows `not_fetched` (Refresh fetches it), and a file the
+ * runner closed shows `cancelled`.
+ */
+export function uploadStatus(
+  outcome: UploadOutcome | null,
+  code?: string | null,
+  source: BatchSource = 'browser',
+): CvStatus {
+  const oracle = source === 'oracle_hcm';
   switch (outcome) {
     case null:
-      return 'not_sent';
+      return oracle ? 'not_fetched' : 'not_sent';
     case 'rejected':
       return 'rejected';
     case 'duplicate':
@@ -147,7 +258,13 @@ export function uploadStatus(outcome: UploadOutcome | null, code?: string | null
     case 'unreadable':
       return 'unreadable';
     case 'skipped':
-      return code === 'vacancy_full' ? 'vacancy_full' : 'rejected';
+      if (code === 'cancelled' || code === 'superseded' || code === 'source_gone')
+        return 'cancelled';
+      if (code === 'vacancy_full') return 'vacancy_full';
+      if (oracle && (code === 'source_unavailable' || code === 'server_error'))
+        return 'not_fetched';
+      if (code != null && (RETRYABLE_CODES as readonly string[]).includes(code)) return 'not_sent';
+      return 'rejected';
     case 'queued':
       return 'analyzing';
   }

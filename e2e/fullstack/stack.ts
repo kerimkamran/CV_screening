@@ -287,3 +287,29 @@ export async function freshAccount(
 
 /** The admin's API client. */
 export const adminApi = async () => api(await login(accounts().admin));
+
+// ------------------------------------------------------------------ Stage 3: the fake Oracle
+
+/** Add synthetic requisitions to the fake Oracle (same shape as its seed list). */
+export const seedOracle = (
+  requisitions: {
+    number: string;
+    applications: number;
+    estimate?: number;
+    files?: ({ kind?: string; sizeBytes?: number } | null)[];
+  }[],
+) => control('/oracle/seed', { requisitions });
+/** Set or lift a switch of the fake Oracle (only switches scoped to the test's own data on the shared stack). */
+export const setOracle = (switches: Record<string, unknown>) => control('/oracle', switches);
+/** Replace a CV, withdraw, purge or restore one application of a requisition. */
+export const changeOracle = (
+  number: string,
+  index: number,
+  change: 'replaceCv' | 'withdraw' | 'purge' | 'restore',
+) => control('/oracle/change', { number, index, change });
+export const oracleCalls = () =>
+  control<{ resource: string; status: number; overCollection: boolean; host: string }[]>(
+    '/oracle/calls',
+  );
+/** Run the import runner until no run waits, then the screening queue. */
+export const drainImports = () => control('/drain-imports', {});

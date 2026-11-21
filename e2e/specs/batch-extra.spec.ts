@@ -430,9 +430,9 @@ uat(
       'Already in this vacancy',
     ])
       await expect.soft(list, `row status '${w}'`).toContainText(t(w));
-    // The ZIP rows name the server's limit, not a fixed 10.
+    // The ZIP rows name the server's limit (twice the vacancy cap, S3-UP-06), not a fixed 10.
     await expect
-      .soft(list.getByText(t('The ZIP holds more than {n} files', { n: 500 })).first())
+      .soft(list.getByText(t('The ZIP holds more than {n} files', { n: 1000 })).first())
       .toBeVisible();
     expect
       .soft(await list.getByText(t('The ZIP holds more than {n} files', { n: 10 })).count())
@@ -819,5 +819,48 @@ uat(
       ),
       'no animation runs once it is still',
     ).toBe(0);
+  },
+);
+
+uat(
+  'UP-20',
+  '"Download report" after an upload: in Details of every batch, the token in a header (S3-UP-09)',
+  { on: ['D', 'A'] },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    const items = [
+      {
+        itemId: ulidOf('ITM', 1),
+        parentItemId: null,
+        position: 0,
+        filename: 'uat-cv-001.pdf',
+        clientPath: null,
+        size: 2057,
+        status: 'analyzing',
+        code: null,
+        message: null,
+        documentId: ulidOf('DOC', 1),
+        container: false,
+      },
+    ];
+    const { seen } = await batchApi(page, {
+      files: 1,
+      script: [{ received: 1, by: { analyzing: 1 }, items }],
+    });
+    await openVacancy(page);
+    await startBatch(page, meta.lang, 1);
+    await expect(coffeebay(page)).toBeVisible();
+    await coffeebay(page)
+      .getByRole('button', { name: t('Details'), exact: true })
+      .click();
+    const btn = page.getByRole('button', { name: t('Download the report of this upload (CSV)') });
+    await expect(btn).toBeVisible();
+    await expect(btn).toHaveText(t('Download report'));
+    await ux.check('details with the report button', [...STD, 'AZ']);
+    const [dl] = await Promise.all([page.waitForEvent('download'), btn.click()]);
+    expect(dl.suggestedFilename()).toMatch(/^upload-report-\w{26}\.csv$/);
+    const got = seen.requests.filter((r) => /\/report\.csv$/.test(r.url));
+    expect(got).toHaveLength(1);
+    expect(got[0]!.url).not.toMatch(/token|session/i);
   },
 );

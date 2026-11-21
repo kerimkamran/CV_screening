@@ -58,7 +58,6 @@ export const AZ_RESULTS: Record<string, string> = {
   'Some files could not be sent.': 'Bəzi faylları göndərmək mümkün olmadı.',
   '{read} of {total} read. You can leave this page: the scan continues and is kept under Runs.':
     'Oxunan: {read} / {total}. Bu səhifədən çıxa bilərsiniz: skan davam edir və Təhlillər bölməsində saxlanılır.',
-  'Stop the scan': 'Skanı dayandırın',
   'CVs read': 'Oxunmuş CV-lər',
   '{ready} ready, {pending} being read, {human} need a look':
     '{ready} hazırdır, {pending} oxunur, {human} üçün baxış lazımdır',

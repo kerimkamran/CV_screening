@@ -948,7 +948,7 @@ describe('Results: stopping and continuing a scan (spec 6.3)', () => {
     const calls = setup([doc(1, 'completed', 80), doc(2, 'queued')], { queued: 1 });
     render(<Results vacancyId="V" onTable={() => undefined} />);
     expect(await screen.findByText(/1 of 2 read\. You can leave this page/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Stop the scan' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop analysis' }));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/vacancies/V/stop'))).toBe(true));
   });
 
