@@ -87,7 +87,7 @@ jobs:
   # Stage 2, S2-FE9 / S2-FE14: the production build under the production CSP, on three screens.
   e2e:
     name: End-to-end (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu-latest (26.04) yet
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +146,7 @@ jobs:
   # full matrix runs locally before a release (docs/uat/e2e-test-plan.md).
   e2e-full:
     name: End-to-end full stack (UAT L2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu-latest (26.04) yet
     timeout-minutes: 45
     services:
       postgres:
