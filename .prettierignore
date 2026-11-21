@@ -7,3 +7,10 @@ infra
 e2e/test-results
 e2e/playwright-report
 test-results
+# Long-form planning and UAT docs written before format:check ran in CI (their tables are hand-aligned).
+.claude
+docs/parallax/*.md
+docs/stage-2/development-plan.md
+docs/uat/e2e-results-summary.md
+docs/uat/README.md
+e2e/UAT-AUTHORING.md
