@@ -114,13 +114,24 @@ uat(
       .toBeVisible({ timeout: 60_000 })
       .catch(() => undefined);
     await drain();
+    // Since S3-UP-01 the tab announces only what fits (the room, 20): the 10 beyond it are marked
+    // "Vacancy full" in the list before the click and never reach the server.
     const items = await db<{ code: string | null; n: number }>(
       `SELECT i.code, count(*)::int AS n FROM upload_item i JOIN upload_batch b ON b.id = i.batch_id WHERE b.vacancy_id = $1 AND i.filename LIKE $2 GROUP BY i.code`,
       [v.id, `${prefix.toLowerCase().replace(/\W+/g, '-')}%`],
     );
     expect
-      .soft(items.find((i) => i.code === 'vacancy_full')?.n, "10 items 'Vacancy full'")
-      .toBe(10);
+      .soft(
+        items.reduce((n, i) => n + i.n, 0),
+        '20 announced',
+      )
+      .toBe(20);
+    expect
+      .soft(
+        items.find((i) => i.code === 'vacancy_full'),
+        "no 'Vacancy full' item on the server",
+      )
+      .toBeUndefined();
     expect.soft(await used(token, v.id), 'usage now 500').toBe(500);
     const analyzed = await db<{ n: number }>(
       `SELECT count(*)::int AS n FROM cv_document d JOIN screening s ON s.document_id = d.id WHERE d.vacancy_id = $1 AND d.filename LIKE $2 AND s.state = 'completed'`,
@@ -129,12 +140,13 @@ uat(
     expect.soft(analyzed[0]!.n, '20 analyzed').toBe(20);
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: v.title })).toBeVisible();
+    // The batch holds the 20 that were sent: the reloaded page does not report 10 unsent files.
     await expect
       .soft(
-        page.getByText(new RegExp(esc(t('{n} files were not sent', { n: 10 })))).first(),
-        "the finished line says '10 files were not sent'",
+        page.getByText(new RegExp(esc(t('{n} files were not sent', { n: 10 })))),
+        'no "10 files were not sent" after the reload',
       )
-      .toBeVisible();
+      .toHaveCount(0);
     await page
       .getByRole('button', { name: t('Details') })
       .first()
