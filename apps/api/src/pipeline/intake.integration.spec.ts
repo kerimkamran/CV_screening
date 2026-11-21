@@ -5,6 +5,15 @@ import { describeDb } from '../testing/pg-harness';
 import { boot, cv, JD, type Harness } from '../testing/app-harness';
 import { DocumentsController } from './documents.controller';
 import { LinkReader } from './link-reader';
+import { IntakeService } from './intake.service';
+import {
+  announce,
+  itemRow,
+  liveCount,
+  ready as readyVacancy,
+  sendItem,
+  textFile,
+} from '../testing/stage3-upload';
 
 describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)', () => {
   let h: Harness;
@@ -181,5 +190,143 @@ describeDb('Folder / ZIP intake and the vacancy link (design spec 6.1.3, 6.1.4)'
     expect(
       (await viewer.api.post('/vacancies/read-link', { url: 'https://example.com/' })).statusCode,
     ).toBe(403);
+  });
+});
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** S3-UP-03: server_error and bad_zip_entry are actually written: no 500, no item left open. */
+describeDb('Errors while taking files in (S3-UP-03)', () => {
+  let h: Harness;
+  const env = { ...process.env };
+  beforeAll(async () => {
+    process.env['TEST_VISIBILITY'] = 'all';
+    h = await boot('intakeerr');
+  });
+  afterAll(async () => {
+    await h?.close();
+    process.env['TEST_VISIBILITY'] = env['TEST_VISIBILITY'];
+  });
+
+  const zipOf = async (n: number, method: 'DEFLATE' | 'STORE' = 'DEFLATE') => {
+    const z = new JSZip();
+    for (let i = 1; i <= n; i++)
+      z.file(`c${i}.txt`, cv(`Zip Person ${'abcdefghij'[i]}`, [`BGP routing ${i}.`]), {
+        compression: method,
+      });
+    return z.generateAsync({ type: 'nodebuffer' });
+  };
+  /** Spoil the packed bytes of one entry, so it cannot be read; the directory stays intact. */
+  const spoil = (buf: Buffer, name: string) => {
+    const at = buf.indexOf(Buffer.from(name)) + name.length;
+    for (let k = 0; k < 12; k++) buf[at + k] = 0xff;
+    return buf;
+  };
+
+  it('a loose file whose processing throws: 200 with skipped/server_error, shown as Not sent, and a resend takes it in', async () => {
+    const r = await h.recruiter('throw@azerconnect.test');
+    const vid = await readyVacancy(r.api);
+    const f = textFile('Throws Once Person');
+    const b = (await announce(r.api, vid, [{ name: f.name, size: f.data.length }])).json();
+    const item = b.items[0].itemId as string;
+    const intake = h.app.get(IntakeService);
+    const spy = jest.spyOn(intake, 'admit').mockRejectedValueOnce(new Error('boom'));
+    const res = await sendItem(r.api, vid, item, f);
+    spy.mockRestore();
+    expect(res.statusCode).toBe(200);
+    expect(res.json().results[0]).toMatchObject({ status: 'skipped', code: 'server_error' });
+    expect(await itemRow(h, item)).toMatchObject({ outcome: 'skipped', code: 'server_error' });
+    const state = (await r.api.get(`/upload-batches/${b.batchId}?items=1`)).json();
+    expect(state.items[0]).toMatchObject({
+      status: 'not_sent',
+      message: 'The server could not process this file',
+    });
+    const again = await sendItem(r.api, vid, item, f);
+    expect(again.json().results[0]).toMatchObject({ status: 'queued' });
+    expect(await liveCount(h, vid)).toBe(1);
+  });
+
+  it('a ZIP of 5 where entry 3 cannot be read: 1, 2, 4, 5 taken, 3 is bad_zip_entry, "4 of 5 files taken in"', async () => {
+    const r = await h.recruiter('badentry@azerconnect.test');
+    const vid = await readyVacancy(r.api);
+    const data = spoil(await zipOf(5), 'c3.txt');
+    const b = (await announce(r.api, vid, [{ name: 'five.zip', size: data.length }])).json();
+    const res = await sendItem(r.api, vid, b.items[0].itemId, {
+      name: 'five.zip',
+      type: 'application/zip',
+      data,
+    });
+    expect(res.statusCode).toBe(200);
+    const out = res.json().results as any[];
+    expect(out[0]).toMatchObject({
+      status: 'queued',
+      code: 'zip',
+      message: '4 of 5 files taken in',
+    });
+    expect(out.slice(1).map((x) => x.code ?? x.status)).toEqual([
+      'queued',
+      'queued',
+      'bad_zip_entry',
+      'queued',
+      'queued',
+    ]);
+    const skipped = (await r.api.get(`/vacancies/${vid}/skipped`)).json().skipped;
+    expect(skipped.map((s: any) => s.filename)).toEqual(['five.zip › c3.txt']);
+  });
+
+  it('a ZIP where storing entry 3 throws: entry 3 and the ZIP are server_error; a resend stores exactly 1 more CV', async () => {
+    const r = await h.recruiter('storethrow@azerconnect.test');
+    const vid = await readyVacancy(r.api);
+    const data = await zipOf(5);
+    const b = (await announce(r.api, vid, [{ name: 'store.zip', size: data.length }])).json();
+    const zipItem = b.items[0].itemId as string;
+    const intake = h.app.get(IntakeService) as any;
+    const orig = intake.admitFile.bind(intake);
+    let n = 0;
+    const spy = jest.spyOn(intake, 'admitFile').mockImplementation(async (...a: any[]) => {
+      if (++n === 3) throw new Error('db down');
+      return orig(...a);
+    });
+    const file = { name: 'store.zip', type: 'application/zip', data };
+    const res = await sendItem(r.api, vid, zipItem, file);
+    spy.mockRestore();
+    expect(res.statusCode).toBe(200);
+    const out = res.json().results as any[];
+    expect(out[0]).toMatchObject({ status: 'skipped', code: 'server_error' });
+    expect(out[3]).toMatchObject({ status: 'skipped', code: 'server_error' });
+    expect(await liveCount(h, vid)).toBe(4);
+    const again = await sendItem(r.api, vid, zipItem, file);
+    expect(again.json().results[0]).toMatchObject({ status: 'queued', code: 'zip' });
+    expect(await liveCount(h, vid)).toBe(5);
+  });
+
+  it('legacy route: a throwing file gives one server_error result and the others are still taken', async () => {
+    const r = await h.recruiter('legacythrow@azerconnect.test');
+    const vid = await readyVacancy(r.api);
+    const intake = h.app.get(IntakeService);
+    const orig = intake.admit.bind(intake);
+    let n = 0;
+    const spy = jest.spyOn(intake, 'admit').mockImplementation(async (...a) => {
+      if (++n === 2) throw new Error('boom');
+      return orig(...a);
+    });
+    const res = await r.api.upload(`/vacancies/${vid}/documents`, [
+      textFile('Leg One Person'),
+      textFile('Leg Two Person'),
+      textFile('Leg Three Person'),
+    ]);
+    spy.mockRestore();
+    expect(res.statusCode).toBe(200);
+    expect(res.json().results.map((x: any) => x.code ?? x.status)).toEqual([
+      'queued',
+      'server_error',
+      'queued',
+    ]);
+  });
+
+  it('gate errors still pass through unchanged (409 archived, 404 unknown item)', async () => {
+    const r = await h.recruiter('gate@azerconnect.test');
+    const vid = await readyVacancy(r.api);
+    const res = await sendItem(r.api, vid, '0'.repeat(26), textFile('Nobody Person'));
+    expect(res.statusCode).toBe(404);
   });
 });

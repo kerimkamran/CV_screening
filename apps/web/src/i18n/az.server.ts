@@ -133,6 +133,7 @@ export const AZ_SERVER: Record<string, string> = {
   'Only failed screenings can be retried': 'Yalnız alınmayan yoxlamalar təkrar edilə bilər',
   'Already erased': 'Artıq silinib',
   'Up to {max} CVs per download.': 'Bir endirmədə ən çox {max} CV ola bilər.',
+  'Up to {max} files per upload.': 'Bir yükləmədə ən çox {max} fayl ola bilər.',
   'This download link has been used or has expired. Start the download again.':
     'Bu endirmə keçidi istifadə olunub və ya müddəti bitib. Endirməni yenidən başladın.',
   'This CV is already here': 'Bu CV artıq buradadır',

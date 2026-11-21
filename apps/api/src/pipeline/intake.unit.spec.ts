@@ -101,10 +101,8 @@ describe('safe ZIP unpacking (spec 6.1.4)', () => {
     );
     const m = await unpackZip(many, { ...LIMITS, maxEntries: 4 });
     expect(m.files).toHaveLength(4);
-    expect(m.skipped.map((s) => s.reason)).toEqual([
-      'Too many files in the ZIP',
-      'Too many files in the ZIP',
-    ]);
+    // S3-UP-06: one row says the ZIP holds too many files, and the reading stops there.
+    expect(m.skipped.map((s) => s.reason)).toEqual(['Too many files in the ZIP']);
 
     const total = await zipOf({ 'a.txt': 'x'.repeat(600), 'b.txt': 'y'.repeat(600) });
     const t = await unpackZip(total, { ...LIMITS, maxTotalBytes: 1000 });

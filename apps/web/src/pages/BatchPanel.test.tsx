@@ -154,4 +154,41 @@ describe('the batch panel (S2-FE8, FE12)', () => {
     expect(await screen.findByText('Analyzed')).toBeInTheDocument();
     expect(screen.queryByText(/%|score/i)).toBeNull();
   });
+
+  it('shows cancelled rows (not under Needs attention), an erased row without its name, and a Download report button', async () => {
+    serve({
+      mine: true,
+      by: { analyzed: 1, cancelled: 2, erased: 1 },
+      items: [
+        item(0, 'analyzed'),
+        item(1, 'cancelled'),
+        item(2, 'cancelled'),
+        item(3, 'erased', { filename: 'erased' }),
+      ],
+    });
+    const downloads: string[] = [];
+    const { api } = await import('../api');
+    const spy = vi.spyOn(api, 'download').mockImplementation(async (path: string) => {
+      downloads.push(path);
+    });
+    render(<BatchPanel {...props} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Details' }));
+    expect(await screen.findAllByText('Cancelled')).toHaveLength(2);
+    expect(screen.getByText('Erased', { selector: 'span.block.truncate' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Needs attention 0/ })).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Download the report of this upload (CSV)' }),
+    );
+    expect(downloads).toEqual(['/upload-batches/B1/report.csv']);
+    spy.mockRestore();
+  });
+
+  it('the report button is there for someone who may read the vacancy but not change it', async () => {
+    serve({ mine: false, by: { analyzed: 1 }, items: [item(0, 'analyzed')] });
+    render(<BatchPanel {...props} vacancy={{ ...vacancy, canEdit: false } as VacancyView} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Details' }));
+    expect(
+      await screen.findByRole('button', { name: 'Download the report of this upload (CSV)' }),
+    ).toBeInTheDocument();
+  });
 });

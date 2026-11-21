@@ -551,3 +551,76 @@ uat(
     }
   },
 );
+
+uat(
+  'UP-17',
+  '"Stop sending files" cancels a running upload and nothing changes afterwards (S3-UP-05)',
+  { on: ['D'] },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    ux.allow(/Failed to load resource|aborted|ERR_ABORTED/);
+    const me = await freshAccount('TA_PARTNER', { name: 'Leyla Stopova' });
+    const token = await login(me);
+    const v = await makeVacancy(BASE, token, {
+      title: uniq('UAT Stop sending'),
+      jd: jd(['BGP routing'], ['Python scripting']),
+    });
+    const cvs = textCvs(uniq('Stop'), 30);
+    await openAs(page, me, `#/vacancies/${v.id}`);
+    // Each upload is slowed a little, so there are files waiting when Stop is pressed.
+    await page.route('**/documents?item=*', async (route) => {
+      await sleep(700);
+      await route.continue().catch(() => undefined);
+    });
+    await choose(page, meta.lang, asFiles(cvs));
+    await startFromPage(page, meta.lang);
+    await expect.poll(() => received(v.id), { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
+    // One click, no confirm step.
+    await page
+      .getByRole('button', { name: t('Stop sending files') })
+      .first()
+      .click();
+    const done = page.getByText(
+      new RegExp(
+        esc(
+          t('Sending stopped. {sent} files were sent; {n} were not sent.', { sent: 0, n: 0 }).split(
+            ' ',
+          )[0]!,
+        ),
+      ),
+    );
+    await expect(done.first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: t('Stop sending files') })).toHaveCount(0);
+    await ux.check('stopped', STD);
+    // The server closed every open item as cancelled; the batch says who and when.
+    const batch = (
+      await db<{ id: string; cancelled_at: Date | null; cancelled_by: string | null }>(
+        `SELECT id, cancelled_at, cancelled_by FROM upload_batch WHERE vacancy_id = $1`,
+        [v.id],
+      )
+    )[0]!;
+    expect(batch.cancelled_by).toBe(me.userId);
+    const rows = await db<{ outcome: string | null; code: string | null }>(
+      `SELECT outcome, code FROM upload_item WHERE batch_id = $1`,
+      [batch.id],
+    );
+    expect(
+      rows.every((r) => r.outcome !== null),
+      'no item left open',
+    ).toBe(true);
+    const cancelled = rows.filter((r) => r.code === 'cancelled').length;
+    expect(cancelled).toBeGreaterThan(0);
+    // Nothing changes afterwards: the same number of CVs 5 s later, and no "Could not send" row.
+    const n0 = (await documents(v.id)).length;
+    await sleep(5000);
+    expect((await documents(v.id)).length).toBe(n0);
+    await expect(page.getByText(t('Could not send'), { exact: true })).toHaveCount(0);
+    // Files already sent keep being analyzed.
+    await drain();
+    const states = await db<{ state: string }>(
+      `SELECT DISTINCT s.state::text AS state FROM screening s JOIN cv_document d ON d.id = s.document_id WHERE d.vacancy_id = $1`,
+      [v.id],
+    );
+    expect(states.map((s) => s.state)).toEqual(['completed']);
+  },
+);

@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { row } from './api';
 
 /**
@@ -6,6 +7,13 @@ import { row } from './api';
  * make-files.py into fixtures/files/. All people are invented.
  */
 const file = (name: string) => readFileSync(new URL(`./files/${name}`, import.meta.url));
+/** The two large ZIPs are written by make-zips.mjs (S3-UP-10): build them on first use. */
+const built = (name: string) => {
+  const url = new URL(`./files/${name}`, import.meta.url);
+  if (!existsSync(url))
+    execFileSync(process.execPath, [new URL('./make-zips.mjs', import.meta.url).pathname]);
+  return readFileSync(url);
+};
 export const FILES = {
   /** A Word CV (Rəşad Əliyev): BGP, OSPF, Kubernetes, Python. */
   docx: () => file('rashad.docx'),
@@ -19,10 +27,10 @@ export const FILES = {
   notPdf: () => file('not-a-pdf.pdf'),
   /** Three CVs (one in a folder) and a photo. */
   zip: () => file('cvs.zip'),
-  /** About 11 MB, over the 10 MB per-file limit. */
-  oversizeZip: () => file('oversize.zip'),
-  /** 600 tiny CVs, over the 500 per vacancy. */
-  tooManyZip: () => file('too-many.zip'),
+  /** One CV and one stored entry of 11 MB (over the 10 MB per-file limit). Built in Node if missing. */
+  oversizeZip: () => built('oversize.zip'),
+  /** 1,100 tiny CVs: over the 1,000 entries the server examines in one ZIP. Built in Node if missing. */
+  tooManyZip: () => built('too-many.zip'),
 };
 
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';

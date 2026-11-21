@@ -356,6 +356,7 @@ export const BYSTATUS0 = {
   rejected: 0,
   duplicate: 0,
   vacancy_full: 0,
+  cancelled: 0,
   analyzing: 0,
   stopped: 0,
   failed: 0,

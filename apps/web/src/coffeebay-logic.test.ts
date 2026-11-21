@@ -108,3 +108,27 @@ describe('tab title and icon', () => {
     expect(decodeURIComponent(ringIcon(1, true))).toContain('M10.5 16.5');
   });
 });
+
+describe('cancelled files in the progress (S3-UP-05)', () => {
+  it('counts cancelled files apart and lets the batch finish', async () => {
+    const { progressOf } = await import('./coffeebay-logic');
+    const s = {
+      batch: { id: 'B', vacancyId: 'V', createdAt: '', createdBy: '', fileCount: 5, mine: true },
+      lastReceivedAt: null,
+      counts: {
+        upload: {
+          total: 5,
+          received: 2,
+          notReceived: 0,
+          vacancyFull: 0,
+          rejected: 0,
+          duplicate: 0,
+          cancelled: 3,
+        },
+        byStatus: { analyzed: 2, cancelled: 3 } as never,
+      },
+    };
+    const pr = progressOf(s as never, null);
+    expect(pr).toMatchObject({ cancelled: 3, analyzed: 2, sent: 2, phase: 'finished', p: 1 });
+  });
+});

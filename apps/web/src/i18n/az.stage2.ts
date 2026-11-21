@@ -245,4 +245,24 @@ export const AZ_STAGE2: Record<string, string> = {
   'No decisions were made with the keys in this review.': 'Bu baxışda düymələrlə qərar verilməyib.',
   'Decided in this review:': 'Bu baxışda verilən qərarlar:',
   'Start again from the first CV': 'Birinci CV-dən yenidən başlayın',
+
+  // Stage 3, bulk-upload hardening (S3-UP-01..09). Wording table of the Stage 3 plan, section 16.4.
+  Cancelled: 'Ləğv edilib',
+  'One upload takes up to {max} files. The last {n} will not be sent.':
+    'Bir yükləməyə ən çox {max} fayl sığır. Sonuncu {n} göndərilməyəcək.',
+  'Not in this upload': 'Bu yükləməyə daxil deyil',
+  'Started. {sent} files are being sent. {n} were left out.':
+    'Başladı. {sent} fayl göndərilir. {n} fayl kənarda qaldı.',
+  'about {n} CVs': 'təxminən {n} CV',
+  'About {n} CVs chosen; {room} more fit in this vacancy. CVs that do not fit are marked “Vacancy full” after sending.':
+    'Təxminən {n} CV seçilib; bu vakansiyaya daha {room} CV sığır. Sığmayan CV-lər göndərildikdən sonra “Vakansiya doludur” kimi işarələnir.',
+  'Choose CV files or ZIPs': 'CV fayllarını və ya ZIP-ləri seçin',
+  'Stop sending files': 'Göndərməni dayandırın',
+  'Sending stopped. {sent} files were sent; {n} were not sent.':
+    'Göndərmə dayandırıldı. {sent} fayl göndərildi; {n} fayl göndərilmədi.',
+  'Could not tell the server to stop. Try again.':
+    'Dayandırma barədə serverə bildirmək alınmadı. Yenidən cəhd edin.',
+  'Download report': 'Hesabatı endirin',
+  'Download the report of this upload (CSV)': 'Bu yükləmənin hesabatını endirin (CSV)',
+  'Stop analysis': 'Təhlili dayandırın',
 };

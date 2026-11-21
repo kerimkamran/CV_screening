@@ -113,10 +113,10 @@ export const api = {
   patch: async <T>(path: string, body: unknown): Promise<T> =>
     (await raw('PATCH', path, body)).json() as Promise<T>,
   del: async <T>(path: string): Promise<T> => (await raw('DELETE', path)).json() as Promise<T>,
-  upload: async <T>(path: string, files: File[]): Promise<T> => {
+  upload: async <T>(path: string, files: File[], signal?: AbortSignal): Promise<T> => {
     const form = new FormData();
     for (const f of files) form.append('files', f, f.name);
-    return (await raw('POST', path, undefined, form)).json() as Promise<T>;
+    return (await raw('POST', path, undefined, form, signal)).json() as Promise<T>;
   },
   /** The bytes of a file, fetched with the token in a header (never in a URL). */
   bytes: async (path: string, signal?: AbortSignal): Promise<ArrayBuffer> =>

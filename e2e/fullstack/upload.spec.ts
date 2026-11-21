@@ -5,6 +5,7 @@ import { DOCX_MIME, FILES } from '../fixtures/files';
 import { esc, inFlight, jd, makeVacancy, T, textCvs } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
 import { accounts, api, BASE, db, drain, login, openAs, uniq } from './stack';
+import { sleep } from '../fixtures/pkg-i';
 
 // 7.9 CVs card (upload) (UP), full-stack journeys (L2). UAT plan v1.1.
 
@@ -410,5 +411,170 @@ uat(
       .soft(line, 'with its reason, in the screen language')
       .toContainText(t('Only PDF, DOCX, TXT and MD files'));
     await ux.check('after the upload', [...STD, 'AZ']);
+  },
+);
+
+// ------------------------------------------------------------------ Stage 3 (S3-UP-06, S3-UP-10)
+
+const zipCard = (page: import('@playwright/test').Page, lang: 'en' | 'az') =>
+  page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { level: 2, name: T(lang)('CVs'), exact: true }) });
+async function chooseHere(
+  page: import('@playwright/test').Page,
+  lang: 'en' | 'az',
+  files: { name: string; mimeType: string; buffer: Buffer }[],
+) {
+  const [fc] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    zipCard(page, lang)
+      .getByRole('button', { name: T(lang)('Choose files'), exact: true })
+      .click(),
+  ]);
+  await fc.setFiles(files);
+}
+async function startHere(page: import('@playwright/test').Page, lang: 'en' | 'az') {
+  const c = zipCard(page, lang);
+  const box = c.getByRole('checkbox');
+  if (await box.count()) await box.check();
+  await c.locator('button.h-11').click();
+}
+const zipOfCvs = async (prefix: string, n: number) => {
+  const JSZip = (await import('jszip')).default;
+  const z = new JSZip();
+  for (let i = 0; i < n; i++)
+    z.file(
+      `${prefix}-${i}.txt`,
+      `Name: ${prefix} Person ${i}\nBGP routing.\n${'Network operations. '.repeat(8)}`,
+    );
+  return z.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+};
+
+uat(
+  'UP-19',
+  'Three ZIPs go one at a time while loose files keep going (S3-UP-06)',
+  { on: ['D'] },
+  async ({ page, ux, meta }) => {
+    const a = accounts().recruiter;
+    const token = await login(a);
+    const v = await makeVacancy(BASE, token, {
+      title: uniq('UAT Three ZIPs'),
+      jd: jd(['BGP routing'], ['Python scripting']),
+    });
+    await openAs(page, a, `#/vacancies/${v.id}`);
+    let zipsNow = 0;
+    let zipPeak = 0;
+    let all = 0;
+    let allPeak = 0;
+    const zipItems = new Set<string>();
+    await page.route('**/documents?item=*', async (route) => {
+      const body = route.request().postDataBuffer() ?? Buffer.alloc(0);
+      const zip = body.includes(Buffer.from('.zip"'));
+      all++;
+      allPeak = Math.max(allPeak, all);
+      if (zip) {
+        zipsNow++;
+        zipPeak = Math.max(zipPeak, zipsNow);
+        zipItems.add(route.request().url());
+        await sleep(800);
+      }
+      await route.continue().catch(() => undefined);
+      all--;
+      if (zip) zipsNow--;
+    });
+    const files = [
+      { name: 'one.zip', mimeType: 'application/zip', buffer: await zipOfCvs('Zone', 3) },
+      { name: 'two.zip', mimeType: 'application/zip', buffer: await zipOfCvs('Ztwo', 3) },
+      { name: 'three.zip', mimeType: 'application/zip', buffer: await zipOfCvs('Zthree', 3) },
+      ...textCvs(uniq('Loose'), 4).map((f) => ({
+        name: f.name,
+        mimeType: f.type,
+        buffer: Buffer.from(f.data),
+      })),
+    ];
+    await chooseHere(page, meta.lang, files);
+    await startHere(page, meta.lang);
+    await expect
+      .poll(
+        async () =>
+          (
+            await db<{ n: number }>(
+              `SELECT count(*)::int AS n FROM cv_document WHERE vacancy_id = $1 AND erased_at IS NULL`,
+              [v.id],
+            )
+          )[0]!.n,
+        { timeout: 90_000 },
+      )
+      .toBe(13);
+    expect(zipItems.size).toBe(3);
+    expect(zipPeak, 'never more than one ZIP request in flight').toBe(1);
+    expect(allPeak, 'never more than three requests in all').toBeLessThanOrEqual(3);
+    await ux.check('all sent', STD);
+  },
+);
+
+uat(
+  'UP-21',
+  'ZIP problems reported file by file: cannot be opened, one unreadable file, a file over 10 MB, more than 1,000 files (S3-UP-06)',
+  { on: ['D'], timeout: 240_000 },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    const a = accounts().recruiter;
+    const token = await login(a);
+    const v = await makeVacancy(BASE, token, {
+      title: uniq('UAT ZIP problems'),
+      jd: jd(['BGP routing'], ['Python scripting']),
+    });
+    await openAs(page, a, `#/vacancies/${v.id}`);
+    // 1) A ".zip" that is not one; 2) a ZIP whose second file cannot be read.
+    const notZip = Buffer.concat([
+      Buffer.from('PK\x03\x04'),
+      Buffer.from('not a zip at all, '.repeat(20)),
+    ]);
+    const spoilt = await zipOfCvs('Spoil', 3);
+    const at = spoilt.indexOf(Buffer.from('Spoil-1.txt')) + 'Spoil-1.txt'.length;
+    for (let k = 0; k < 12; k++) spoilt[at + k] = 0xff;
+    const files = [
+      { name: 'broken.zip', mimeType: 'application/zip', buffer: notZip },
+      { name: 'spoilt.zip', mimeType: 'application/zip', buffer: spoilt },
+      { name: 'oversize.zip', mimeType: 'application/zip', buffer: FILES.oversizeZip() },
+      { name: 'too-many.zip', mimeType: 'application/zip', buffer: FILES.tooManyZip() },
+    ];
+    await chooseHere(page, meta.lang, files);
+    await startHere(page, meta.lang);
+    const items = async () =>
+      db<{ filename: string; outcome: string | null; code: string | null }>(
+        `SELECT i.filename, i.outcome, i.code FROM upload_item i JOIN upload_batch b ON b.id = i.batch_id
+          WHERE b.vacancy_id = $1 ORDER BY i.parent_item_id NULLS FIRST, i.position`,
+        [v.id],
+      );
+    await expect
+      .poll(
+        async () => {
+          const all = await items();
+          return all.length >= 4 && all.every((i) => i.outcome) ? 'settled' : 'open';
+        },
+        { timeout: 200_000, intervals: [1000] },
+      )
+      .toBe('settled');
+    const got = await items();
+    const by = (name: string) => got.find((i) => i.filename === name);
+    expect(by('broken.zip')).toMatchObject({ outcome: 'rejected', code: 'bad_zip' });
+    expect(got.find((i) => i.filename.endsWith('Spoil-1.txt'))).toMatchObject({
+      outcome: 'skipped',
+      code: 'bad_zip_entry',
+    });
+    expect(got.find((i) => i.filename.endsWith('big.txt'))).toMatchObject({ code: 'too_large' });
+    expect(got.filter((i) => i.code === 'too_many_entries')).toHaveLength(1);
+    // The panel lists them file by file, in plain words.
+    await page
+      .getByRole('button', { name: t('Details') })
+      .first()
+      .click();
+    await expect(page.getByText(t('The ZIP could not be opened')).first()).toBeVisible();
+    await expect(
+      page.getByText(t('A file inside the ZIP could not be read')).first(),
+    ).toBeVisible();
+    await ux.check('problems listed', STD);
   },
 );
