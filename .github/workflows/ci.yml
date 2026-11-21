@@ -118,6 +118,193 @@ jobs:
       - run: docker build -f docker/api.Dockerfile -t cv-api:ci .
       - run: docker build -f docker/web.Dockerfile -t cv-web:ci .
       - run: docker build -f docker/render.Dockerfile -t cv-render:ci .
+      # Stage 3, S3-OPS-04: the gate copy's image; and the production image carries no test code.
+      - run: docker build -f docker/gate.Dockerfile -t cv-gate:ci .
+      - run: |
+          if docker run --rm --entrypoint sh cv-render:ci -c 'test -e /repo/e2e || test -e /repo/apps/api/src/testing'; then
+            echo "the production image carries test code"; exit 1
+          fi
+
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.x
+      - run: terraform fmt -check -recursive
+        working-directory: infra/terraform
+      - run: terraform init -backend=false
+        working-directory: infra/terraform
+      - run: terraform validate
+        working-directory: infra/terraform
+
+  # Stage 3, S3-UP-10: full-stack journeys (UAT L2) against the compiled API, Postgres, pdftotext,
+  # LibreOffice and the fake AI. One device and one language keep the job inside its budget; the
+  # full matrix runs locally before a release (docs/uat/e2e-test-plan.md).
+  e2e-full:
+    name: End-to-end full stack (UAT L2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: cv
+          POSTGRES_PASSWORD: cv
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cv -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      UAT_RESET: '1'
+      UAT_DEVICES: D
+      UAT_LANGS: en
+      UAT_WORKERS: '2'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: PDF text, LibreOffice and psql (used by the server under test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e:full
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-l2
+          path: e2e/test-results
+          retention-days: 7
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Lint, typecheck, test, migrate, scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: cv
+          POSTGRES_PASSWORD: cv
+          POSTGRES_DB: cv_screening
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cv -d cv_screening"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      MIGRATION_DATABASE_URL: postgres://cv:cv@localhost:5432/cv_screening
+      DATABASE_URL: postgres://cv:cv@localhost:5432/cv_screening
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: PDF text extraction tool (used by the pipeline tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: npm ci
+
+      - name: Lint and format
+        run: |
+          npm run lint
+          npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # PLAT-03: unit tests with a coverage floor (apps/api/jest.config.cjs); merge blocked below it.
+      - name: Unit tests
+        run: npm test
+
+      # PLAT-02: migrations apply, roll back to empty, re-apply; database invariants hold.
+      - name: Migration round-trip and invariants
+        run: npm run db:roundtrip
+
+      - name: Build
+        run: npm run build
+
+      # AISEC-01 / AC-13: no provider key or direct provider endpoint may exist in the browser bundle.
+      - name: Bundle key scan
+        run: npm run guard:bundle
+
+      # PLAT-09: static residency scan (no cloud credentials required).
+      - name: Residency scan (HCL)
+        run: npm run guard:residency
+
+      # PLAT-08: environments never share state or credentials.
+      - name: Environment isolation
+        run: npm run guard:isolation
+
+      - name: Taxonomy parity (Postgres enums == shared constants)
+        run: node scripts/check-taxonomy-parity.mjs
+
+      # PLAT-03: SBOM attached to the build artifact.
+      - name: Generate SBOM
+        run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+
+  # Stage 2, S2-FE9 / S2-FE14: the production build under the production CSP, on three screens.
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w packages/shared && npm run build -w apps/web
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run e2e
+        env:
+          CI: 'true'
+          E2E_WEBKIT: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+
+  images:
+    name: Container images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/api.Dockerfile -t cv-api:ci .
+      - run: docker build -f docker/web.Dockerfile -t cv-web:ci .
+      - run: docker build -f docker/render.Dockerfile -t cv-render:ci .
 
   terraform:
     name: Terraform fmt and validate
