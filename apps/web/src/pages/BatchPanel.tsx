@@ -20,11 +20,14 @@ import { stopTracking, trackBatch } from '../done-signals';
 import { tr, useT } from '../i18n';
 import {
   attachFiles,
+  cancelRun,
   fetchIntakeInfo,
   kickBatch,
   matchOpenItems,
   retryFailedFiles,
   retryRunItem,
+  retryCancel,
+  runActive,
   useBatchStatus,
   useRun,
   type BatchItemView,
@@ -55,7 +58,8 @@ const OPEN_FOR_SEND: CvStatus[] = ['not_sent', 'could_not_send', 'vacancy_full']
 
 /** The number a rejection text names: the server's own limit for that code, not a fixed 10. */
 function limitFor(code: string, info: IntakeInfo | null): number {
-  if (code === 'too_many_entries') return info?.limit ?? 500;
+  // The server examines at most twice the vacancy cap of entries in one ZIP (1,000 by default).
+  if (code === 'too_many_entries') return (info?.limit ?? 500) * 2;
   if (code === 'zip_too_large') return info?.maxZipMb ?? 100;
   return info?.maxFileMb ?? 10;
 }
@@ -92,6 +96,12 @@ export function BatchPanel({
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const pickRef = useRef<HTMLInputElement>(null);
+  // After "Stop sending files" the button is gone: focus goes to the line that says what stopped.
+  const stopLine = useRef<HTMLParagraphElement>(null);
+  const stopState = run?.stop?.state ?? null;
+  useEffect(() => {
+    if (stopState) stopLine.current?.focus();
+  }, [stopState]);
   // Hide removes the button that was pressed: focus goes to "Show the waiting screen" (plan 4.7).
   const showRef = useRef<HTMLButtonElement>(null);
   const focusShow = useRef(false);
@@ -250,6 +260,13 @@ export function BatchPanel({
   const stillFull = !!info && info.used >= info.limit;
   const waitingFiles = pr.notSent - (stillFull ? (status.counts.byStatus.vacancy_full ?? 0) : 0);
   const holding = !!run && run.items.some((i) => i.file && i.client !== 'sent');
+  const cancelled = !!status.batch.cancelledAt;
+  const sendingHere = runActive(run) && !run?.stop;
+  const stopSending = () => void cancelRun(vacancy.id);
+  const report = () =>
+    void api
+      .download(`/upload-batches/${batchId}/report.csv`, `upload-report-${batchId}.csv`)
+      .catch((e) => setError(errMsg(e)));
 
   return (
     <div className="space-y-3" data-testid="batch-panel">
@@ -269,6 +286,7 @@ export function BatchPanel({
           onDetails={toggleDetails}
           onHide={hideIt}
           onClose={closeIt}
+          onStop={sendingHere ? stopSending : undefined}
         />
       ) : (
         <section
@@ -316,6 +334,11 @@ export function BatchPanel({
             >
               {t('Details')}
             </button>
+            {sendingHere && (
+              <button type="button" className={btnSecondary} onClick={stopSending}>
+                {t('Stop sending files')}
+              </button>
+            )}
             {mine && pr.phase === 'finished' && (
               <button type="button" className="px-2 text-link underline" onClick={closeIt}>
                 {t('Close')}
@@ -325,7 +348,29 @@ export function BatchPanel({
         </section>
       )}
 
-      {canEdit && waitingFiles > 0 && !holding && (
+      {run?.stop && (
+        <Notice kind={run.stop.state === 'done' ? 'ok' : 'error'}>
+          <p ref={stopLine} tabIndex={-1} className="outline-none">
+            {run.stop.state === 'done'
+              ? t('Sending stopped. {sent} files were sent; {n} were not sent.', {
+                  sent: run.stop.sent,
+                  n: run.stop.notSent,
+                })
+              : t('Could not tell the server to stop. Try again.')}
+          </p>
+          {run.stop.state === 'failed' && (
+            <button
+              type="button"
+              className="font-semibold underline"
+              onClick={() => void retryCancel(vacancy.id)}
+            >
+              {t('Retry')}
+            </button>
+          )}
+        </Notice>
+      )}
+
+      {canEdit && waitingFiles > 0 && !holding && !cancelled && (
         <Notice kind="warn">
           <span>
             {t('{n} files are not sent yet. Choose them again and only those are sent.', {
@@ -360,6 +405,14 @@ export function BatchPanel({
         >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-semibold">{t('Files in this upload')}</h3>
+            <button
+              type="button"
+              className={btnSecondary}
+              aria-label={t('Download the report of this upload (CSV)')}
+              onClick={report}
+            >
+              {t('Download report')}
+            </button>
             <div role="group" aria-label={t('Show')} className="flex gap-1">
               <button
                 type="button"
@@ -390,7 +443,9 @@ export function BatchPanel({
                 return (
                   <li key={r.itemId} className="flex items-center justify-between gap-2 py-1.5">
                     <span className="min-w-0">
-                      <span className="block truncate">{r.clientPath ?? r.filename}</span>
+                      <span className="block truncate">
+                        {r.status === 'erased' ? t('Erased') : (r.clientPath ?? r.filename)}
+                      </span>
                       <span className="block text-xs text-ink-3">
                         {label(r.status, r.code, info)}
                       </span>
@@ -432,5 +487,6 @@ function withClient(i: BatchItemView, run: ReturnType<typeof useRun>): BatchItem
   if (c.client === 'sending') return { ...i, status: 'sending' };
   if (c.client === 'waiting') return { ...i, status: 'waiting_to_send' };
   if (c.client === 'failed') return { ...i, status: 'could_not_send', message: c.error };
+  if (c.client === 'stopped') return { ...i, status: 'cancelled' };
   return i;
 }

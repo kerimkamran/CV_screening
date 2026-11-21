@@ -175,7 +175,7 @@ describe('sending one file per request, three at a time (S2-FE7)', () => {
       return new Response(JSON.stringify({}), { headers: { 'content-type': 'application/json' } });
     });
     const id = await startBatch('VID', rows(7));
-    expect(id).toBe('B1');
+    expect(id).toEqual({ batchId: 'B1', sent: 7, leftOut: 0 });
     await waitFor(() => expect(urls).toHaveLength(7));
     expect(peak).toBeLessThanOrEqual(3);
     expect(peak).toBeGreaterThan(1);
@@ -473,7 +473,9 @@ describe('Vacancy page: the CVs card', () => {
       new File([], 'empty.pdf'),
       pdf('good.pdf'),
     ];
-    await userEvent.upload(screen.getByLabelText('Choose CV files'), files, { applyAccept: false });
+    await userEvent.upload(screen.getByLabelText('Choose CV files or ZIPs'), files, {
+      applyAccept: false,
+    });
     expect(screen.getByTestId('check-summary')).toHaveTextContent('1 ready');
     expect(screen.getByTestId('check-summary')).toHaveTextContent('3 need attention');
     expect(screen.getByText(/Not a CV file type/)).toBeInTheDocument();
@@ -491,13 +493,84 @@ describe('Vacancy page: the CVs card', () => {
     );
     await screen.findByText(/450 of 500 CVs used/);
     const many = Array.from({ length: 136 }, (_, i) => pdf(`cv${i}.pdf`));
-    await userEvent.upload(screen.getByLabelText('Choose CV files'), many, { applyAccept: false });
+    await userEvent.upload(screen.getByLabelText('Choose CV files or ZIPs'), many, {
+      applyAccept: false,
+    });
     expect(
       screen.getByText(/You chose 136 CVs\. Up to 100 per upload is recommended/),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Only 50 more CVs fit in this vacancy\. The last 86 will not be sent\./),
     ).toBeInTheDocument();
+  });
+
+  it('names files beyond the 500-per-upload limit before the click (S3-UP-01, UP-16)', async () => {
+    await open((url) =>
+      url.endsWith(`/vacancies/${VID}/intake`) ? { body: { ...INTAKE, used: 0 } } : undefined,
+    );
+    await screen.findByText(/0 of 500 CVs used/);
+    const many = [
+      new File(['PK'], 'a.zip'),
+      new File(['PK'], 'b.zip'),
+      ...Array.from({ length: 499 }, (_, i) => pdf(`cv${i}.pdf`)),
+    ];
+    await userEvent.upload(screen.getByLabelText('Choose CV files or ZIPs'), many, {
+      applyAccept: false,
+    });
+    expect(
+      screen.getByText('One upload takes up to 500 files. The last 1 will not be sent.'),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Show all 501 files/ }));
+    expect(screen.getAllByText(/Not in this upload/)).toHaveLength(1);
+  });
+
+  it('shows "about n CVs" for a ZIP from its directory (S3-UP-08, UP-18)', async () => {
+    const JSZip = (await import('jszip')).default;
+    const z = new JSZip();
+    z.file('a.pdf', '%PDF');
+    z.file('b.docx', 'PK');
+    z.file('c.txt', 'cv');
+    z.file('photo.jpg', 'jpg');
+    const bytes = await z.generateAsync({ type: 'uint8array' });
+    await open();
+    await screen.findByText(/CVs used in this vacancy/);
+    await userEvent.upload(
+      screen.getByLabelText('Choose CV files or ZIPs'),
+      [new File([bytes as BlobPart], 'cvs.zip', { type: 'application/zip' }), pdf('loose.pdf')],
+      { applyAccept: false },
+    );
+    expect(await screen.findByText(/about 3 CVs/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('check-summary')).toHaveTextContent('about 4 CVs'),
+    );
+  });
+
+  it('a 413 TOO_MANY_FILES answer shows the one sentence and keeps the files listed', async () => {
+    await open((url, init) => {
+      if (url.endsWith(`/vacancies/${VID}`))
+        return {
+          body: {
+            ...vacancyView,
+            candidateNoticeConfirmedAt: '2026-10-01T10:00:00Z',
+            requirements: [{ id: 'r1', text: 'BGP', classification: 'mandatory', weight: 10 }],
+          },
+        };
+      if (url.endsWith('/start')) return { body: { queued: 0 } };
+      if (url.endsWith('/upload-batches') && init?.method === 'POST')
+        return {
+          status: 413,
+          body: { code: 'TOO_MANY_FILES', message: 'Up to 500 files per upload.' },
+        };
+      return undefined;
+    });
+    await screen.findByText(/CVs used in this vacancy/);
+    await userEvent.upload(screen.getByLabelText('Choose CV files or ZIPs'), [pdf('one.pdf')], {
+      applyAccept: false,
+    });
+    await userEvent.click(screen.getByRole('button', { name: /Find the best fit/ }));
+    expect(await screen.findByText('Up to 500 files per upload.')).toBeInTheDocument();
+    expect(screen.getByTestId('check-summary')).toHaveTextContent('1 ready');
+    expect(screen.queryByTestId('coffeebay')).toBeNull();
   });
 
   it('hides the folder button where folder picking does not work (iPhone)', async () => {
@@ -508,7 +581,9 @@ describe('Vacancy page: the CVs card', () => {
       await open();
       await screen.findByText(/CVs used in this vacancy/);
       expect(screen.queryByRole('button', { name: 'Choose a folder' })).toBeNull();
-      expect(screen.getByRole('button', { name: 'Add a ZIP' })).toBeInTheDocument();
+      // One picker for loose files and ZIPs (S3-UP-07): two buttons on desktop, one on iPhone.
+      expect(screen.queryByRole('button', { name: 'Add a ZIP' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Choose files' })).toBeInTheDocument();
     } finally {
       ua.mockRestore();
     }

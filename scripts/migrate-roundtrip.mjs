@@ -70,6 +70,63 @@ try {
   await up(client, {}, quiet);
   assert.deepEqual(await tables(client), full);
 
+  // Stage 3 (0040): the newest migration steps down and up again on its own, and its columns go.
+  const cols = async (table, names) =>
+    (
+      await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = ANY($2)`,
+        [table, names],
+      )
+    ).rows.map((r) => r.column_name);
+  const after0039 = Number(
+    (await client.query(`SELECT count(*) AS n FROM schema_migrations WHERE id >= '0040'`)).rows[0]
+      .n,
+  );
+  await down(client, { steps: after0039 }, quiet);
+  assert.deepEqual(await cols('cv_document', ['erased_name_sha']), []);
+  assert.deepEqual(await cols('upload_batch', ['cancelled_at', 'cancelled_by']), []);
+  // A CV erased before 0040 keeps its name until the up file scrubs it (S3-UP-04, backfill).
+  await client.query(`INSERT INTO organization (id, name) VALUES ($1, 'Seed')`, [ID(701)]);
+  await client.query(
+    `INSERT INTO app_user (id, issuer, subject, actor_kind) VALUES ($1,'https://idp.test/','seed','human')`,
+    [ID(702)],
+  );
+  await client.query(
+    `INSERT INTO vacancy (id, org_id, title, created_by) VALUES ($1,$2,'Seed',$3)`,
+    [ID(703), ID(701), ID(702)],
+  );
+  await client.query(
+    `INSERT INTO cv_document (id, vacancy_id, filename, mime, size_bytes, sha256, uploaded_by, erased_at, parse_status)
+     VALUES ($1,$2,'Leyla_Aliyeva.pdf','application/pdf',1,$3,$4, now(), 'parsed')`,
+    [ID(704), ID(703), 'a'.repeat(64), ID(702)],
+  );
+  await client.query(
+    `INSERT INTO upload_batch (id, vacancy_id, created_by, file_count) VALUES ($1,$2,$3,1)`,
+    [ID(705), ID(703), ID(702)],
+  );
+  await client.query(
+    `INSERT INTO upload_item (id, batch_id, position, filename, client_path, size_bytes, outcome, document_id)
+     VALUES ($1,$2,0,'Leyla_Aliyeva.pdf','cvs/Leyla_Aliyeva.pdf',1,'queued',$3)`,
+    [ID(706), ID(705), ID(704)],
+  );
+  await up(client, {}, quiet);
+  const seeded = (
+    await client.query(`SELECT filename, erased_name_sha FROM cv_document WHERE id = $1`, [ID(704)])
+  ).rows[0];
+  assert.equal(seeded.filename, 'erased');
+  assert.match(seeded.erased_name_sha, /^[0-9a-f]{64}$/);
+  const seededItem = (
+    await client.query(`SELECT filename, client_path FROM upload_item WHERE id = $1`, [ID(706)])
+  ).rows[0];
+  assert.deepEqual(seededItem, { filename: 'erased', client_path: null });
+  await client.query(`DELETE FROM upload_item WHERE id = $1`, [ID(706)]);
+  await client.query(`DELETE FROM upload_batch WHERE id = $1`, [ID(705)]);
+  await client.query(`DELETE FROM cv_document WHERE id = $1`, [ID(704)]);
+  await client.query(`DELETE FROM vacancy WHERE id = $1`, [ID(703)]);
+  console.log('  ok  0040 backfill scrubs the name of a CV erased before it');
+  console.log(`  ok  Stage 3 migrations step down (${after0039}) and up again; 0040 columns go`);
+  assert.equal((await cols('upload_batch', ['cancelled_at', 'cancelled_by'])).length, 2);
+
   console.log('invariants');
   await client.query('BEGIN');
   await client.query(`INSERT INTO organization (id, name) VALUES ($1, 'Azerconnect')`, [ID(1)]);
@@ -176,6 +233,19 @@ try {
     [ID(200), ID(2)],
     /null value|not-null/i,
     'audit write rejected without a principal (IAM-05)',
+  );
+
+  // 0040: a cancelled batch always says who cancelled it.
+  await client.query(
+    `INSERT INTO upload_batch (id, vacancy_id, created_by, file_count) VALUES ($1,$2,$3,1)`,
+    [ID(40), ID(2), ID(9)],
+  );
+  await expectReject(
+    client,
+    `UPDATE upload_batch SET cancelled_at = now() WHERE id = $1`,
+    [ID(40)],
+    /upload_batch_cancel_complete/,
+    'batch cancelled_at without cancelled_by rejected',
   );
 
   // Least privilege: as cv_app the same tamper attempts fail at the privilege layer too.

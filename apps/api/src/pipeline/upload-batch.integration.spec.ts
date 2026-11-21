@@ -442,3 +442,84 @@ describeDb('Upload batches and reliable intake (Stage 2, S2-BE2, S2-BE3)', () =>
     expect(res.json().results.map((x: any) => x.status)).toEqual(['queued', 'rejected']);
   });
 });
+
+/** S3-UP-01: more than 500 announced files answer a typed 413; ZIPs do not use a slot. */
+describeDb('Announce limit and ZIP pre-mark (S3-UP-01)', () => {
+  let h: Harness;
+  const env = { ...process.env };
+  beforeAll(async () => {
+    process.env['TEST_VISIBILITY'] = 'all';
+    process.env['MAX_RESUMES_PER_RUN'] = '3';
+    h = await boot('announce');
+  });
+  afterAll(async () => {
+    await h?.close();
+    process.env['TEST_VISIBILITY'] = env['TEST_VISIBILITY'];
+    process.env['MAX_RESUMES_PER_RUN'] = env['MAX_RESUMES_PER_RUN'];
+  });
+  const ready = async (api: Api) => {
+    const vid = (await api.post('/vacancies', { title: 'Announce', jdText: JD })).json()
+      .id as string;
+    await api.post(`/vacancies/${vid}/criteria/extract`);
+    await api.post(`/vacancies/${vid}/criteria/freeze`);
+    await api.post(`/vacancies/${vid}/notice-confirm`);
+    return vid;
+  };
+  const batches = async (vid: string) =>
+    Number(
+      (
+        await h.db.owner.query(`SELECT count(*) AS n FROM upload_batch WHERE vacancy_id = $1`, [
+          vid,
+        ])
+      ).rows[0].n,
+    );
+
+  it('501 files: HTTP 413 TOO_MANY_FILES with the server sentence and nothing written; 500: 201', async () => {
+    const r = await h.recruiter('limit@azerconnect.test');
+    const vid = await ready(r.api);
+    const files = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ name: `f${i}.pdf`, size: 9 }));
+    const over = await r.api.post(`/vacancies/${vid}/upload-batches`, { files: files(501) });
+    expect(over.statusCode).toBe(413);
+    expect(over.json()).toMatchObject({
+      code: 'TOO_MANY_FILES',
+      message: 'Up to 500 files per upload.',
+    });
+    expect(await batches(vid)).toBe(0);
+    const ok = await r.api.post(`/vacancies/${vid}/upload-batches`, { files: files(500) });
+    expect(ok.statusCode).toBe(201);
+  });
+
+  it('room 3, announce [ZIP, a, b, c]: nothing pre-marked; room 0: the ZIP is pre-marked vacancy_full', async () => {
+    const r = await h.recruiter('premark@azerconnect.test');
+    const vid = await ready(r.api);
+    const b = (
+      await r.api.post(`/vacancies/${vid}/upload-batches`, {
+        files: [
+          { name: 'cvs.zip', size: 100 },
+          { name: 'a.pdf', size: 9 },
+          { name: 'b.pdf', size: 9 },
+          { name: 'c.pdf', size: 9 },
+        ],
+      })
+    ).json();
+    expect(b.items.map((i: any) => i.pre?.code ?? null)).toEqual([null, null, null, null]);
+    for (const n of ['One', 'Two', 'Three'])
+      await r.api.upload(`/vacancies/${vid}/documents`, [
+        { name: `${n}.txt`, type: 'text/plain', data: Buffer.from(cv(`${n} Fill Person`, ['x'])) },
+      ]);
+    const full = (
+      await r.api.post(`/vacancies/${vid}/upload-batches`, {
+        files: [
+          { name: 'cvs.zip', size: 100 },
+          { name: 'd.pdf', size: 9 },
+        ],
+      })
+    ).json();
+    expect(full.capacity.room).toBe(0);
+    expect(full.items.map((i: any) => i.pre?.code ?? null)).toEqual([
+      'vacancy_full',
+      'vacancy_full',
+    ]);
+  });
+});

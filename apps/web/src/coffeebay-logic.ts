@@ -62,6 +62,8 @@ export interface Progress {
   /** Files that never reached the server (not sent, could not send, vacancy full). */
   notSent: number;
   analyzing: number;
+  /** Files closed by "Stop sending files" (S3-UP-05): final, never sent. */
+  cancelled: number;
   /** 0 to 1, how much of the batch is settled. */
   p: number;
   phase: Phase;
@@ -76,6 +78,7 @@ export function progressOf(s: BatchStatus, run: Run | null): Progress {
   const needsLook = n('needs_look') + n('unreadable');
   const failed = n('failed');
   const analyzing = n('analyzing');
+  const cancelled = n('cancelled');
   const notSent = n('not_sent') + n('could_not_send') + n('vacancy_full');
   const ready = analyzed + needsLook;
   const done = ready + failed + n('stopped');
@@ -83,7 +86,20 @@ export function progressOf(s: BatchStatus, run: Run | null): Progress {
   const p = Math.min(Math.max((total - open) / total, 0), 1);
   const sent = Math.min(s.counts.upload.received, total);
   const phase: Phase = runActive(run) ? 'sending' : analyzing > 0 ? 'reading' : 'finished';
-  return { total, sent, done, ready, analyzed, needsLook, failed, notSent, analyzing, p, phase };
+  return {
+    total,
+    sent,
+    done,
+    ready,
+    analyzed,
+    needsLook,
+    failed,
+    notSent,
+    analyzing,
+    cancelled,
+    p,
+    phase,
+  };
 }
 
 /** How many of the 14 window stars are lit. */

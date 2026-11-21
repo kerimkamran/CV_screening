@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import type { CvStatus, UploadCode } from '@cv/shared';
+import { MAX_ANNOUNCE_FILES, type CvStatus, type UploadCode } from '@cv/shared';
 import { api, ApiError } from './api';
 import { errMsg } from './ui';
 
@@ -8,10 +8,13 @@ import { errMsg } from './ui';
  *
  * 1. `checkFiles` looks at every file before anything is sent: wrong type, empty, too big, the old
  *    .doc format. Same-name files with different content are all kept.
- * 2. `startBatch` announces the files (one batch on the server, one item per file), then sends them
- *    one file per request, three at a time. A network error, a 5xx or a 429 is retried once after
- *    2 s; a 401 pauses the queue until the person signs in again. One failing file never stops the
- *    others.
+ * 2. `startBatch` announces at most 500 files (the slice of `announceSlice`: at most the room left,
+ *    a ZIP costs one slot; S3-UP-01), then sends them one file per request, three at a time, at most
+ *    one of them a ZIP (S3-UP-06). A network error, a 5xx, a 429 or a `server_error` answer is
+ *    retried once after 2 s; a 401 pauses the queue until the person signs in again; a cancelled
+ *    send is never retried. One failing file never stops the others.
+ * 2b. `cancelRun` ("Stop sending files", S3-UP-05) aborts the sends in flight, drops the waiting
+ *    files and tells the server, which closes every open item as cancelled.
  * 3. The server keeps the status of every file. `watchBatch` polls only the counts (every 4 s while
  *    the tab is visible, 15 s hidden) and stops when nothing is left to wait for. Everything on the
  *    screen about a batch comes from there, so a reload or a second device shows the same picture.
@@ -40,6 +43,42 @@ export interface Checked {
 }
 
 export const isZip = (f: { name: string }) => /\.zip$/i.test(f.name);
+
+/**
+ * Which ready rows one upload announces (S3-UP-01). ZIP rows: the first min(ZIPs, 500). Loose rows:
+ * the first min(loose, room, 500 - ZIP slots). List order is kept (answers map back by position).
+ * A ZIP always costs one slot; its "about n CVs" estimate never changes the slice. `room` is null
+ * when the intake information could not be read: then only the 500 cap applies (the server stays
+ * the authority). What is left out is said before the click, never blocking it:
+ * - `beyondRoom`: loose rows past the room ("Vacancy full" on each row);
+ * - `beyondLimit`: rows past the 500-per-upload cap ("Not in this upload" on each row).
+ */
+export function announceSlice<T extends { name: string }>(
+  ready: T[],
+  room: number | null,
+  max = MAX_ANNOUNCE_FILES,
+): { announced: T[]; beyondRoom: T[]; beyondLimit: T[] } {
+  const zips = ready.filter(isZip);
+  const zipSlots = Math.min(zips.length, max);
+  const looseCap = max - zipSlots;
+  const announced: T[] = [];
+  const beyondRoom: T[] = [];
+  const beyondLimit: T[] = [];
+  let z = 0;
+  let loose = 0;
+  for (const r of ready) {
+    if (isZip(r)) {
+      if (z++ < zipSlots) announced.push(r);
+      else beyondLimit.push(r);
+      continue;
+    }
+    const i = loose++;
+    if (room !== null && i >= room) beyondRoom.push(r);
+    else if (i >= looseCap) beyondLimit.push(r);
+    else announced.push(r);
+  }
+  return { announced, beyondRoom, beyondLimit };
+}
 export const pathOf = (f: File) =>
   (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
 /** Operating-system litter inside a dropped folder: never worth a line. */
@@ -186,6 +225,8 @@ export interface BatchStatus {
     createdBy: string;
     fileCount: number;
     mine: boolean;
+    /** Set once someone pressed "Stop sending files" (S3-UP-05). */
+    cancelledAt?: string | null;
   };
   lastReceivedAt: string | null;
   counts: {
@@ -196,6 +237,7 @@ export interface BatchStatus {
       vacancyFull: number;
       rejected: number;
       duplicate: number;
+      cancelled?: number;
     };
     byStatus: Record<CvStatus, number>;
   };
@@ -215,7 +257,7 @@ export interface RunItem {
   size: number;
   file: File | null;
   /** Where this file is in THIS tab. The server's own status comes from the batch. */
-  client: 'waiting' | 'sending' | 'sent' | 'failed';
+  client: 'waiting' | 'sending' | 'sent' | 'failed' | 'stopped';
   error: string;
 }
 export interface Run {
@@ -227,12 +269,18 @@ export interface Run {
   /** Who was signed in when the 401 paused it: only that person's sign-in continues the queue. */
   pausedFor?: string | null;
   startedAt: number;
+  /** Aborts the sends in flight ("Stop sending files"). */
+  controller?: AbortController;
+  /** After a stop: the server was told (`done`) or could not be told (`failed`). */
+  stop?: { state: 'done' | 'failed'; sent: number; notSent: number } | null;
 }
 
 /** The person signed in right now (set by `personSignedIn`). */
 let signedIn: string | null = null;
 
 const LANES = 3;
+/** At most this many ZIPs in flight at once (S3-UP-06): the server reads one ZIP at a time anyway. */
+const ZIP_LANES = 1;
 const RETRY_AFTER_MS = 2000;
 const runs = new Map<string, Run>();
 const runListeners = new Set<() => void>();
@@ -289,60 +337,96 @@ function letScreenSleep() {
   wake = null;
 }
 
-const retryable = (e: unknown) => !(e instanceof ApiError) || e.status >= 500 || e.status === 429;
+const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
+const retryable = (e: unknown) =>
+  !isAbort(e) && (!(e instanceof ApiError) || e.status >= 500 || e.status === 429);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function sendOne(vacancyId: string, item: RunItem): Promise<void> {
+/** Raised when a file was answered `server_error` twice (S3-UP-03): "Could not send", with Retry. */
+export const SERVER_ERROR_TEXT = 'The server could not process this file';
+
+type UploadAnswer = { results?: { code?: string | null }[] };
+/** A 2xx answer without results counts as sent (the L1 mock answers `{ ok: true }`). */
+const serverError = (a: UploadAnswer) => a.results?.[0]?.code === 'server_error';
+
+async function sendOne(vacancyId: string, item: RunItem, signal?: AbortSignal): Promise<void> {
   const url = `/vacancies/${vacancyId}/documents?item=${item.itemId}`;
+  const stopped = () => {
+    if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
+  };
   try {
-    await api.upload(url, [item.file!]);
+    const first = await api.upload<UploadAnswer>(url, [item.file!], signal);
+    if (!serverError(first)) return;
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) throw e;
     if (!retryable(e)) throw e;
-    await sleep(RETRY_AFTER_MS);
-    await api.upload(url, [item.file!]);
   }
+  // One retry after 2 s; a stop before or during the wait means no retry at all.
+  stopped();
+  await sleep(RETRY_AFTER_MS);
+  stopped();
+  const again = await api.upload<UploadAnswer>(url, [item.file!], signal);
+  if (serverError(again)) throw new Error(SERVER_ERROR_TEXT);
 }
 
 function pump(vacancyId: string) {
   const run = runs.get(vacancyId);
   if (!run || run.paused) return;
   const live = () => runs.get(vacancyId)!;
-  const lanes = () => live().items.filter((i) => i.client === 'sending').length;
-  while (lanes() < LANES) {
-    const next = live().items.find((i) => i.client === 'waiting' && i.file);
+  const sendingNow = () => live().items.filter((i) => i.client === 'sending');
+  while (sendingNow().length < LANES) {
+    const zipBusy = sendingNow().filter((i) => isZip(i)).length >= ZIP_LANES;
+    const next = live().items.find(
+      (i) => i.client === 'waiting' && i.file && !(zipBusy && isZip(i)),
+    );
     if (!next) break;
     const id = next.itemId;
     const set = (patch: Partial<RunItem>, extra?: Partial<Run>) => {
-      const cur = live();
+      // The run may be gone meanwhile (cleared, or a test reset): nothing to update then.
+      const cur = runs.get(vacancyId);
+      if (!cur) return;
       cur.items = cur.items.map((i) => (i.itemId === id ? { ...i, ...patch } : i));
       Object.assign(cur, extra);
       touch(cur);
       emitRuns();
     };
     set({ client: 'sending' });
+    const signal = live().controller?.signal;
     void (async () => {
       try {
-        await sendOne(vacancyId, next);
+        await sendOne(vacancyId, next, signal);
         set({ client: 'sent', error: '', file: null });
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401)
+        if (isAbort(e) || signal?.aborted) set({ client: 'stopped', error: '', file: null });
+        else if (e instanceof ApiError && e.status === 401)
           set({ client: 'waiting' }, { paused: true, pausedFor: signedIn });
         else set({ client: 'failed', error: errMsg(e) });
       }
-      if (!runActive(live())) letScreenSleep();
-      kickBatch(live().batchId);
+      const after = runs.get(vacancyId);
+      if (!after) return;
+      if (!runActive(after)) letScreenSleep();
+      kickBatch(after.batchId);
       pump(vacancyId);
     })();
   }
 }
 
 /**
- * Announce the ready files and start sending them. Resolves as soon as the batch exists, with its
- * id, so the waiting screen can open at once; the files go up in the background.
+ * Announce the ready files (at most the slice of `announceSlice`) and start sending them. Resolves
+ * as soon as the batch exists, with its id and how many files were left out, so the waiting screen
+ * can open at once; the files go up in the background. A 413 `TOO_MANY_FILES` (a stale tab or a
+ * script) throws: the caller shows the sentence and keeps the files listed.
  */
-export async function startBatch(vacancyId: string, rows: Checked[]): Promise<string> {
-  const ready = rows.filter((r) => !r.problem);
+export async function startBatch(
+  vacancyId: string,
+  rows: Checked[],
+  room: number | null = null,
+): Promise<{ batchId: string; sent: number; leftOut: number }> {
+  const slice = announceSlice(
+    rows.filter((r) => !r.problem),
+    room,
+  );
+  const ready = slice.announced;
   const made = await api.post<{
     batchId: string;
     items: { itemId: string; position: number; pre?: { outcome: string; code: string } }[];
@@ -373,12 +457,75 @@ export async function startBatch(vacancyId: string, rows: Checked[]): Promise<st
     items,
     paused: false,
     startedAt: Date.now(),
+    controller: new AbortController(),
+    stop: null,
   });
   emitRuns();
   void holdScreenAwake();
   pump(vacancyId);
   kickBatch(made.batchId);
-  return made.batchId;
+  return {
+    batchId: made.batchId,
+    sent: ready.length,
+    leftOut: slice.beyondRoom.length + slice.beyondLimit.length,
+  };
+}
+
+/** Mark this tab's run as stopped: abort the sends in flight and drop the waiting files. */
+function stopLocally(run: Run) {
+  run.controller?.abort();
+  run.items = run.items.map((i) =>
+    i.client === 'waiting' || i.client === 'sending' || (i.client === 'failed' && i.file)
+      ? { ...i, client: 'stopped', file: null, error: '' }
+      : i,
+  );
+}
+
+/**
+ * "Stop sending files" (S3-UP-05): one click, no confirm step. First this tab aborts the requests in
+ * flight and drops the waiting files, then the server is told, so it closes every open item of the
+ * batch as cancelled (also those another tab was sending). Files already sent stay and are analyzed.
+ * If the call fails, `stop.state` is `failed` and `cancelRun` can be called again (Retry).
+ */
+export async function cancelRun(vacancyId: string): Promise<void> {
+  const run = runs.get(vacancyId);
+  if (!run) return;
+  const sent = run.items.filter((i) => i.client === 'sent').length;
+  const notSent = run.items.filter((i) => i.client !== 'sent').length;
+  stopLocally(run);
+  touch(run);
+  emitRuns();
+  letScreenSleep();
+  const set = (state: 'done' | 'failed') => {
+    const cur = runs.get(vacancyId);
+    if (!cur) return;
+    cur.stop = { state, sent, notSent };
+    touch(cur);
+    emitRuns();
+  };
+  try {
+    await api.post(`/upload-batches/${run.batchId}/cancel`);
+    set('done');
+  } catch {
+    set('failed');
+  }
+  kickBatch(run.batchId);
+}
+
+/** Tell the server again after a stop whose cancel call failed (the Retry of `stop.sending.failed`). */
+export async function retryCancel(vacancyId: string): Promise<void> {
+  const run = runs.get(vacancyId);
+  if (!run?.stop) return;
+  const keep = run.stop;
+  try {
+    await api.post(`/upload-batches/${run.batchId}/cancel`);
+    run.stop = { ...keep, state: 'done' };
+  } catch {
+    run.stop = { ...keep, state: 'failed' };
+  }
+  touch(run);
+  emitRuns();
+  kickBatch(run.batchId);
 }
 
 /** Continue a queue that stopped on a 401, after signing in again. */
@@ -481,7 +628,15 @@ export function attachFiles(
   const run: Run =
     cur && cur.batchId === batchId
       ? cur
-      : { vacancyId, batchId, items: [], paused: false, startedAt: Date.now() };
+      : {
+          vacancyId,
+          batchId,
+          items: [],
+          paused: false,
+          startedAt: Date.now(),
+          controller: new AbortController(),
+          stop: null,
+        };
   for (const p of pairs) {
     const have = run.items.find((i) => i.itemId === p.itemId);
     const item: RunItem = {
@@ -568,6 +723,17 @@ async function poll(batchId: string) {
   w.timer = null;
   try {
     const s = await api.get<BatchStatus>(`/upload-batches/${batchId}?items=${w.items > 0 ? 1 : 0}`);
+    // Cancelled in another tab or on another device: this tab stops sending within one poll.
+    const mine = getRun(s.batch.vacancyId);
+    if (s.batch.cancelledAt && mine && mine.batchId === batchId && runActive(mine)) {
+      const sent = mine.items.filter((i) => i.client === 'sent').length;
+      const notSent = mine.items.filter((i) => i.client !== 'sent').length;
+      stopLocally(mine);
+      mine.stop = { state: 'done', sent, notSent };
+      touch(mine);
+      emitRuns();
+      letScreenSleep();
+    }
     w.status = s;
     w.error = '';
     w.final = isFinal(s, getRun(s.batch.vacancyId));

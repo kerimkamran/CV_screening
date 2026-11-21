@@ -5,3 +5,4 @@ export * from './vacancy.js';
 export * from './language.js';
 export * from './skills.js';
 export * from './status.js';
+export * from './zip-names.js';

@@ -1,5 +1,11 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { newId, type UploadCode, type UploadOutcome } from '@cv/shared';
+import { ConflictException, Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import {
+  isFinalItem,
+  newId,
+  RETRYABLE_CODES,
+  type UploadCode,
+  type UploadOutcome,
+} from '@cv/shared';
 import type { PoolClient } from 'pg';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -17,17 +23,25 @@ import {
 } from './documents';
 import { ProcessorService } from './processor.service';
 import { iterateZip, ZipProblem } from './zip-intake';
+import { sweepSpools } from './zip-spool';
 
 /**
- * Taking CVs in (Stage 2, S2-BE2). One place for the rules, shared by the legacy 50-file route, the
- * one-file-per-request item route and SenAI's "Analyze for this vacancy" copy:
- * - a capped reader: bytes beyond the cap are drained, never buffered;
- * - at most INTAKE_MAX_CONCURRENT files being read at once (a ZIP takes every permit);
+ * Taking CVs in (Stage 2, S2-BE2; Stage 3, S3-UP-02/03/05/06). One place for the rules, shared by
+ * the legacy 50-file route, the one-file-per-request item route and SenAI's "Analyze for this
+ * vacancy" copy:
+ * - a capped reader: bytes beyond the cap are drained, never buffered; a ZIP is spooled to a temp
+ *   file and read from there one entry at a time;
+ * - at most INTAKE_MAX_CONCURRENT files being read at once; a ZIP holds ONE permit while it is
+ *   expanded and its entries reuse it, so loose files keep going during a ZIP;
  * - text is read outside any transaction;
  * - one transaction per file, under a per-vacancy advisory lock, so the duplicate check and the
  *   vacancy cap are race-safe; only LIVE (not erased) documents count;
  * - a unique-violation is a duplicate, never a 500;
- * - a result is written to the upload item in the same transaction, so a retry is idempotent.
+ * - a result is written to the upload item in the same transaction, so a retry is idempotent;
+ * - a final item outcome is never written over (`ITEM_OPEN`): the write that loses returns the
+ *   result that stands and adds no skip row;
+ * - a batch that was cancelled stores nothing more (lock order: advisory lock, batch row FOR SHARE,
+ *   item FOR UPDATE; the cancel route updates the batch row first).
  */
 
 export interface IntakeResult {
@@ -59,9 +73,19 @@ export const MSG = {
   noCvsInZip: 'No CVs found in this ZIP',
 } as const;
 
-/** A stored item outcome that must not be processed again. Retryable: not received, vacancy full. */
-export const isFinalItem = (outcome: string | null, code: string | null) =>
-  outcome !== null && !(outcome === 'skipped' && code === 'vacancy_full');
+/** A stored item outcome that must not be processed again (shared: `@cv/shared` status.ts). */
+export { isFinalItem };
+
+/**
+ * The only condition under which an item's outcome may be written: it is empty, or it is a skip with
+ * a code that may be sent again. One text, used by `finishItem` and by the cancel route.
+ * `$RETRY` is replaced by the parameter that holds `RETRYABLE_CODES`.
+ */
+export const ITEM_OPEN = `(outcome IS NULL OR (outcome = 'skipped' AND code = ANY($RETRY::text[])))`;
+export const itemOpen = (param: number) => ITEM_OPEN.replace('$RETRY', `$${param}`);
+
+/** Raised inside the storing transaction when a write the lock should allow is refused. */
+class ItemRaceError extends Error {}
 
 /**
  * Read a stream up to `cap` bytes. Anything beyond is counted and thrown away, so an 11 MB file
@@ -90,7 +114,7 @@ export async function readCapped(
 }
 
 @Injectable()
-export class IntakeService {
+export class IntakeService implements OnModuleInit {
   private readonly log = new Logger('intake');
   readonly permits: Semaphore;
 
@@ -102,6 +126,12 @@ export class IntakeService {
     @Inject(ENV) private readonly env: Env,
   ) {
     this.permits = new Semaphore(env.INTAKE_MAX_CONCURRENT);
+  }
+
+  /** Boot: ZIP temp folders a crashed process left behind are removed (S3-UP-06). */
+  async onModuleInit() {
+    const n = await sweepSpools();
+    if (n) this.log.log(`removed ${n} left-over ZIP temp folder(s)`);
   }
 
   get maxFileBytes() {
@@ -219,15 +249,85 @@ export class IntakeService {
 
   // ------------------------------------------------------------------ items
 
-  /** Write a result on the item (outside a transaction: rejected, duplicate, too large). */
-  async finishItem(itemId: string | undefined, r: IntakeResult, tx?: PoolClient): Promise<void> {
-    if (!itemId) return;
+  /**
+   * Write a result on the item, only while the item is open (S3-UP-02). Returns whether it wrote,
+   * and the result that stands: `r` when it wrote, the stored result when it did not. Rule for every
+   * caller: when it did not write, answer with the stored result and add no skip row.
+   */
+  async finishItem(
+    itemId: string | undefined,
+    r: IntakeResult,
+    tx?: PoolClient,
+  ): Promise<{ wrote: boolean; result: IntakeResult }> {
+    if (!itemId) return { wrote: true, result: r };
     const q: Queryable = tx ?? this.db;
-    await q.query(
+    const w = await q.query(
       `UPDATE upload_item SET outcome = $2, code = $3, message = $4, document_id = $5, received_at = now()
-        WHERE id = $1`,
-      [itemId, r.status, r.code ?? null, r.message?.slice(0, 300) ?? null, r.documentId ?? null],
+        WHERE id = $1 AND ${itemOpen(6)}`,
+      [
+        itemId,
+        r.status,
+        r.code ?? null,
+        r.message?.slice(0, 300) ?? null,
+        r.documentId ?? null,
+        RETRYABLE_CODES,
+      ],
     );
+    if (w.rowCount) return { wrote: true, result: r };
+    const stored = await this.readItem(itemId, q);
+    return { wrote: false, result: stored ?? r };
+  }
+
+  /** The item as stored, whatever its state (null when it does not exist). */
+  private async readItem(itemId: string, q: Queryable = this.db): Promise<IntakeResult | null> {
+    const it = (
+      await q.query<{
+        filename: string;
+        outcome: UploadOutcome | null;
+        code: string | null;
+        message: string | null;
+        document_id: string | null;
+      }>(`SELECT filename, outcome, code, message, document_id FROM upload_item WHERE id = $1`, [
+        itemId,
+      ])
+    ).rows[0];
+    if (!it || it.outcome === null) return null;
+    return {
+      filename: it.filename,
+      status: it.outcome,
+      code: it.code ?? undefined,
+      message: it.message ?? undefined,
+      documentId: it.document_id ?? undefined,
+      itemId,
+    };
+  }
+
+  /** Whether the batch of this upload was cancelled ("Stop sending files", S3-UP-05). */
+  async batchCancelled(batchId: string | undefined, q: Queryable = this.db): Promise<boolean> {
+    if (!batchId) return false;
+    return Boolean(
+      (
+        await q.query(`SELECT 1 FROM upload_batch WHERE id = $1 AND cancelled_at IS NOT NULL`, [
+          batchId,
+        ])
+      ).rowCount,
+    );
+  }
+
+  /** The answer for an item whose batch was cancelled: closed as `skipped / cancelled`. */
+  async closeCancelled(
+    ctx: Pick<IntakeCtx, 'itemId'>,
+    filename: string,
+    tx?: PoolClient,
+  ): Promise<IntakeResult> {
+    const r: IntakeResult = {
+      filename,
+      status: 'skipped',
+      code: 'cancelled',
+      message: 'Cancelled',
+      itemId: ctx.itemId,
+    };
+    return (await this.finishItem(ctx.itemId, r, tx)).result;
   }
 
   /** The stored result of an item that is already final, or null when it still needs processing. */
@@ -267,9 +367,30 @@ export class IntakeService {
       message: r.message,
       itemId: ctx.itemId,
     };
-    await this.finishItem(ctx.itemId, out);
+    const fin = await this.finishItem(ctx.itemId, out);
+    if (!fin.wrote) return fin.result;
     await this.skipRecord(ctx, out);
     return out;
+  }
+
+  /**
+   * An unexpected error while taking a file in (S3-UP-03): never a 500 and never an item left open.
+   * The item becomes `skipped / server_error`, which may be sent again. One log line with the item ID
+   * and no file name.
+   */
+  async serverError(
+    ctx: Pick<IntakeCtx, 'itemId' | 'vacancyId' | 'principal'>,
+    filename: string,
+    e: unknown,
+  ): Promise<IntakeResult> {
+    this.log.error(
+      `intake failed for item ${ctx.itemId ?? '(legacy route)'}: ${(e as Error)?.name ?? 'Error'}`,
+    );
+    return this.reject(ctx, filename, {
+      status: 'skipped',
+      code: 'server_error',
+      message: 'The server could not process this file',
+    });
   }
 
   /** Skipped files are never dropped silently: keep the list with the vacancy (spec 6.1.4). */
@@ -310,10 +431,13 @@ export class IntakeService {
     const filename = filenameIn.slice(0, 200);
     const early = async (r: Omit<IntakeResult, 'filename' | 'itemId'>) => {
       const out: IntakeResult = { filename, itemId: ctx.itemId, ...r };
-      await this.finishItem(ctx.itemId, out);
+      const fin = await this.finishItem(ctx.itemId, out);
+      if (!fin.wrote) return fin.result;
       await this.skipRecord(ctx, out);
       return out;
     };
+    // A cancelled batch takes nothing more (S3-UP-05).
+    if (await this.batchCancelled(ctx.batchId)) return this.closeCancelled(ctx, filename);
     if (buf.length === 0) {
       return early({ status: 'rejected', code: 'empty', message: MSG.empty });
     }
@@ -372,6 +496,24 @@ export class IntakeService {
     try {
       result = await this.db.withTx(async (tx) => {
         await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`intake:${ctx.vacancyId}`]);
+        // Lock order: the batch row (shared) before the item, as the cancel route updates the batch
+        // row first. A cancel either committed before this point or waits until this file is done.
+        const cancelled = ctx.batchId
+          ? Boolean(
+              (
+                await tx.query(
+                  `SELECT 1 FROM upload_batch WHERE id = $1 AND cancelled_at IS NOT NULL FOR SHARE`,
+                  [ctx.batchId],
+                )
+              ).rowCount,
+            )
+          : false;
+        const must = async (r: IntakeResult) => {
+          const fin = await this.finishItem(ctx.itemId, r, tx);
+          // The item row is locked and was just checked: a refused write here is a bug. Roll back,
+          // so a CV is never stored with a refused item write.
+          if (!fin.wrote) throw new ItemRaceError('item write refused under its lock');
+        };
         if (ctx.itemId) {
           const it = (
             await tx.query<{
@@ -395,6 +537,17 @@ export class IntakeService {
             };
           }
         }
+        if (cancelled) {
+          const r: IntakeResult = {
+            filename,
+            status: 'skipped',
+            code: 'cancelled',
+            message: 'Cancelled',
+            itemId: ctx.itemId,
+          };
+          await must(r);
+          return r;
+        }
         const again = (
           await tx.query<{ id: string }>(
             `SELECT id FROM cv_document WHERE vacancy_id = $1 AND sha256 = $2 AND erased_at IS NULL`,
@@ -410,7 +563,7 @@ export class IntakeService {
             documentId: again.id,
             itemId: ctx.itemId,
           };
-          await this.finishItem(ctx.itemId, r, tx);
+          await must(r);
           await this.skipRecord(ctx, r, tx);
           return r;
         }
@@ -430,7 +583,7 @@ export class IntakeService {
             message: `This vacancy holds at most ${this.maxCvs} CVs`,
             itemId: ctx.itemId,
           };
-          await this.finishItem(ctx.itemId, r, tx);
+          await must(r);
           await this.skipRecord(ctx, r, tx);
           return r;
         }
@@ -475,7 +628,7 @@ export class IntakeService {
               message: MSG.noText,
               itemId: ctx.itemId,
             };
-        await this.finishItem(ctx.itemId, r, tx);
+        await must(r);
         await this.audit.record(tx, {
           actorId: ctx.principal.userId,
           actorType: ctx.principal.actorType,
@@ -499,8 +652,9 @@ export class IntakeService {
         documentId: existing,
         itemId: ctx.itemId,
       };
-      await this.finishItem(ctx.itemId, result);
-      await this.skipRecord(ctx, result);
+      const fin = await this.finishItem(ctx.itemId, result);
+      if (fin.wrote) await this.skipRecord(ctx, result);
+      else result = fin.result;
     }
     if (result.status === 'queued') this.processor.nudge();
     return result;
@@ -509,26 +663,41 @@ export class IntakeService {
   // ------------------------------------------------------------------ a ZIP
 
   /**
-   * Take in a ZIP: its entries are read one at a time and each becomes a child item of the ZIP's
-   * item. A ZIP takes every permit. The ZIP's own item ends as `queued` with code `zip` (a
-   * container, not a CV), or `skipped / vacancy_full` when some entries did not fit, so the
-   * recruiter can send it again once there is room (finished entries are never done twice).
+   * Take in a ZIP (S3-UP-06): `source` is the spooled temp file (a Buffer is accepted for small
+   * callers and tests). Its entries are read one at a time and each becomes a child item of the
+   * ZIP's item. The ZIP holds ONE permit while it is expanded and its entries reuse it. The ZIP's
+   * own item ends as:
+   * - `queued` with code `zip` (a container, not a CV);
+   * - `skipped / vacancy_full` when some entries did not fit, or `skipped / server_error` when
+   *   storing an entry failed, so the recruiter can send it again (finished entries are never done
+   *   twice, and only the open entries are redone);
+   * - `skipped / cancelled` when the batch was cancelled: the loop checks before each entry.
    */
-  async admitZip(ctx: IntakeCtx, filenameIn: string, buf: Buffer): Promise<IntakeResult[]> {
+  async admitZip(
+    ctx: IntakeCtx,
+    filenameIn: string,
+    source: string | Buffer,
+  ): Promise<IntakeResult[]> {
     const filename = filenameIn.slice(0, 200);
     const out: IntakeResult[] = [];
-    const release = await this.permits.acquire(this.permits.size);
+    const release = await this.permits.acquire(1);
     try {
       let taken = 0;
       let full = 0;
+      let failed = 0;
       let entries = 0;
+      let cancelled = false;
       try {
-        for await (const e of iterateZip(buf, {
+        for await (const e of iterateZip(source, {
           maxEntries: this.maxCvs * 2,
           maxEntryBytes: this.maxFileBytes,
           maxTotalBytes: this.maxZipBytes * 2,
           maxRatio: 200,
         })) {
+          if (await this.batchCancelled(ctx.batchId)) {
+            cancelled = true;
+            break;
+          }
           entries++;
           const label = e.kind === 'file' ? e.name : `${filename} › ${e.name}`;
           // A child item per entry, so the entry has its own status in the batch.
@@ -573,9 +742,16 @@ export class IntakeService {
             );
             continue;
           }
-          const r = await this.admitFile(child, e.name, e.data, true);
+          let r: IntakeResult;
+          try {
+            r = await this.admitFile(child, e.name, e.data, true);
+          } catch (err) {
+            // Storing this entry failed: the entry may be sent again, and so may the ZIP.
+            r = await this.serverError(child, label, err);
+          }
           if (r.status === 'queued' || r.status === 'unreadable') taken++;
           if (r.code === 'vacancy_full') full++;
+          if (r.code === 'server_error') failed++;
           out.push(r);
         }
       } catch (e) {
@@ -588,30 +764,44 @@ export class IntakeService {
         return [r];
       }
       let parent: IntakeResult;
-      if (entries === 0) {
+      if (cancelled) {
+        parent = await this.closeCancelled(ctx, filename);
+      } else if (entries === 0) {
         parent = await this.reject(ctx, filename, {
           status: 'skipped',
           code: 'no_cvs_in_zip',
           message: MSG.noCvsInZip,
         });
+      } else if (failed > 0) {
+        parent = (
+          await this.finishItem(ctx.itemId, {
+            filename,
+            status: 'skipped',
+            code: 'server_error',
+            message: 'The server could not process this file',
+            itemId: ctx.itemId,
+          })
+        ).result;
       } else if (full > 0) {
-        parent = {
-          filename,
-          status: 'skipped',
-          code: 'vacancy_full',
-          message: `This vacancy holds at most ${this.maxCvs} CVs`,
-          itemId: ctx.itemId,
-        };
-        await this.finishItem(ctx.itemId, parent);
+        parent = (
+          await this.finishItem(ctx.itemId, {
+            filename,
+            status: 'skipped',
+            code: 'vacancy_full',
+            message: `This vacancy holds at most ${this.maxCvs} CVs`,
+            itemId: ctx.itemId,
+          })
+        ).result;
       } else {
-        parent = {
-          filename,
-          status: 'queued',
-          code: 'zip',
-          message: `${taken} of ${entries} files taken in`,
-          itemId: ctx.itemId,
-        };
-        await this.finishItem(ctx.itemId, parent);
+        parent = (
+          await this.finishItem(ctx.itemId, {
+            filename,
+            status: 'queued',
+            code: 'zip',
+            message: `${taken} of ${entries} files taken in`,
+            itemId: ctx.itemId,
+          })
+        ).result;
       }
       // The legacy route has no items: it gets the entries' own results (or the one problem).
       if (ctx.itemId) return [parent, ...out];

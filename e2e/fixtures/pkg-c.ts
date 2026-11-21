@@ -162,6 +162,7 @@ const BYSTATUS0 = {
   rejected: 0,
   duplicate: 0,
   vacancy_full: 0,
+  cancelled: 0,
   analyzing: 0,
   stopped: 0,
   failed: 0,
@@ -336,6 +337,24 @@ export async function vacApi(page: Page, o: VacOpts = {}) {
           return json(v);
         }
         if (sub === '/skipped') return json([]);
+      }
+      // Stage 3 (S3-UP-05, S3-UP-09): cancel and the outcome report.
+      const cx = /^\/upload-batches\/(\w{26})\/cancel$/.exec(p);
+      if (cx && method === 'POST') {
+        const bt = batches.get(cx[1]!);
+        return json({ cancelled: bt?.files ?? 0 });
+      }
+      const rep = /^\/upload-batches\/(\w{26})\/report\.csv$/.exec(p);
+      if (rep) {
+        await route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition': `attachment; filename="upload-report-${rep[1]}.csv"`,
+          },
+          body: '\uFEFFposition,label,status,reason,document_id\r\n"1","cv.pdf","Being analyzed","",""\r\n',
+        });
+        return true;
       }
       const b = /^\/upload-batches\/(\w{26})$/.exec(p);
       if (b) {

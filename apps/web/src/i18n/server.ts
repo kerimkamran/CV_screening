@@ -21,6 +21,8 @@ export const SERVER_TEMPLATES: ServerTemplate[] = [
   { en: '"{a}" is already read as {label}' },
   { en: '{by} already changed this to {mark}.', translate: ['mark'] },
   { en: 'Up to {max} CVs per download.' },
+  // Wording key upload.limit.server: the 413 TOO_MANY_FILES backstop (S3-UP-01).
+  { en: 'Up to {max} files per upload.' },
   { en: 'Changed by {name} at {time}. Reload to see their version.', translate: ['name'] },
   { en: '{feature} is switched off', translate: ['feature'] },
   { en: 'provider responded {status}' },

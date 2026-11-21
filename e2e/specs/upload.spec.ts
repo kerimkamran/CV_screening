@@ -107,8 +107,11 @@ uat(
         ),
       )
       .toBeVisible();
-    for (const b of ['Choose files', 'Add a ZIP'])
-      await expect.soft(c.getByRole('button', { name: t(b), exact: true })).toBeVisible();
+    // One picker for loose files and ZIPs (S3-UP-07): "Add a ZIP" is gone.
+    await expect
+      .soft(c.getByRole('button', { name: t('Choose files'), exact: true }))
+      .toBeVisible();
+    await expect.soft(c.getByRole('button', { name: 'Add a ZIP', exact: true })).toHaveCount(0);
     await expect
       .soft(c.getByRole('button', { name: t('Choose a folder'), exact: true }))
       .toHaveCount(iphone ? 0 : 1);
@@ -231,9 +234,9 @@ uat(
     await page.goto(`/#/vacancies/${id(3)}`);
     const c = cvs(page, meta.lang);
     await expect(c).toBeVisible();
-    // 1) Nine files, then the ZIP.
+    // 1) Nine files, then the ZIP, through the one picker (S3-UP-07).
     await choose(page, meta.lang, 'Choose files', nine);
-    await choose(page, meta.lang, 'Add a ZIP', [huge]);
+    await choose(page, meta.lang, 'Choose files', [huge]);
     // 2) The list.
     await expect(summary(page)).toHaveText(
       new RegExp(
@@ -896,5 +899,102 @@ uat(
     if (meta.lang === 'az')
       await expect.soft(startBtn(page, meta.lang)).toHaveText('Ən uyğununu tapın →');
     await ux.check('long names', [...STD, 'AZ']);
+  },
+);
+
+uat(
+  'UP-16',
+  'More than 500 files in one go: 500 are sent in one upload, the rest left out with a notice (S3-UP-01)',
+  { on: ['D', 'A'] },
+  async ({ page, ux, meta, info }) => {
+    const t = T(meta.lang);
+    const { seen } = await vacApi(page, {
+      views: [vview({ id: id(16), title: 'UAT 501 files', requirements: SKILLS() })],
+    });
+    const dir = info.outputPath('files');
+    mkdirSync(dir, { recursive: true });
+    const files = Array.from({ length: 501 }, (_, i) => {
+      const p = join(dir, `cv-${String(i).padStart(3, '0')}.pdf`);
+      writeFileSync(p, Buffer.from('%PDF-1.4\nUAT\n'));
+      return p;
+    });
+    await page.goto(`/#/vacancies/${id(16)}`);
+    const c = cvs(page, meta.lang);
+    await expect(c).toBeVisible();
+    await choose(page, meta.lang, 'Choose files', files);
+    // 1) Before the click: the room line names the one file that will not be sent.
+    await expect(
+      c.getByText(
+        t('Only {room} more CVs fit in this vacancy. The last {n} will not be sent.', {
+          room: 500,
+          n: 1,
+        }),
+      ),
+    ).toBeVisible();
+    await ux.check('501 chosen', [...STD, 'AZ']);
+    // 2) The start button stays enabled; one announce with the first 500 names; no 4xx.
+    await c.getByRole('checkbox').check();
+    const start = startBtn(page, meta.lang);
+    await expect(start).toBeEnabled();
+    await start.click();
+    await expect.poll(() => reqs(seen, 'POST', /upload-batches$/).length).toBe(1);
+    const announced = (
+      reqs(seen, 'POST', /upload-batches$/)[0]!.body as { files: { name: string }[] }
+    ).files.map((f) => f.name);
+    expect(announced).toHaveLength(500);
+    expect(announced[499]).toBe('cv-499.pdf');
+    await expect(
+      page.getByText(
+        t('Started. {sent} files are being sent. {n} were left out.', { sent: 500, n: 1 }),
+      ),
+    ).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(reqs(seen, 'POST', /upload-batches$/)).toHaveLength(1);
+  },
+);
+
+uat(
+  'UP-18',
+  'Several ZIPs and loose files in one pick, with "about n CVs" in the room hint (S3-UP-07, S3-UP-08)',
+  { on: ['D', 'A'] },
+  async ({ page, ux, meta, info }) => {
+    const t = T(meta.lang);
+    const { seen } = await vacApi(page, {
+      views: [vview({ id: id(18), title: 'UAT ZIPs together', requirements: SKILLS() })],
+    });
+    const JSZip = (await import('jszip')).default;
+    const dir = info.outputPath('files');
+    mkdirSync(dir, { recursive: true });
+    const zipOf = async (name: string, n: number) => {
+      const z = new JSZip();
+      for (let i = 0; i < n; i++) z.file(`cv-${i}.pdf`, '%PDF-1.4');
+      z.file('photo.jpg', 'jpg');
+      const p = join(dir, name);
+      writeFileSync(p, await z.generateAsync({ type: 'nodebuffer' }));
+      return p;
+    };
+    const loose = [1, 2, 3].map((i) => {
+      const p = join(dir, `loose-${i}.pdf`);
+      writeFileSync(p, Buffer.from('%PDF-1.4\n'));
+      return p;
+    });
+    const picks = [await zipOf('first.zip', 3), await zipOf('second.zip', 4), ...loose];
+    await page.goto(`/#/vacancies/${id(18)}`);
+    const c = cvs(page, meta.lang);
+    await expect(c).toBeVisible();
+    await choose(page, meta.lang, 'Choose files', picks);
+    await expect(summary(page)).toContainText(t('{n} ready', { n: 5 }));
+    await expect(summary(page)).toContainText(t('about {n} CVs', { n: 10 }));
+    await expect(c.getByText(t('about {n} CVs', { n: 3 }), { exact: false })).toBeVisible();
+    await ux.check('two ZIPs and three files', [...STD, 'AZ']);
+    await c.getByRole('checkbox').check();
+    await startBtn(page, meta.lang).click();
+    await expect.poll(() => reqs(seen, 'POST', /upload-batches$/).length).toBe(1);
+    const announced = (
+      reqs(seen, 'POST', /upload-batches$/)[0]!.body as { files: { name: string }[] }
+    ).files.map((f) => f.name);
+    expect(announced.sort()).toEqual(
+      ['first.zip', 'second.zip', 'loose-1.pdf', 'loose-2.pdf', 'loose-3.pdf'].sort(),
+    );
   },
 );

@@ -32,7 +32,8 @@
     "start": "node scripts/render-start.mjs",
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
-    "e2e": "playwright test -c e2e/playwright.config.ts"
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:full": "playwright test -c e2e/playwright.full.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",

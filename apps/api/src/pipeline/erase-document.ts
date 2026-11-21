@@ -3,7 +3,7 @@ import { eraseAssistantForDocument } from '../assistant/assistant-erase';
 import type { ReportService } from './report.service';
 
 /**
- * Wipes one document and everything derived from it (file, extracted text, identity, summary,
+ * Wipes one document and everything derived from it (file, file name, extracted text, identity, summary,
  * per-requirement evidence, shared-report copies, assistant threads). Shared by the recruiter's
  * erase action (GDPR Art. 17) and the scheduled retention purge (DOC-09). The caller records the
  * audit entry in the same transaction. Returns false when the document was already erased.
@@ -14,13 +14,20 @@ export async function eraseDocumentData(
   documentId: string,
   erasedBy: string,
 ): Promise<boolean> {
+  // The file name is usually the candidate's name (S3-UP-04): only its SHA-256 stays, so the
+  // "skipped" list can still tell that a file was taken in later. SET reads the old name.
   const r = await tx.query(
     `UPDATE cv_document SET content = NULL, text = NULL, page_starts = NULL, erased_at = now(), erased_by = $2,
-            rendition_pdf = NULL, rendition_state = NULL, rendition_error = NULL, rendition_priority = false
+            rendition_pdf = NULL, rendition_state = NULL, rendition_error = NULL, rendition_priority = false,
+            erased_name_sha = encode(sha256(convert_to(filename, 'UTF8')), 'hex'), filename = 'erased'
       WHERE id = $1 AND erased_at IS NULL`,
     [documentId, erasedBy],
   );
   if (!r.rowCount) return false;
+  await tx.query(
+    `UPDATE upload_item SET filename = 'erased', client_path = NULL WHERE document_id = $1`,
+    [documentId],
+  );
   await tx.query(
     `DELETE FROM requirement_assessment WHERE screening_id IN (SELECT id FROM screening WHERE document_id = $1)`,
     [documentId],

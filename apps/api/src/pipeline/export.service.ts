@@ -30,7 +30,7 @@ export interface CandidateRow {
 type Row = CandidateRow;
 
 /** Spreadsheet cells that start with = + - @ are executed by Excel; neutralise them. */
-const safe = (v: unknown) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
+export const safe = (v: unknown) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
 
 @Injectable()
 export class ExportService {

@@ -14,6 +14,7 @@ export const CV_STATUSES = [
   'rejected',
   'duplicate',
   'vacancy_full',
+  'cancelled',
   'analyzing',
   'stopped',
   'failed',
@@ -41,6 +42,7 @@ export const CV_STATUS_LABEL: Record<CvStatus, string> = {
   rejected: 'Not accepted',
   duplicate: 'Already in this vacancy',
   vacancy_full: 'Vacancy full',
+  cancelled: 'Cancelled',
   analyzing: 'Being analyzed',
   stopped: 'Stopped',
   failed: 'Analysis failed',
@@ -63,6 +65,7 @@ export const CV_STATUS_ACTION: Record<
   rejected: null,
   duplicate: 'open',
   vacancy_full: 'resend',
+  cancelled: null,
   analyzing: null,
   stopped: 'continue',
   failed: 'retry',
@@ -111,6 +114,7 @@ export const UPLOAD_CODES = [
   'no_text',
   'read_failed',
   'server_error',
+  'cancelled',
 ] as const;
 export type UploadCode = (typeof UPLOAD_CODES)[number];
 
@@ -133,7 +137,23 @@ export const UPLOAD_CODE_MESSAGE: Record<UploadCode, string> = {
   no_text: 'No readable text',
   read_failed: 'The text could not be read',
   server_error: 'The server could not process this file',
+  cancelled: 'Cancelled',
 };
+
+/**
+ * The only list of codes that may be sent again (S3-UP-02). A `skipped` item with one of these codes
+ * is not final: the browser may send the file again and the server processes it. Every other stored
+ * outcome is final. Phase 2 (S3-INT-05) adds `source_unavailable` here, and nowhere else.
+ */
+export const RETRYABLE_CODES: readonly UploadCode[] = ['vacancy_full', 'server_error'];
+
+/** One upload announces at most this many files (S3-UP-01). The API and the web share it. */
+export const MAX_ANNOUNCE_FILES = 500;
+
+/** True when an upload item's stored outcome is final: nothing about it may change any more. */
+export const isFinalItem = (outcome: string | null, code: string | null | undefined) =>
+  outcome !== null &&
+  !(outcome === 'skipped' && code != null && (RETRYABLE_CODES as readonly string[]).includes(code));
 
 /** Map an upload outcome to the status the file shows before any analysis exists. */
 export function uploadStatus(outcome: UploadOutcome | null, code?: string | null): CvStatus {
@@ -147,7 +167,10 @@ export function uploadStatus(outcome: UploadOutcome | null, code?: string | null
     case 'unreadable':
       return 'unreadable';
     case 'skipped':
-      return code === 'vacancy_full' ? 'vacancy_full' : 'rejected';
+      if (code === 'cancelled') return 'cancelled';
+      if (code === 'vacancy_full') return 'vacancy_full';
+      if (code != null && (RETRYABLE_CODES as readonly string[]).includes(code)) return 'not_sent';
+      return 'rejected';
     case 'queued':
       return 'analyzing';
   }

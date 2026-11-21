@@ -36,6 +36,7 @@ export function Coffeebay({
   onDetails,
   onHide,
   onClose,
+  onStop,
 }: {
   progress: Progress;
   assistant: string;
@@ -51,6 +52,8 @@ export function Coffeebay({
   onDetails: () => void;
   onHide: () => void;
   onClose: () => void;
+  /** "Stop sending files" (S3-UP-05): shown only while this tab is sending; one click. */
+  onStop?: () => void;
 }) {
   const t = useT();
   const finished = pr.phase === 'finished';
@@ -188,6 +191,11 @@ export function Coffeebay({
               total: n,
             })}
           </p>
+        )}
+        {pr.phase === 'sending' && onStop && (
+          <button type="button" className={`${btnSecondary} min-h-11`} onClick={onStop}>
+            {t('Stop sending files')}
+          </button>
         )}
         {pr.phase === 'reading' && !slow && (
           <p className="text-sm text-ink-2">

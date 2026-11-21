@@ -62,7 +62,7 @@ with open(os.path.join(OUT, 'broken.pdf'), 'wb') as f:
 with open(os.path.join(OUT, 'not-a-pdf.pdf'), 'wb') as f:
     f.write(b'This is plain text with a .pdf name.\n' * 20)
 
-# 4. ZIPs: a good ZIP of CVs, an over-size ZIP, and a ZIP with too many entries.
+# 4. A good ZIP of CVs (the two large ZIPs come from make-zips.mjs).
 def cv_text(name, lines):
     return f'Name: {name}\n' + '\n'.join(lines) + '\n' + 'Padding text for length. ' * 10
 
@@ -72,13 +72,7 @@ with zipfile.ZipFile(os.path.join(OUT, 'cvs.zip'), 'w', zipfile.ZIP_DEFLATED) as
     z.writestr('folder/zip-cara.txt', cv_text('Cara Zip', ['OSPF and BGP routing.']))
     z.writestr('photo.jpg', b'\xff\xd8\xff\xe0not really a photo')
 
-# Over-size: about 11 MB of incompressible data (over the 10 MB per-file limit when sent as one file).
-with zipfile.ZipFile(os.path.join(OUT, 'oversize.zip'), 'w', zipfile.ZIP_STORED) as z:
-    z.writestr('big.txt', os.urandom(11 * 1024 * 1024))
-
-# Too many entries: 600 tiny CVs (over the 500 per vacancy).
-with zipfile.ZipFile(os.path.join(OUT, 'too-many.zip'), 'w', zipfile.ZIP_DEFLATED) as z:
-    for i in range(600):
-        z.writestr(f'cv-{i:03}.txt', cv_text(f'Many Person {i}', ['BGP routing.']))
+# oversize.zip and too-many.zip are written in Node by make-zips.mjs (S3-UP-10): no Python step
+# is needed for them on a clean checkout or in CI.
 
 print('fixtures written to', OUT)
