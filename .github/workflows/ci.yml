@@ -37,9 +37,13 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      # pdftotext for the pipeline tests; LibreOffice for the Word rendition tests (S2-BE7).
-      - name: PDF text extraction and LibreOffice (used by the pipeline tests)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui
+      # pdftotext for the pipeline tests; LibreOffice and the production fonts (docker/render.Dockerfile)
+      # for the Word rendition tests (S2-BE7), so pages break as they do in production.
+      - name: PDF text extraction, LibreOffice and fonts (used by the pipeline tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui \
+            fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm ci
 
       - name: Lint and format
@@ -175,11 +179,14 @@ jobs:
       - name: PDF text, LibreOffice and psql (used by the server under test)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client \
+            fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e:full
+      # The Stage 3 L2 files (plan S3-UP-10): upload, batch (BP-09/10/12) and the Oracle import. The other
+      # L2 files share accounts and still run locally before a release (docs/uat/e2e-test-plan.md).
+      - run: npm run e2e:full -- upload.spec.ts batch.spec.ts oracle.spec.ts
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
