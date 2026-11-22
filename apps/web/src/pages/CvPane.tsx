@@ -475,10 +475,12 @@ export function CvPane({
             className={
               full
                 ? showing === 'original'
-                  ? 'min-h-0 min-w-0 flex-1 overflow-auto'
+                  ? 'min-h-0 min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable]'
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
                 : showing === 'original'
-                  ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto rounded-md bg-neutral/40 p-2 @min-[60rem]:pointer-coarse:max-h-[calc(100vh-20rem)]'
+                  ? // The gutter is kept even without a scrollbar, so zooming in (which adds one)
+                    // does not shrink the fitted width the zoom steps are measured from (FS-21).
+                    'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable] rounded-md bg-neutral/40 p-2 @min-[60rem]:pointer-coarse:max-h-[calc(100vh-20rem)]'
                   : 'min-w-0 flex-1'
             }
             data-testid="cv-body"
