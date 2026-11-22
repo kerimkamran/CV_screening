@@ -1549,12 +1549,13 @@ uat(
     await ux.check('Text view', [...STD, 'AZ']);
     await tabs.getByRole('tab', { name: t('Original') }).click();
     await expect.soft(page.locator('[data-page="2"]')).toBeAttached();
-    await page.waitForTimeout(500);
-    expect
-      .soft(
-        await body.evaluate((e) => e.scrollTop),
-        'Original comes back at the same scroll position',
-      )
+    // The pages measure themselves again once shown; the place is held while they do.
+    await expect
+      .configure({ soft: true })
+      .poll(() => body.evaluate((e) => e.scrollTop), {
+        message: 'Original comes back at the same scroll position',
+        timeout: 3000,
+      })
       .toBeCloseTo(y0, -1);
     await tabs.getByRole('tab', { name: t('Text') }).click();
     await tabs.getByRole('tab', { name: t('Original') }).click();
