@@ -108,13 +108,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w packages/shared && npm run build -w apps/web
-      - run: npx playwright install --with-deps chromium
+      # Google Chrome stable, the browser recruiters use: Playwright's own Chromium build lags behind
+      # and differs on Azerbaijani dates, hit-testing and wheel scrolling.
+      - run: npx playwright install --with-deps chrome
       # The production fonts, so text measures as it does for users (docker/render.Dockerfile).
       - run: sudo apt-get install -y --no-install-recommends fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm run e2e -- --shard=${{ matrix.shard }}/6
         env:
           CI: 'true'
           UAT_DEVICES: D
+          E2E_CHROMIUM: /opt/google/chrome/chrome
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
