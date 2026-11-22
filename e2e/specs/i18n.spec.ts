@@ -459,6 +459,8 @@ uat(
     });
     await page.goto('/#/reports');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    // The list loads after the heading: wait for the report row before reading the dates.
+    await expect(page.locator('main')).toContainText('Network Engineer report');
     const rep = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
     if (meta.lang === 'az') expect.soft(rep, 'Azerbaijani month names').toMatch(/oktyabr|noyabr/);
     else expect.soft(rep, 'English month names').toMatch(/October|Oct|30\/10|10\/30/);
