@@ -24,6 +24,7 @@ import {
   type AskLog,
 } from '../fixtures/pkg-g';
 import { AZ } from '../../apps/web/src/i18n/az';
+import { settled } from '../ux/checks';
 import { expect, STD, uat } from '../ux/test';
 
 // 7.x SenAI candidate panel (SC), screens with a mocked API (L1), package G.
@@ -941,6 +942,8 @@ uat(
       ).toBeInViewport();
       const conv = panel.locator(`[aria-label="${tt('Conversation')}"]`);
       expect(await conv.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      // The panel must have finished sliding in, or the wheel lands where it used to be.
+      await settled(page);
       const b = (await conv.boundingBox())!;
       const t0 = await conv.evaluate((el) => (el.scrollTop = 0));
       await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
