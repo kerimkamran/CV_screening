@@ -1,6 +1,6 @@
 # 0011 — Read-only CV import from Oracle Recruiting, ahead of R4
 
-Status: **Proposed** on 20 November 2026. NOT accepted yet. The programme owner accepts it by changing this line. Until then no Oracle schema or product code merges: this ADR is the entry gate for Phase 2 of `docs/stage-3/development-plan.md`, the first Oracle schema. The Phase 0 probe script (`scripts/oracle-probe.mjs`) is not held by this gate: Phase 0 starts on the owner's go, and the probe sits outside the product, reads one synthetic vacancy on the Oracle test environment and prints counts only. The bulk-upload fixes (Phase 1) do not depend on it.
+Status: **Accepted** on 22 November 2026 by the programme owner (Kamran); proposed on 20 November 2026. This line was the entry gate for Phase 2 of `docs/stage-3/development-plan.md`, the first Oracle schema. Go-live (Phase 6) still needs the DPO sign-off, the Oracle team's scoping and probe, and gates G-11 to G-14; until then `ORACLE_IMPORT_ENABLED` stays off. The Phase 0 probe script (`scripts/oracle-probe.mjs`) sits outside the product, reads one synthetic vacancy on the Oracle test environment and prints counts only.
 
 ## Context
 
