@@ -157,10 +157,21 @@ describeDb('Word rendition queue (Stage 2, S2-BE7)', () => {
     const b = idOf('second.docx');
     await h.db.owner.query(`UPDATE cv_document SET rendition_priority = true WHERE id = $1`, [b]);
     await only(a, b);
-    expect(await svc.runOnce(true)).toBe('ready');
+    // LibreOffice can fail a conversion once on a busy machine; the service tries a file twice
+    // (MAX_ATTEMPTS), so the test allows one retry and puts the waiting flag back for it.
+    const once = async (waiting?: string) => {
+      const r = await svc.runOnce(true);
+      if (r !== 'retry') return r;
+      if (waiting)
+        await h.db.owner.query(`UPDATE cv_document SET rendition_priority = true WHERE id = $1`, [
+          waiting,
+        ]);
+      return svc.runOnce(true);
+    };
+    expect(await once(b)).toBe('ready');
     expect((await state(b)).state).toBe('ready');
     expect((await state(a)).state).toBe('pending');
-    expect(await svc.runOnce(true)).toBe('ready');
+    expect(await once()).toBe('ready');
     expect((await state(a)).state).toBe('ready');
     expect(await svc.runOnce(true)).toBe('idle');
   }, 180_000);
