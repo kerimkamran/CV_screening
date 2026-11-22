@@ -108,16 +108,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w packages/shared && npm run build -w apps/web
-      # Google Chrome stable, the browser recruiters use: Playwright's own Chromium build lags behind
-      # and differs on Azerbaijani dates, hit-testing and wheel scrolling.
-      - run: npx playwright install --with-deps chrome
+      # Chrome for Testing at a pinned version, the one the suite is verified with locally: Playwright's
+      # own Chromium lags behind (Azerbaijani dates, hit-testing, wheel), and Chrome stable runs ahead
+      # of what this Playwright version drives (dialogs). Move the pin with the Playwright upgrade.
+      - run: npx playwright install-deps chromium
+      - run: npx --yes @puppeteer/browsers install chrome@153.0.8010.12 --path "$RUNNER_TEMP/cft"
       # The production fonts, so text measures as it does for users (docker/render.Dockerfile).
       - run: sudo apt-get install -y --no-install-recommends fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm run e2e -- --shard=${{ matrix.shard }}/6
         env:
           CI: 'true'
           UAT_DEVICES: D
-          E2E_CHROMIUM: /opt/google/chrome/chrome
+          E2E_CHROMIUM: ${{ runner.temp }}/cft/chrome/linux-153.0.8010.12/chrome-linux64/chrome
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
