@@ -322,7 +322,9 @@ export function App({ check = fetchReadiness }: { check?: () => Promise<ApiHealt
     ) : rv ? (
       <CvReview documentId={rv.documentId} listId={rv.listId} key={rv.documentId} canMark={isTa} />
     ) : cm || sm ? (
-      <LegacyCv screeningId={(cm ?? sm)![1]!} key={(cm ?? sm)![1]} />
+      // Keyed by the whole route: screen changes close together can jump straight from
+      // #/candidates/<id> to #/screenings/<id>, and the same key would keep the finished instance.
+      <LegacyCv screeningId={(cm ?? sm)![1]!} key={route} />
     ) : route === '/candidates' ? (
       <CandidatePool canMark={isTa} />
     ) : (
