@@ -299,8 +299,44 @@ export async function tgt(page: Page, touch: boolean): Promise<Finding[]> {
   }, touch);
 }
 
+/**
+ * Wait until every animation that ends has ended (entrances, fades, view transitions): a check
+ * taken mid-fade measures a half-transparent colour or hits the element moving in. Endless ones
+ * (spinners) are ignored. On a slow runner the 640 ms Home entrance plus its stagger outlasts any
+ * fixed pause.
+ */
+export async function settled(page: Page, timeout = 4000): Promise<void> {
+  const moving = () =>
+    page
+      .evaluate(() => {
+        // A view transition covers the page from its capture on, before any animation runs.
+        try {
+          if (document.documentElement.matches(':active-view-transition')) return true;
+        } catch {
+          /* a browser without the pseudo-class */
+        }
+        return document.getAnimations().some((a) => {
+          const end = a.effect?.getComputedTiming().endTime;
+          return a.playState === 'running' && typeof end === 'number' && Number.isFinite(end);
+        });
+      })
+      .catch(() => false);
+  // Quiet twice, 150 ms apart: a screen change often starts its transition a moment after the click.
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (!(await moving())) {
+      await page.waitForTimeout(150);
+      if (!(await moving())) return;
+    } else await page.waitForTimeout(50);
+  }
+}
+
 /** AXE: axe-core WCAG 2.2 AA (contrast included); serious and critical rules are findings. */
-export async function axe(page: Page, opts: { exclude?: string[] } = {}): Promise<Finding[]> {
+export async function axe(
+  page: Page,
+  opts: { exclude?: string[]; settle?: boolean } = {},
+): Promise<Finding[]> {
+  if (opts.settle !== false) await settled(page);
   let b = new AxeBuilder({ page }).withTags([
     'wcag2a',
     'wcag2aa',
