@@ -157,6 +157,16 @@ export function CvReview({
       });
   }, [show]);
   const box = useRef<HTMLDivElement>(null);
+  // The sticky bar (Back, Previous, Next) wraps to two lines in longer languages and wider fonts;
+  // the CV pane sticks just below its real height instead of a fixed 7rem, so the bar never covers
+  // the viewer's buttons (FS-26).
+  const [barH, setBarH] = useState<number | null>(null);
+  const barRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setBarH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [reviewBar, setReviewBar] = useState<HTMLDivElement | null>(null);
   const [noteSaved, setNoteSaved] = useState(false);
   usePublishedHeight('--reviewbar-h', reviewBar);
@@ -655,7 +665,10 @@ export function CvReview({
 
   return (
     <div className={`@container space-y-4 ${list && nav.at >= 0 ? 'pb-16 md:pb-0' : ''}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm md:sticky md:top-14 md:z-10 md:bg-page md:py-1">
+      <div
+        ref={barRef}
+        className="flex flex-wrap items-center justify-between gap-2 text-sm md:sticky md:top-14 md:z-10 md:bg-page md:py-1"
+      >
         <a href={`#${back}`} className="text-link hover:underline">
           {t('← Back to {list}', { list: backLabel })}
         </a>
@@ -859,7 +872,16 @@ export function CvReview({
           aria-label={t('CV')}
           data-testid="cv-pane"
         >
-          <div className="@min-[60rem]:sticky @min-[60rem]:top-28 @min-[60rem]:pr-3">
+          <div
+            className="@min-[60rem]:sticky @min-[60rem]:top-[var(--review-pane-top,7rem)] @min-[60rem]:pr-3"
+            style={
+              barH
+                ? ({
+                    '--review-pane-top': `calc(3.5rem + max(3.5rem, ${barH}px))`,
+                  } as CSSProperties)
+                : undefined
+            }
+          >
             <CvPane
               key={d.documentId}
               data={d}
