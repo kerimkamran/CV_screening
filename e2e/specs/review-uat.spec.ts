@@ -33,6 +33,7 @@ import {
   T,
   toAnalysis,
 } from '../fixtures/pkg-f';
+import { settled } from '../ux/checks';
 import { expect, STD, uat } from '../ux/test';
 
 // 7.17 The CV review screen (CV-01 … CV-22, L1). The older e2e/specs/review.spec.ts is a plain
@@ -1588,11 +1589,15 @@ uat(
     const zout = group.getByRole('button', { name: t('Zoom out'), exact: true });
     const width = () =>
       page.locator('[data-page="1"]').evaluate((e) => e.getBoundingClientRect().width);
+    // Widths are read once the zoom has finished animating (a fixed pause read them mid-way on a
+    // slow runner: 1.19 instead of 1.25).
+    await settled(page);
     const w0 = await width();
     const steps: number[] = [];
     for (let i = 0; i < 4; i++) {
       await zin.click();
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(50);
+      await settled(page);
       steps.push((await width()) / w0);
     }
     expect
@@ -1606,7 +1611,8 @@ uat(
     for (let i = 0; i < 5; i++) {
       if (await zout.isDisabled()) break;
       await zout.click();
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(50);
+      await settled(page);
       down.push((await width()) / w0);
     }
     expect
