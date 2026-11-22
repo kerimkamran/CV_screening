@@ -37,8 +37,13 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: PDF text extraction tool (used by the pipeline tests)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      # pdftotext for the pipeline tests; LibreOffice and the production fonts (docker/render.Dockerfile)
+      # for the Word rendition tests (S2-BE7), so pages break as they do in production.
+      - name: PDF text extraction, LibreOffice and fonts (used by the pipeline tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui \
+            fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm ci
 
       - name: Lint and format
@@ -49,9 +54,17 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # WP 5.3: the pool at 300 and 5,000 analysed resumes, p95 per step, alone and without coverage.
+      - name: Load run (pool, 300 and 5,000 resumes)
+        run: npm run load:pool
+
       # PLAT-03: unit tests with a coverage floor (apps/api/jest.config.cjs); merge blocked below it.
       - name: Unit tests
         run: npm test
+        env:
+          # The 300-resume volume set only: timings next to the parallel workers and coverage mean
+          # little, and the load run above measured both sizes on their own.
+          VOLUME_ROWS: '300'
 
       # PLAT-02: migrations apply, roll back to empty, re-apply; database invariants hold.
       - name: Migration round-trip and invariants
@@ -84,11 +97,17 @@ jobs:
           path: sbom.cdx.json
           if-no-files-found: error
 
-  # Stage 2, S2-FE9 / S2-FE14: the production build under the production CSP, on three screens.
+  # Stage 2, S2-FE9 / S2-FE14: the production build under the production CSP. Per pull request: the
+  # desktop project in both languages (606 cases), in 6 shards. The full device matrix (about 4,200
+  # cases with WebKit) runs locally before a release (docs/uat/e2e-test-plan.md).
   e2e:
-    name: End-to-end (Playwright)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: End-to-end (Playwright) ${{ matrix.shard }}/6
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu-latest (26.04) yet
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -97,16 +116,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build -w packages/shared && npm run build -w apps/web
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run e2e
+      # Chrome for Testing at a pinned version, the one the suite is verified with locally: Playwright's
+      # own Chromium lags behind (Azerbaijani dates, hit-testing, wheel), and Chrome stable runs ahead
+      # of what this Playwright version drives (dialogs). Move the pin with the Playwright upgrade.
+      - run: npx playwright install-deps chromium
+      - run: npx --yes @puppeteer/browsers install chrome@153.0.8010.12 --path "$RUNNER_TEMP/cft"
+      # The production fonts, so text measures as it does for users (docker/render.Dockerfile).
+      - run: sudo apt-get install -y --no-install-recommends fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
+      - run: npm run e2e -- --shard=${{ matrix.shard }}/6
         env:
           CI: 'true'
-          E2E_WEBKIT: '1'
+          UAT_DEVICES: D
+          E2E_CHROMIUM: ${{ runner.temp }}/cft/chrome/linux-153.0.8010.12/chrome-linux64/chrome
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: failure() || cancelled()
         with:
-          name: playwright-report
-          path: e2e/playwright-report
+          name: playwright-report-${{ matrix.shard }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results/uat
           retention-days: 7
 
   images:
@@ -146,7 +174,7 @@ jobs:
   # full matrix runs locally before a release (docs/uat/e2e-test-plan.md).
   e2e-full:
     name: End-to-end full stack (UAT L2)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu-latest (26.04) yet
     timeout-minutes: 45
     services:
       postgres:
@@ -174,11 +202,14 @@ jobs:
       - name: PDF text, LibreOffice and psql (used by the server under test)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client
+          sudo apt-get install -y --no-install-recommends poppler-utils libreoffice-writer-nogui postgresql-client \
+            fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e:full
+      # The Stage 3 L2 files (plan S3-UP-10): upload, batch (BP-09/10/12) and the Oracle import. The other
+      # L2 files share accounts and still run locally before a release (docs/uat/e2e-test-plan.md).
+      - run: npm run e2e:full -- upload.spec.ts batch.spec.ts oracle.spec.ts
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

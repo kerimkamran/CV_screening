@@ -70,9 +70,9 @@ uat(
       .not.toBeChecked();
     const sc = scene(page);
     await expect.soft(sc).toHaveAttribute('aria-hidden', 'true');
-    const txt = (await sc.textContent()) ?? '';
+    // The scene is a lazy chunk: wait for its board text rather than reading it once.
     for (const w of ['coffeebay', t('Now brewing'), '0/40', t('CVs')])
-      expect.soft(txt, `the board shows '${w}'`).toContain(w);
+      await expect.soft(sc, `the board shows '${w}'`).toContainText(w, { timeout: 10_000 });
     if ((page.viewportSize()?.width ?? 0) >= 768) {
       const s = (await sc.boundingBox())!;
       const h = (await head.boundingBox())!;

@@ -272,23 +272,27 @@ export function CvPane({
     bodyEl.scrollTo?.({ top: want, behavior: 'instant' });
     if (!want) return;
     // The pages measure their box again after they are shown, so at first they are shorter than
-    // they were and the place cannot be reached yet: it is set again until it holds (FS-20), and
-    // never against the person's own scrolling.
+    // they were and the place cannot be reached yet, and a new width moves it again: it is held
+    // for the first second, even after it first matches (FS-20), and never against the person's
+    // own scrolling.
     let tries = 0;
     let timer = 0;
     const stop = () => window.clearTimeout(timer);
     const again = () => {
-      if (Math.abs(bodyEl.scrollTop - want) <= 1 || tries++ >= 12) return;
-      bodyEl.scrollTo?.({ top: want, behavior: 'instant' });
+      if (tries++ >= 20) return;
+      if (Math.abs(bodyEl.scrollTop - want) > 1)
+        bodyEl.scrollTo?.({ top: want, behavior: 'instant' });
       timer = window.setTimeout(again, 50);
     };
     timer = window.setTimeout(again, 50);
     bodyEl.addEventListener('wheel', stop, { once: true, passive: true });
     bodyEl.addEventListener('touchstart', stop, { once: true, passive: true });
+    bodyEl.addEventListener('keydown', stop, { once: true });
     return () => {
       stop();
       bodyEl.removeEventListener('wheel', stop);
       bodyEl.removeEventListener('touchstart', stop);
+      bodyEl.removeEventListener('keydown', stop);
     };
   }, [showing, bodyEl]);
 
@@ -475,10 +479,12 @@ export function CvPane({
             className={
               full
                 ? showing === 'original'
-                  ? 'min-h-0 min-w-0 flex-1 overflow-auto'
+                  ? 'min-h-0 min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable]'
                   : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
                 : showing === 'original'
-                  ? 'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto rounded-md bg-neutral/40 p-2 @min-[60rem]:pointer-coarse:max-h-[calc(100vh-20rem)]'
+                  ? // The gutter is kept even without a scrollbar, so zooming in (which adds one)
+                    // does not shrink the fitted width the zoom steps are measured from (FS-21).
+                    'max-h-[calc(100vh-14rem)] min-h-[20rem] min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable] rounded-md bg-neutral/40 p-2 @min-[60rem]:pointer-coarse:max-h-[calc(100vh-20rem)]'
                   : 'min-w-0 flex-1'
             }
             data-testid="cv-body"

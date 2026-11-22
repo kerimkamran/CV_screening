@@ -599,7 +599,7 @@ uat(
     // The batch finishes when the test says so (while the tab is hidden), not after a fixed number of
     // readings: the app asks several times in a row right after the send.
     let finish = false;
-    const { polls } = await batchApi(page, {
+    await batchApi(page, {
       files: 4,
       script: (k) =>
         finish ? { received: 4, by: { analyzed: 4 } } : k < 1 ? reading(1, 4) : reading(2, 4),
@@ -621,12 +621,18 @@ uat(
     await page.clock.pauseAt(Date.now() + 500);
     await setHidden(true);
     finish = true;
-    for (let i = 0; i < 4; i++) {
-      const before = polls();
-      await page.clock.runFor(16_000);
-      await expect.poll(polls).toBeGreaterThan(before);
-      if ((await title()) === t('✓ Ready · parallax')) break;
-    }
+    // A reading already on its way when the clock stops may bring the finish itself; otherwise the
+    // clock steps on until the next reading does.
+    const ready = t('✓ Ready · parallax');
+    await expect
+      .poll(
+        async () => {
+          if ((await title()) !== ready) await page.clock.runFor(16_000);
+          return title();
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(ready);
     await expect.poll(title).toBe(t('✓ Ready · parallax'));
     const n = await notes();
     expect.soft(n.length, 'one notification').toBe(1);

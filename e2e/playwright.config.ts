@@ -16,6 +16,8 @@ const port = Number(process.env.E2E_PORT ?? 4310);
 /** A preinstalled Chromium (sandboxes ship one under /opt/pw-browsers) when E2E_CHROMIUM is not set. */
 function preinstalled(): string | undefined {
   if (process.env.E2E_CHROMIUM) return process.env.E2E_CHROMIUM;
+  // E2E_NO_PREINSTALLED=1 runs Playwright's own browsers, as CI does.
+  if (process.env.E2E_NO_PREINSTALLED === '1') return undefined;
   const base = '/opt/pw-browsers';
   if (!existsSync(base)) return undefined;
   for (const d of readdirSync(base)
@@ -80,6 +82,9 @@ export function uatProjects(layer: 'L1' | 'L2'): Project[] {
           locale: lang === 'az' ? 'az-AZ' : 'en-GB',
           timezoneId: 'Asia/Baku',
           launchOptions: dev === 'E' || dev === 'I' ? undefined : launch,
+          // Without a preinstalled Chrome (CI), the full Chromium build in the new headless mode:
+          // the default headless shell differs on pop-ups, dialogs and hit-testing.
+          ...(exe || dev === 'E' || dev === 'I' ? {} : { channel: 'chromium' }),
         },
       });
     }

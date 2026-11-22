@@ -8,7 +8,19 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
-import { axe, az, occ, ovf, ovl, rm, tgt, watchErrors, type Code, type Finding } from './checks';
+import {
+  axe,
+  az,
+  occ,
+  ovf,
+  ovl,
+  rm,
+  settled,
+  tgt,
+  watchErrors,
+  type Code,
+  type Finding,
+} from './checks';
 
 /**
  * The UAT test fixture (plan section 3). Every UAT test is written with `uat(id, title, opts, fn)`:
@@ -76,27 +88,31 @@ export class Ux {
     const p = this.page;
     const out: Finding[] = [];
     // A screen change in progress (View Transition) puts its own layer over the whole page, so hit
-    // tests would land on <html>: wait until it has finished.
-    await p
-      .waitForFunction(
-        () =>
-          !document
-            .getAnimations()
-            .some((a) =>
-              ((a.effect as KeyframeEffect | null)?.pseudoElement ?? '').startsWith(
-                '::view-transition',
+    // tests would land on <html>; an entrance still moving gives the same false 'covered': wait until
+    // every animation that ends has ended. Not before RM, which must see what is still moving.
+    if (codes.includes('RM'))
+      await p
+        .waitForFunction(
+          () =>
+            !document
+              .getAnimations()
+              .some((a) =>
+                ((a.effect as KeyframeEffect | null)?.pseudoElement ?? '').startsWith(
+                  '::view-transition',
+                ),
               ),
-            ),
-        null,
-        { timeout: 3000 },
-      )
-      .catch(() => undefined);
+          null,
+          { timeout: 3000 },
+        )
+        .catch(() => undefined);
+    else await settled(p, 4000);
     try {
       if (codes.includes('OCC')) out.push(...(await occ(p, { overlay: opts.overlay })));
       if (codes.includes('OVL')) out.push(...(await ovl(p)));
       if (codes.includes('OVF')) out.push(...(await ovf(p)));
       if (codes.includes('TGT')) out.push(...(await tgt(p, this.meta.touch)));
-      if (codes.includes('AXE')) out.push(...(await axe(p, { exclude: opts.axeExclude })));
+      if (codes.includes('AXE'))
+        out.push(...(await axe(p, { exclude: opts.axeExclude, settle: !codes.includes('RM') })));
       if (codes.includes('RM')) out.push(...(await rm(p)));
       if (codes.includes('AZ') && this.meta.lang === 'az') out.push(...(await az(p)));
     } catch (e) {

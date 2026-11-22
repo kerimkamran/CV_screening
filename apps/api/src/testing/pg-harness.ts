@@ -27,17 +27,23 @@ export async function createDb(tag: string) {
   const dbName = `cv_${tag}_${process.pid}`;
   const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
-  await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
-  await admin.query(`CREATE DATABASE ${dbName}`);
-  const exists = await admin.query(`SELECT 1 FROM pg_roles WHERE rolname='cv_api_it'`);
-  if (!exists.rowCount) await admin.query(`CREATE ROLE cv_api_it LOGIN PASSWORD 'it'`);
-  await admin.end();
-
   const ownerUrl = withDb(adminUrl!, dbName);
-  execFileSync('node', [join(__dirname, '../../../../scripts/migrate.mjs'), 'up'], {
-    env: { ...process.env, MIGRATION_DATABASE_URL: ownerUrl },
-    stdio: 'pipe',
-  });
+  // Migrations create server-wide roles (cv_app and friends): parallel workers on a fresh server (CI)
+  // would race on them, so one worker at a time creates and migrates its database.
+  await admin.query('SELECT pg_advisory_lock(731200)');
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    const exists = await admin.query(`SELECT 1 FROM pg_roles WHERE rolname='cv_api_it'`);
+    if (!exists.rowCount) await admin.query(`CREATE ROLE cv_api_it LOGIN PASSWORD 'it'`);
+    execFileSync('node', [join(__dirname, '../../../../scripts/migrate.mjs'), 'up'], {
+      env: { ...process.env, MIGRATION_DATABASE_URL: ownerUrl },
+      stdio: 'pipe',
+    });
+  } finally {
+    await admin.query('SELECT pg_advisory_unlock(731200)').catch(() => undefined);
+    await admin.end();
+  }
   const owner = new Client({ connectionString: ownerUrl });
   await owner.connect();
   await owner.query(`GRANT cv_app TO cv_api_it`);

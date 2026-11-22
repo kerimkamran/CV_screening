@@ -32,6 +32,8 @@ describe('ZIP spool and streaming reader (S3-UP-06, no database)', () => {
     const src = Readable.from(
       (function* () {
         for (let i = 0; i < 90; i++) {
+          // Live memory, not garbage waiting for a collection (coverage runs collect later).
+          global.gc?.();
           const m = process.memoryUsage();
           peak = Math.max(
             peak,
@@ -68,7 +70,7 @@ describe('ZIP spool and streaming reader (S3-UP-06, no database)', () => {
     });
     await expect(spoolToTemp(broken, mb)).rejects.toThrow(/reset/);
     expect(await mine()).toEqual([]);
-  });
+  }, 60_000);
 
   it('the boot sweep removes folders of this process and of dead ones, and keeps those of live ones', async () => {
     const base = join(tmpdir(), `sweep-test-${process.pid}`);

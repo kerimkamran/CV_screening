@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { DOCX_MIME, FILES } from '../fixtures/files';
 import { esc, inFlight, jd, makeVacancy, T, textCvs } from '../fixtures/pkg-c';
 import { expect, STD, uat } from '../ux/test';
-import { accounts, api, BASE, db, drain, login, openAs, uniq } from './stack';
+import { accounts, api, BASE, db, drain, holdAi, login, openAs, uniq } from './stack';
 import { sleep } from '../fixtures/pkg-i';
 
 // 7.9 CVs card (upload) (UP), full-stack journeys (L2). UAT plan v1.1.
@@ -114,13 +114,24 @@ uat(
       .toBeVisible({ timeout: 60_000 })
       .catch(() => undefined);
     await drain();
+    // Since S3-UP-01 the tab announces only what fits (the room, 20): the 10 beyond it are marked
+    // "Vacancy full" in the list before the click and never reach the server.
     const items = await db<{ code: string | null; n: number }>(
       `SELECT i.code, count(*)::int AS n FROM upload_item i JOIN upload_batch b ON b.id = i.batch_id WHERE b.vacancy_id = $1 AND i.filename LIKE $2 GROUP BY i.code`,
       [v.id, `${prefix.toLowerCase().replace(/\W+/g, '-')}%`],
     );
     expect
-      .soft(items.find((i) => i.code === 'vacancy_full')?.n, "10 items 'Vacancy full'")
-      .toBe(10);
+      .soft(
+        items.reduce((n, i) => n + i.n, 0),
+        '20 announced',
+      )
+      .toBe(20);
+    expect
+      .soft(
+        items.find((i) => i.code === 'vacancy_full'),
+        "no 'Vacancy full' item on the server",
+      )
+      .toBeUndefined();
     expect.soft(await used(token, v.id), 'usage now 500').toBe(500);
     const analyzed = await db<{ n: number }>(
       `SELECT count(*)::int AS n FROM cv_document d JOIN screening s ON s.document_id = d.id WHERE d.vacancy_id = $1 AND d.filename LIKE $2 AND s.state = 'completed'`,
@@ -129,12 +140,13 @@ uat(
     expect.soft(analyzed[0]!.n, '20 analyzed').toBe(20);
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: v.title })).toBeVisible();
+    // The batch holds the 20 that were sent: the reloaded page does not report 10 unsent files.
     await expect
       .soft(
-        page.getByText(new RegExp(esc(t('{n} files were not sent', { n: 10 })))).first(),
-        "the finished line says '10 files were not sent'",
+        page.getByText(new RegExp(esc(t('{n} files were not sent', { n: 10 })))),
+        'no "10 files were not sent" after the reload',
       )
-      .toBeVisible();
+      .toHaveCount(0);
     await page
       .getByRole('button', { name: t('Details') })
       .first()
@@ -181,30 +193,36 @@ uat(
       await new Promise((r) => setTimeout(r, 600));
       await route.continue();
     });
-    // 1) 12 files, the notice, start.
+    // 1) 12 files, the notice, start. The fake AI holds the reads, so the waiting screen is still
+    // up when it is checked (12 short CVs can otherwise finish first on a fast runner).
     await choose(page, meta.lang, asFiles(textCvs(uniq('Lane'), 12)));
     await c.getByRole('checkbox').check();
     const btn = c.locator('button.h-11');
-    await btn.click();
-    await expect.soft(btn).toHaveText(t('Starting…'));
-    await expect.soft(btn).toBeDisabled();
-    // 2) The network.
-    await expect(page).toHaveURL(new RegExp(`#/vacancies/${v.id}/candidates$`));
-    const s = net.order.findIndex((u) => u.endsWith('/start'));
-    const b = net.order.findIndex((u) => u.endsWith('/upload-batches'));
-    expect.soft(s >= 0 && b > s, 'POST /start answered before POST /upload-batches').toBe(true);
-    expect.soft(bodies.start).toEqual({ confirmNotice: true });
-    expect
-      .soft(((bodies['upload-batches'] as { files: unknown[] }) ?? { files: [] }).files.length)
-      .toBe(12);
-    const hello = page.getByRole('heading', {
-      name: new RegExp(
-        esc(t('Hey {name}, go grab a coffee and relax.', { name: 'Aysel' }).split(',')[0]!),
-      ),
-    });
-    await expect.soft(hello).toBeVisible();
-    await expect.soft(hello).toBeFocused();
-    await ux.check('waiting screen', [...STD, 'AZ']);
+    await holdAi(true);
+    try {
+      await btn.click();
+      await expect.soft(btn).toHaveText(t('Starting…'));
+      await expect.soft(btn).toBeDisabled();
+      // 2) The network.
+      await expect(page).toHaveURL(new RegExp(`#/vacancies/${v.id}/candidates$`));
+      const s = net.order.findIndex((u) => u.endsWith('/start'));
+      const b = net.order.findIndex((u) => u.endsWith('/upload-batches'));
+      expect.soft(s >= 0 && b > s, 'POST /start answered before POST /upload-batches').toBe(true);
+      expect.soft(bodies.start).toEqual({ confirmNotice: true });
+      expect
+        .soft(((bodies['upload-batches'] as { files: unknown[] }) ?? { files: [] }).files.length)
+        .toBe(12);
+      const hello = page.getByRole('heading', {
+        name: new RegExp(
+          esc(t('Hey {name}, go grab a coffee and relax.', { name: 'Aysel' }).split(',')[0]!),
+        ),
+      });
+      await expect.soft(hello).toBeVisible();
+      await expect.soft(hello).toBeFocused();
+      await ux.check('waiting screen', [...STD, 'AZ']);
+    } finally {
+      await holdAi(false);
+    }
     // 3) The finish, then Role and CVs.
     await drain();
     await expect.poll(() => net.now, { timeout: 30_000 }).toBe(0);

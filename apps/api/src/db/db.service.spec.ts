@@ -2,7 +2,9 @@ import { DbService } from './db.service';
 
 const query = jest.fn();
 const end = jest.fn().mockResolvedValue(undefined);
-jest.mock('pg', () => ({ Pool: jest.fn().mockImplementation(() => ({ query, end })) }));
+jest.mock('pg', () => ({
+  Pool: jest.fn().mockImplementation(() => ({ query, end, on: jest.fn() })),
+}));
 
 const env = { DATABASE_URL: 'postgres://h/d', DB_POOL_MAX: 2 } as never;
 

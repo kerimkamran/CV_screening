@@ -5,6 +5,7 @@ import { DVID, resultsApi } from '../fixtures/pkg-d';
 import { CFG, poolAnswer, senaiAnswers, senaiRoutes, type AskLog } from '../fixtures/pkg-g';
 import { press } from '../fixtures/pkg-h';
 import { AZ } from '../../apps/web/src/i18n/az';
+import { settled } from '../ux/checks';
 import { expect, STD, uat } from '../ux/test';
 
 // 7.x SenAI pool panel (SA), screens with a mocked API (L1), package G.
@@ -520,21 +521,9 @@ uat(
         await panel.getByRole('textbox').press('Enter');
         await expect(panel.locator('[data-answer]').first()).toBeVisible();
       }
-      // A screen change in progress puts its own layer over the page (hit tests land on <html>).
-      await page
-        .waitForFunction(
-          () =>
-            !document
-              .getAnimations()
-              .some((a) =>
-                ((a.effect as KeyframeEffect | null)?.pseudoElement ?? '').startsWith(
-                  '::view-transition',
-                ),
-              ),
-          null,
-          { timeout: 3000 },
-        )
-        .catch(() => undefined);
+      // A screen change or the panel still sliding in puts a moving layer over the page (hit tests
+      // land on <html>): wait until every animation that ends has ended.
+      await settled(page);
       const r = await page.evaluate(() => {
         const aside = document.querySelector('aside')!.getBoundingClientRect();
         const covered: string[] = [];

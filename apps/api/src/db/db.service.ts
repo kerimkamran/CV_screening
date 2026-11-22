@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import { ENV, type Env } from '../config/env';
 
@@ -16,6 +16,11 @@ export class DbService implements Queryable, OnModuleDestroy {
 
   constructor(@Inject(ENV) env: Env) {
     this.pool = new Pool({ connectionString: env.DATABASE_URL, max: env.DB_POOL_MAX });
+    // An idle connection the server closes (restart, failover, maintenance) is reported here. pg
+    // drops that client from the pool by itself; without a listener Node would crash the whole API.
+    this.pool.on('error', (e: Error & { code?: string }) =>
+      new Logger('Db').warn(`idle database connection closed (${e.code ?? 'no code'})`),
+    );
   }
 
   query<R extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]) {
