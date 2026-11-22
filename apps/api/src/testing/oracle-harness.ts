@@ -25,7 +25,11 @@ import { createFakeOracle, FAKE_ORIGIN, type FakeOracle } from './fake-oracle';
 export const ORACLE_ON = { ORACLE_IMPORT_ENABLED: 'true' };
 
 export async function bootOracle(tag: string, opts: BootOptions = {}): Promise<Harness> {
-  return boot(tag, scriptedModel, { ...opts, env: { ...ORACLE_ON, ...(opts.env ?? {}) } });
+  const h = await boot(tag, scriptedModel, { ...opts, env: { ...ORACLE_ON, ...(opts.env ?? {}) } });
+  // The memory share is the whole CI machine's, not this test's: a busy runner must not park runs
+  // as capacity_unavailable. The ceiling has its own test (S3-INT-12 (14)), which sets its value.
+  h.app.get(ImportRunnerService).memory = () => 0;
+  return h;
 }
 
 export const runner = (h: Harness) => h.app.get(ImportRunnerService);
