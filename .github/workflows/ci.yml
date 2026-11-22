@@ -54,9 +54,17 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # WP 5.3: the pool at 300 and 5,000 analysed resumes, p95 per step, alone and without coverage.
+      - name: Load run (pool, 300 and 5,000 resumes)
+        run: npm run load:pool
+
       # PLAT-03: unit tests with a coverage floor (apps/api/jest.config.cjs); merge blocked below it.
       - name: Unit tests
         run: npm test
+        env:
+          # The 300-resume volume set only: timings next to the parallel workers and coverage mean
+          # little, and the load run above measured both sizes on their own.
+          VOLUME_ROWS: '300'
 
       # PLAT-02: migrations apply, roll back to empty, re-apply; database invariants hold.
       - name: Migration round-trip and invariants
