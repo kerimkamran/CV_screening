@@ -143,11 +143,13 @@ export async function occ(page: Page, opts: { overlay?: string } = {}): Promise<
             const bottom = parseFloat(cs.bottom);
             const r = p.getBoundingClientRect();
             // The offset applies to the margin box, so a bar with its own margin sits that much lower; a few
-            // pixels more allow for a bar still settling from its entrance animation.
+            // pixels either way allow for a bar still settling from its entrance animation. One well
+            // above its offset is not stuck: its container has ended and it scrolls away as content.
             const mt = parseFloat(cs.marginTop) || 0;
             const mb = parseFloat(cs.marginBottom) || 0;
-            if (!Number.isNaN(top) && r.top <= top + mt + 4) return true;
-            if (!Number.isNaN(bottom) && r.bottom >= innerHeight - bottom - mb - 4) return true;
+            if (!Number.isNaN(top) && Math.abs(r.top - (top + mt)) <= 4) return true;
+            if (!Number.isNaN(bottom) && Math.abs(r.bottom - (innerHeight - bottom - mb)) <= 4)
+              return true;
           }
         }
         return false;
@@ -306,27 +308,38 @@ export async function tgt(page: Page, touch: boolean): Promise<Finding[]> {
  * fixed pause.
  */
 export async function settled(page: Page, timeout = 4000): Promise<void> {
-  const moving = () =>
+  // Moving: a view transition, a running finite animation, or a scroll still on its way (smooth
+  // scrolling is no animation, but it moves sticky parts and what covers them).
+  const state = () =>
     page
       .evaluate(() => {
+        let busy = false;
         // A view transition covers the page from its capture on, before any animation runs.
         try {
-          if (document.documentElement.matches(':active-view-transition')) return true;
+          if (document.documentElement.matches(':active-view-transition')) busy = true;
         } catch {
           /* a browser without the pseudo-class */
         }
-        return document.getAnimations().some((a) => {
+        busy ||= document.getAnimations().some((a) => {
           const end = a.effect?.getComputedTiming().endTime;
           return a.playState === 'running' && typeof end === 'number' && Number.isFinite(end);
         });
+        const at = [`${Math.round(scrollX)},${Math.round(scrollY)}`];
+        for (const el of document.querySelectorAll('*'))
+          if (el.scrollTop || el.scrollLeft)
+            at.push(`${Math.round(el.scrollLeft)},${Math.round(el.scrollTop)}`);
+        return { busy, at: at.join(' ') };
       })
-      .catch(() => false);
-  // Quiet twice, 150 ms apart: a screen change often starts its transition a moment after the click.
+      .catch(() => ({ busy: false, at: '' }));
+  // Quiet twice, 150 ms apart, with nothing scrolled in between: a screen change often starts its
+  // transition a moment after the click.
   const end = Date.now() + timeout;
   while (Date.now() < end) {
-    if (!(await moving())) {
+    const a = await state();
+    if (!a.busy) {
       await page.waitForTimeout(150);
-      if (!(await moving())) return;
+      const b = await state();
+      if (!b.busy && b.at === a.at) return;
     } else await page.waitForTimeout(50);
   }
 }
