@@ -97,6 +97,11 @@ const EnvSchema = z.object({
    */
   ORACLE_IMPORT_ENABLED: z.enum(['true', 'false']).default('false'),
   /**
+   * Oracle on the company's own domain (gap fix): exact host names, comma-separated, that are
+   * allowed besides `*.oraclecloud.com`. Set by the operator only; the admin form cannot add one.
+   */
+  ORACLE_OWN_HOSTS: z.string().max(2000).optional(),
+  /**
    * HMAC key for the hashes that keep erased candidates from returning (tombstones). A bare value is
    * version 1; `2:<new>,1:<old>` hashes with the first and matches every listed version.
    */
@@ -138,6 +143,15 @@ const Refined = EnvSchema.superRefine((e, ctx) => {
         'each key must be at least 32 characters',
       );
   }
+  if (e.ORACLE_OWN_HOSTS !== undefined)
+    need(
+      e.ORACLE_OWN_HOSTS.split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean)
+        .every((h) => /^(?=.{4,253}$)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(h) && !/^[\d.]+$/.test(h)),
+      'ORACLE_OWN_HOSTS',
+      'exact host names only, comma-separated (no scheme, port, path, wildcard or IP address)',
+    );
   if (e.EMAIL_PROVIDER === 'smtp') need(e.SMTP_HOST, 'SMTP_HOST', 'required for smtp');
   if (e.EMAIL_PROVIDER === 'resend')
     need(e.RESEND_API_KEY, 'RESEND_API_KEY', 'required for resend');
