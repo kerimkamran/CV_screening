@@ -1,9 +1,10 @@
+import { createPrivateKey, randomUUID, sign } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { SettingsCrypto } from '../../ai/settings-crypto';
 import { DbService, type Queryable } from '../../db/db.service';
 import { SourceError } from '../import-source';
 import { oracleOrigin } from './oracle-address';
-import { OracleHcmClient, type OracleTarget } from './oracle-hcm.client';
+import { type DownloadRoute, OracleHcmClient, type OracleTarget } from './oracle-hcm.client';
 
 /** The Advanced settings; a missing key reads as its default (plan 15.3 note 16). */
 export interface OracleSettings {
@@ -14,13 +15,63 @@ export interface OracleSettings {
   categories: string[];
   clientId?: string;
   scope?: string;
+  /** How a file is read (gap fix); `enclosure` is Oracle's documented FileContents download. */
+  downloadRoute: DownloadRoute;
+  /** Gap fix: when an application has no CV file, look at the candidate profile (off by default). */
+  profileFallback: boolean;
+  /** OAuth JWT assertion: the certificate alias (`kid`) uploaded to the identity domain app. */
+  keyId?: string;
 }
 export const DEFAULT_SETTINGS: OracleSettings = {
   linkPolicy: 'open',
   requireEuAi: true,
   goneInSource: 'flag',
-  categories: ['Resume', 'CV', 'Curriculum Vitae'],
+  // Display names and Oracle's resume code; compared without case, spaces, hyphens or underscores.
+  categories: ['Resume', 'CV', 'Curriculum Vitae', 'IRC_CANDIDATE_RESUME'],
+  downloadRoute: 'enclosure',
+  profileFallback: false,
 };
+
+/** Category names compared the way Oracle's codes and display names differ: case, spaces, `_`, `-`. */
+export const categoryKey = (c: unknown) =>
+  String(c ?? '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+
+/** The audience Oracle's identity domain expects in a user or client assertion (documented). */
+export const ASSERTION_AUDIENCE = 'https://identity.oraclecloud.com/';
+
+const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
+
+/** A signed RS256 JWT for Oracle's identity domain (the documented claims, 5 minutes). */
+export function signAssertion(
+  key: string,
+  claims: { sub: string; iss: string; kid?: string },
+  now = Math.floor(Date.now() / 1000),
+): string {
+  const header = { alg: 'RS256', typ: 'JWT', ...(claims.kid ? { kid: claims.kid } : {}) };
+  const body = {
+    sub: claims.sub,
+    iss: claims.iss,
+    aud: [ASSERTION_AUDIENCE],
+    iat: now,
+    nbf: now - 30,
+    exp: now + 300,
+    jti: randomUUID(),
+  };
+  const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(body))}`;
+  const sig = sign('RSA-SHA256', Buffer.from(input), createPrivateKey(key));
+  return `${input}.${b64url(sig)}`;
+}
+
+/** True when the text is an RSA private key in PEM (checked before it is stored). */
+export function isRsaPrivateKey(pem: string): boolean {
+  try {
+    return createPrivateKey(pem).asymmetricKeyType === 'rsa';
+  } catch {
+    return false;
+  }
+}
 
 export interface ConnectionRow {
   id: string;
@@ -34,6 +85,8 @@ export interface ConnectionRow {
   secret_set_at: Date | null;
   secret_expires_on: string | null;
   client_secret_ciphertext: string | null;
+  /** OAuth JWT assertion: the private key (PEM), encrypted like the password. */
+  assertion_key_ciphertext: string | null;
   notice_attested_by: string | null;
   notice_attested_at: Date | null;
   notice_version: string | null;
@@ -53,8 +106,10 @@ export class AuthCircuitOpen extends Error {
   }
 }
 
-export const aadFor = (id: string, what: 'password' | 'client_secret' = 'password') =>
-  `oracle:${id}:${what}`;
+export const aadFor = (
+  id: string,
+  what: 'password' | 'client_secret' | 'assertion_key' = 'password',
+) => `oracle:${id}:${what}`;
 
 /**
  * Stage 3, S3-INT-08 (plan 6, 15.2): the one stored connection and its sign-in. The password is
@@ -105,7 +160,7 @@ export class OracleConnectionService {
     override?: { origin: string; user: string; password: string },
     runId?: string,
   ): OracleTarget {
-    const origin = override?.origin ?? oracleOrigin(row.base_url);
+    const origin = override?.origin ?? oracleOrigin(row.base_url, this.client.ownHosts);
     if (!origin) throw new SourceError('unavailable');
     const basic = (user: string, pw: string) =>
       `Basic ${Buffer.from(`${user}:${pw}`, 'utf8').toString('base64')}`;
@@ -141,25 +196,59 @@ export class OracleConnectionService {
     if (cached && !(cached instanceof Promise) && cached.until > Date.now()) return cached.value;
     if (cached instanceof Promise) return cached;
     const p = (async () => {
-      if (row.auth_mode !== 'oauth_client_credentials') throw new SourceError('auth'); // JWT: after the probe
-      const tokenOrigin = row.token_url ? oracleOrigin(row.token_url) : null;
-      if (!tokenOrigin || !row.client_secret_ciphertext) throw new SourceError('auth');
+      if (row.auth_mode !== 'oauth_client_credentials' && row.auth_mode !== 'oauth_jwt_assertion')
+        throw new SourceError('auth');
+      const tokenOrigin = row.token_url ? oracleOrigin(row.token_url, this.client.ownHosts) : null;
+      if (!tokenOrigin) throw new SourceError('auth');
       const s = this.settings(row);
-      const secret = this.crypto.decrypt(
-        row.client_secret_ciphertext,
-        aadFor(row.id, 'client_secret'),
-      );
-      const body = new URLSearchParams({
-        grant_type: 'client_credentials',
-        ...(s.scope ? { scope: s.scope } : {}),
-      });
+      const secret = row.client_secret_ciphertext
+        ? this.crypto.decrypt(row.client_secret_ciphertext, aadFor(row.id, 'client_secret'))
+        : null;
+      const headers: Record<string, string> = {
+        'content-type': 'application/x-www-form-urlencoded',
+      };
+      let body: URLSearchParams;
+      if (row.auth_mode === 'oauth_client_credentials') {
+        if (!secret) throw new SourceError('auth');
+        headers['authorization'] =
+          `Basic ${Buffer.from(`${s.clientId ?? ''}:${secret}`).toString('base64')}`;
+        body = new URLSearchParams({
+          grant_type: 'client_credentials',
+          ...(s.scope ? { scope: s.scope } : {}),
+        });
+      } else {
+        // Gap fix: the JWT user assertion grant (Oracle identity domain, documented claims). The user
+        // is the integration account; the client signs in with its secret, or else with a client
+        // assertion signed by the same key.
+        if (!row.assertion_key_ciphertext || !s.clientId) throw new SourceError('auth');
+        const key = this.crypto.decrypt(
+          row.assertion_key_ciphertext,
+          aadFor(row.id, 'assertion_key'),
+        );
+        body = new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion: signAssertion(key, { sub: row.principal_name, iss: s.clientId, kid: s.keyId }),
+          ...(s.scope ? { scope: s.scope } : {}),
+        });
+        if (secret)
+          headers['authorization'] =
+            `Basic ${Buffer.from(`${s.clientId}:${secret}`).toString('base64')}`;
+        else {
+          body.set('client_id', s.clientId);
+          body.set(
+            'client_assertion_type',
+            'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+          );
+          body.set(
+            'client_assertion',
+            signAssertion(key, { sub: s.clientId, iss: s.clientId, kid: s.keyId }),
+          );
+        }
+      }
       const res = await this.client.fetcher(new URL(row.token_url!).toString(), {
         method: 'POST',
         redirect: 'manual',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded',
-          authorization: `Basic ${Buffer.from(`${s.clientId ?? ''}:${secret}`).toString('base64')}`,
-        },
+        headers,
         body: body.toString(),
       });
       if (res.status === 401 || res.status === 400) {
