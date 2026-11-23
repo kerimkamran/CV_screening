@@ -1,11 +1,12 @@
 import { promises as dns } from 'node:dns';
 import https from 'node:https';
 import { Readable } from 'node:stream';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ENV, type Env } from '../../config/env';
 import { DbService } from '../../db/db.service';
 import { guardedLookup } from '../../pipeline/link-reader';
 import { SourceError } from '../import-source';
-import { isAllowedAddress, resolvesPublic, type Lookup } from './oracle-address';
+import { isAllowedAddress, ownHosts, resolvesPublic, type Lookup } from './oracle-address';
 
 /**
  * Stage 3, S3-INT-07 (plan 5.4, 15.2, 15.3 notes 2-4): the Oracle REST client.
@@ -48,7 +49,26 @@ export const FIELDS = {
   ],
   download: ['FileUrl', 'FileName'],
   contents: ['FileContents', 'FileName'],
+  /** The candidate profile, found by the person ID of an application (gap fix: profile-only CVs). */
+  candidate: ['CandidateNumber'],
 } as const;
+
+/**
+ * How a file is read (gap fix). `enclosure`: the documented FileContents download of the attachment
+ * (`…/child/attachments/{key}/enclosure/FileContents`), the default. `inline`: the same attachment
+ * asked for its `FileContents` field (base64 in JSON). `fileUrl`: the attachment's `FileUrl` link into
+ * Oracle's content repository. Every route starts from the attachment's own `self` link, because
+ * Oracle addresses one attachment by a hash key that a client must not build.
+ */
+export const DOWNLOAD_ROUTES = ['enclosure', 'inline', 'fileUrl'] as const;
+export type DownloadRoute = (typeof DOWNLOAD_ROUTES)[number];
+
+/** Whose attachments: a job application, or (gap fix) the candidate profile behind it. */
+export type AttachmentOwner =
+  { kind: 'application'; id: string } | { kind: 'candidate'; id: string };
+
+const ownerPath = (o: AttachmentOwner) =>
+  `${o.kind === 'application' ? 'recruitingJobApplications' : 'recruitingCandidates'}/${encodeURIComponent(o.id)}/child/attachments`;
 export const ALLOWED_FIELDS: ReadonlySet<string> = new Set(Object.values(FIELDS).flat());
 
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
@@ -92,17 +112,43 @@ const MB = 1024 * 1024;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const today = () => new Date(Date.now() + 4 * 3_600_000).toISOString().slice(0, 10); // Asia/Baku, UTC+4
 
-/** Builds the query of a data call; throws before anything is sent if a field is not on the list. */
+/**
+ * Builds the query of a data call; throws before anything is sent if a field is not on the list.
+ * `links` keeps Oracle's link relations in the answer (no `onlyData`): the attachment list needs
+ * them, because one attachment is addressed by its own `self` link.
+ */
 export function dataQuery(
   params: Record<string, string>,
   fields: readonly string[],
+  opts: { links?: boolean } = {},
 ): URLSearchParams {
   if (!fields.length) throw new Error('every data call names its fields');
   for (const f of fields) if (!ALLOWED_FIELDS.has(f)) throw new Error(`field not allowed: ${f}`);
   const q = new URLSearchParams(params);
   q.set('fields', fields.join(','));
-  q.set('onlyData', 'true');
+  if (!opts.links) q.set('onlyData', 'true');
   return q;
+}
+
+/** One link of an Oracle item, when it stays on the saved origin and under the REST path. */
+export function itemLink(
+  item: Record<string, unknown>,
+  origin: string,
+  want: { rel: string; name?: string },
+): URL | null {
+  const links = Array.isArray(item['links']) ? (item['links'] as Record<string, unknown>[]) : [];
+  const l = links.find(
+    (x) => x?.['rel'] === want.rel && (want.name === undefined || x?.['name'] === want.name),
+  );
+  if (!l || typeof l['href'] !== 'string') return null;
+  try {
+    const u = new URL(l['href'], origin);
+    if (u.origin !== origin || !u.pathname.startsWith(`${ORACLE_BASE_PATH}/`)) return null;
+    u.search = '';
+    return u;
+  } catch {
+    return null;
+  }
 }
 
 /** The default fetcher: node:https with the guarded lookup (public addresses only), no agent reuse. */
@@ -169,14 +215,19 @@ export class OracleHcmClient {
   timeouts = { metaMs: 15_000, firstByteMs: 30_000, idleMs: 20_000, totalMs: 120_000 };
   retry = { tries: 2, baseMs: 1_000 };
   caps = { jsonBytes: 5 * MB, fileBytes: 10 * MB };
-  /** Which way a file is read (settled by the probe; `fileUrl` until then). */
-  download: 'fileUrl' | 'fileContents' = 'fileUrl';
+  /** The operator's own Oracle host names (`ORACLE_OWN_HOSTS`), allowed besides `*.oraclecloud.com`. */
+  readonly ownHosts: ReadonlySet<string>;
 
   private inFlight = 0;
   private waiters: (() => void)[] = [];
   private starts: number[] = [];
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    @Optional() @Inject(ENV) env?: Env,
+  ) {
+    this.ownHosts = ownHosts(env?.ORACLE_OWN_HOSTS);
+  }
 
   // ------------------------------------------------------------------ pacing and budget
 
@@ -220,7 +271,7 @@ export class OracleHcmClient {
 
   /** GET one URL on the saved origin, signed, with every transport rule applied. */
   async get(t: OracleTarget, url: URL, o: CallOpts): Promise<Answer> {
-    if (!isAllowedAddress(t.origin) || url.origin !== t.origin)
+    if (!isAllowedAddress(t.origin, this.ownHosts) || url.origin !== t.origin)
       throw new OracleClientError('not_oracle_address');
     let last: SourceError | null = null;
     const tries = o.tries ?? this.retry.tries;
@@ -261,6 +312,16 @@ export class OracleHcmClient {
         const firstByte =
           o.kind === 'file' ? setTimeout(() => ac.abort(), this.timeouts.firstByteMs) : null;
         let res: Response;
+        // Signed first, outside the network catch: a refused OAuth sign-in is a refused sign-in
+        // (SourceError 'auth'), not an unreachable Oracle.
+        let authorization: string;
+        try {
+          authorization = await t.authorization();
+        } catch (e) {
+          clearTimeout(total);
+          if (firstByte) clearTimeout(firstByte);
+          throw e;
+        }
         try {
           res = await this.fetcher(url.toString(), {
             method: 'GET',
@@ -269,7 +330,7 @@ export class OracleHcmClient {
             headers: {
               accept: o.kind === 'file' ? '*/*' : 'application/json',
               'REST-Framework-Version': REST_FRAMEWORK_VERSION,
-              authorization: await t.authorization(),
+              authorization,
             },
           });
         } catch {
@@ -368,13 +429,14 @@ export class OracleHcmClient {
 
   private async json<T>(
     t: OracleTarget,
-    path: string,
+    path: string | URL,
     q: URLSearchParams,
     resource: string,
     signal?: AbortSignal,
     opts: { cap?: number; tries?: number } = {},
   ): Promise<T> {
-    const url = new URL(`${t.origin}${ORACLE_BASE_PATH}/${path}`);
+    const url =
+      path instanceof URL ? new URL(path) : new URL(`${t.origin}${ORACLE_BASE_PATH}/${path}`);
     url.search = q.toString();
     const a = await this.get(t, url, {
       kind: 'meta',
@@ -486,12 +548,17 @@ export class OracleHcmClient {
     return { items: r.items, hasMore: Boolean(r.hasMore) };
   }
 
-  /** Call E: the attachments of one application. */
+  /** Call E: the attachments of one application, with each item's links (see `locate`). */
   async attachments(t: OracleTarget, applicationId: string, signal?: AbortSignal) {
+    return this.attachmentsOf(t, { kind: 'application', id: applicationId }, signal);
+  }
+
+  /** The attachments of an application or of a candidate profile (gap fix), links kept. */
+  async attachmentsOf(t: OracleTarget, owner: AttachmentOwner, signal?: AbortSignal) {
     const r = await this.json<{ items?: Record<string, unknown>[] }>(
       t,
-      `recruitingJobApplications/${encodeURIComponent(applicationId)}/child/attachments`,
-      dataQuery({ limit: '100' }, FIELDS.attachment),
+      ownerPath(owner),
+      dataQuery({ limit: '100' }, FIELDS.attachment, { links: true }),
       'attachments',
       signal,
     );
@@ -502,18 +569,68 @@ export class OracleHcmClient {
     return r.items;
   }
 
-  /** Call F: the file, by the route the probe chose. The link is read fresh for every download. */
-  async downloadFile(
+  /**
+   * Gap fix (CV only on the candidate profile): the candidate number behind an application's person
+   * ID, through the documented `findByPersonId` finder; null when Oracle shows no candidate.
+   */
+  async findCandidate(t: OracleTarget, personId: string, signal?: AbortSignal) {
+    const r = await this.json<{ items?: Record<string, unknown>[] }>(
+      t,
+      'recruitingCandidates',
+      dataQuery({ finder: `findByPersonId;personId=${personId}`, limit: '1' }, FIELDS.candidate),
+      'recruitingCandidates',
+      signal,
+    );
+    const it = r.items?.[0];
+    if (!it) return null;
+    if (!hasFields(it, ['CandidateNumber'])) throw new SourceError('schema_changed');
+    return String(it['CandidateNumber']);
+  }
+
+  /**
+   * The attachment's own address and its file name, read fresh from the list: Oracle addresses one
+   * attachment by a hash key the client must not build, so its `self` link is used. An attachment
+   * no longer listed reads as a refused link (the runner tries once more, then skips the file).
+   */
+  private async locate(
     t: OracleTarget,
-    applicationId: string,
+    owner: AttachmentOwner,
     attachmentId: string,
     signal?: AbortSignal,
+  ) {
+    const items = await this.attachmentsOf(t, owner, signal);
+    const it = items.find((a) => String(a['AttachedDocumentId']) === attachmentId);
+    if (!it) throw new SourceError('link_forbidden');
+    const self =
+      itemLink(it, t.origin, { rel: 'self' }) ??
+      new URL(
+        `${t.origin}${ORACLE_BASE_PATH}/${ownerPath(owner)}/${encodeURIComponent(attachmentId)}`,
+      );
+    const enclosure = itemLink(it, t.origin, { rel: 'enclosure', name: 'FileContents' });
+    return { self, enclosure, fileName: String(it['FileName'] ?? '') };
+  }
+
+  /** Call F: the file, by the route the admin chose (default: the FileContents download). */
+  async downloadFile(
+    t: OracleTarget,
+    owner: AttachmentOwner | string,
+    attachmentId: string,
+    signal?: AbortSignal,
+    route: DownloadRoute = 'enclosure',
   ): Promise<{ bytes: Buffer; fileName: string }> {
-    const item = `recruitingJobApplications/${encodeURIComponent(applicationId)}/child/attachments/${encodeURIComponent(attachmentId)}`;
-    if (this.download === 'fileContents') {
+    const who: AttachmentOwner =
+      typeof owner === 'string' ? { kind: 'application', id: owner } : owner;
+    const item = await this.locate(t, who, attachmentId, signal);
+    if (route === 'enclosure') {
+      const url = item.enclosure ?? new URL(`${item.self.toString()}/enclosure/FileContents`);
+      // A 401 or 403 here, right after the list answered, is a refused file, not a refused sign-in.
+      const a = await this.get(t, url, { kind: 'file', signal, fileLink: true, resource: 'file' });
+      return { bytes: a.body, fileName: item.fileName };
+    }
+    if (route === 'inline') {
       const r = await this.json<{ FileContents?: string; FileName?: string }>(
         t,
-        item,
+        item.self,
         dataQuery({}, FIELDS.contents),
         'attachment',
         signal,
@@ -522,11 +639,11 @@ export class OracleHcmClient {
       if (typeof r.FileContents !== 'string') throw new SourceError('schema_changed');
       const bytes = Buffer.from(r.FileContents, 'base64');
       if (bytes.length > this.caps.fileBytes) throw new SourceError('too_large');
-      return { bytes, fileName: String(r.FileName ?? '') };
+      return { bytes, fileName: String(r.FileName ?? item.fileName) };
     }
     const r = await this.json<{ FileUrl?: string; FileName?: string }>(
       t,
-      item,
+      item.self,
       dataQuery({}, FIELDS.download),
       'attachment',
       signal,
@@ -536,7 +653,7 @@ export class OracleHcmClient {
     const url = new URL(r.FileUrl, t.origin);
     if (url.origin !== t.origin) throw new SourceError('link_forbidden');
     const a = await this.get(t, url, { kind: 'file', signal, fileLink: true, resource: 'file' });
-    return { bytes: a.body, fileName: String(r.FileName ?? '') };
+    return { bytes: a.body, fileName: String(r.FileName ?? item.fileName) };
   }
 }
 
