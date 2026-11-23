@@ -105,6 +105,17 @@ export interface AdvancedSettings {
   categories: string[];
   clientId: string | null;
   scope: string | null;
+  /** OAuth JWT assertion: the certificate alias (kid). */
+  keyId: string | null;
+  /** How a file is read: Oracle's FileContents download (default), inline, or the FileUrl link. */
+  downloadRoute: 'enclosure' | 'inline' | 'fileUrl';
+  /** Read a CV from the candidate profile when the application has none. */
+  profileFallback: boolean;
+}
+export interface CategoryCheck {
+  found: boolean;
+  applicationsChecked: number;
+  categories: { name: string; files: number; counted: boolean }[];
 }
 export interface AdminConnection {
   address: string;
@@ -120,6 +131,7 @@ export interface AdminConnection {
   passwordSetAt: string | null;
   passwordExpiresOn: string | null;
   clientSecretSaved: boolean;
+  privateKeySaved?: boolean;
   notice: { by: string | null; at: string; effectiveFrom: string | null } | null;
 }
 export interface AdminView {
@@ -127,6 +139,8 @@ export interface AdminView {
   example: string;
   suffix: string;
   notOracleAddress: string;
+  /** Own Oracle host names the operator allowed on the server (besides the suffix). */
+  ownHosts?: string[];
   settings: AdvancedSettings;
   connection: AdminConnection | null;
 }
@@ -172,6 +186,8 @@ export const oracleAdmin = {
     api.post<{ enabled: false; cancelled: number }>('/admin/integrations/oracle/deactivate'),
   settings: (body: Record<string, unknown>) =>
     api.put<AdminView>('/admin/integrations/oracle/settings', body),
+  categories: (requisition: string) =>
+    api.post<CategoryCheck>('/admin/integrations/oracle/categories', { requisition }),
   runs: () => api.get<{ runs: AdminRun[] }>('/admin/integrations/oracle/runs'),
   abandon: (runId: string) =>
     api.post<{ abandoned: boolean }>(`/admin/import-runs/${runId}/abandon`),

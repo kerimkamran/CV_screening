@@ -98,6 +98,8 @@ export class MemorySource implements ImportSource {
   listFault: ((cursor: string | null) => SourceError | null) | null = null;
   downloadFault: ((ref: { attachmentId: string }, n: number) => SourceError | null) | null = null;
   hold = 0;
+  /** Awaited before each download (after the hold): lets a spec change the database in step. */
+  beforeDownload: ((n: number) => Promise<void>) | null = null;
   /** Called after each page is read (restart specs drop the claim here). */
   afterPage: ((page: number) => Promise<void>) | null = null;
 
@@ -132,6 +134,7 @@ export class MemorySource implements ImportSource {
     try {
       if (this.hold) await new Promise((r) => setTimeout(r, this.hold));
       if (run.signal.aborted) throw run.signal.reason;
+      if (this.beforeDownload) await this.beforeDownload(this.downloads);
       const f = this.downloadFault?.(ref, this.downloads);
       if (f) throw f;
       const app = this.apps.find((a) =>

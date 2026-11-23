@@ -130,6 +130,17 @@ try {
      VALUES ($1,$2,'Linked',$3,'REQ-42','oracle_hcm','approved')`,
     [ID(712), ID(711), ID(702)],
   );
+  // 0043 first (the assertion key column), then 0042.
+  await down(client, { steps: 1 }, quiet);
+  assert.equal(
+    (
+      await client.query(
+        `SELECT 1 FROM information_schema.columns WHERE table_name = 'integration_connection' AND column_name = 'assertion_key_ciphertext'`,
+      )
+    ).rowCount,
+    0,
+  );
+  console.log('  ok  0043 down drops the assertion key column');
   await down(client, { steps: 1 }, quiet);
   assert.equal(
     (await client.query(`SELECT external_ref FROM vacancy WHERE id = $1`, [ID(712)])).rows[0]
@@ -155,10 +166,10 @@ try {
     `INSERT INTO import_tombstone (id, system, key_kind, key_hash, key_version, cause) VALUES ($1,'oracle_hcm','application',$2,1,'erase')`,
     [ID(713), '7'.repeat(64)],
   );
-  await assert.rejects(down(client, { steps: 2 }, quiet), /import_tombstone holds rows/);
+  await assert.rejects(down(client, { steps: 3 }, quiet), /import_tombstone holds rows/);
   console.log('  ok  0041 down refuses while the tombstone list holds a row');
   await client.query(`SET parallax.allow_tombstone_drop = 'on'`);
-  await down(client, { steps: 1 }, quiet); // 0042 already stepped down before the refusal
+  await down(client, { steps: 1 }, quiet); // 0043 and 0042 already stepped down before the refusal
   await client.query(`RESET parallax.allow_tombstone_drop`);
   await up(client, {}, quiet);
   await client.query(

@@ -412,6 +412,39 @@ export const AZ_ORACLE: Record<string, string> = {
   'Flag for review': 'Baxış üçün işarələyin',
   // admin.adv.gone.erase
   'Erase the CV here': 'Buradakı CV-ni silin',
+  // Gap fixes (Oracle developer review, 23 November 2026): sign-in, categories, file route, profile.
+  'OAuth (JWT assertion with a private key)': 'OAuth (məxfi açarla JWT təsdiqi)',
+  'Optional. Without it the client signs in with the same key.':
+    'Məcburi deyil. Olmadıqda müştəri eyni açarla daxil olur.',
+  Scope: 'Əhatə dairəsi (scope)',
+  'Certificate alias (key ID)': 'Sertifikatın ləqəbi (açar ID-si)',
+  'Private key (PEM)': 'Məxfi açar (PEM)',
+  'A key is saved. Paste a new one only to replace it.':
+    'Açar yadda saxlanılıb. Yalnız onu əvəz etmək üçün yenisini yapışdırın.',
+  'Paste the key that signs the assertion. It is stored encrypted and never shown again.':
+    'Təsdiqi imzalayan açarı yapışdırın. O, şifrələnmiş saxlanılır və bir daha göstərilmir.',
+  'Find the category names Oracle uses': 'Oracle-ın istifadə etdiyi kateqoriya adlarını tapın',
+  'Type one vacancy ID. Up to 20 applications are read; only names and counts are shown.':
+    'Bir vakansiya ID-si yazın. 20-yə qədər müraciət oxunur; yalnız adlar və saylar göstərilir.',
+  'Checking…': 'Yoxlanılır…',
+  Find: 'Tapın',
+  'No vacancy with this ID.': 'Bu ID ilə vakansiya yoxdur.',
+  'Category names': 'Kateqoriya adları',
+  'No files on these applications.': 'Bu müraciətlərdə fayl yoxdur.',
+  'counts as a CV': 'CV sayılır',
+  'not counted': 'sayılmır',
+  'How files are read': 'Faylların oxunma üsulu',
+  'File download (recommended)': 'Faylın endirilməsi (tövsiyə olunur)',
+  'File inside the answer': 'Cavabın içindəki fayl',
+  'Link to the content repository': 'Məzmun anbarına keçid',
+  'Change this only if the Oracle team says files cannot be read the recommended way.':
+    'Bunu yalnız Oracle komandası faylların tövsiyə olunan üsulla oxuna bilmədiyini desə dəyişin.',
+  'When an application has no CV, use the CV on the candidate profile':
+    'Müraciətdə CV olmadıqda namizədin profilindəki CV-dən istifadə edin',
+  'Off by default. The profile CV may be older than the application.':
+    'Standart olaraq söndürülüb. Profildəki CV müraciətdən köhnə ola bilər.',
+  'This is not an RSA private key in PEM form (-----BEGIN PRIVATE KEY-----).':
+    'Bu, PEM formatında RSA məxfi açarı deyil (-----BEGIN PRIVATE KEY-----).',
   // admin.adv.save
   Save: 'Yadda saxlayın',
   // Server sentences outside the table (same style).

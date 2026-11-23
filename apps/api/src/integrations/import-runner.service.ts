@@ -776,16 +776,18 @@ export class ImportRunnerService implements OnApplicationBootstrap, OnModuleDest
         }
         await this.db.withTx(async (tx) => {
           const kept = result.status === 'queued' || result.status === 'unreadable';
-          await tx.query(
-            `UPDATE import_item SET size_bytes = $2, document_id = COALESCE($3, document_id) WHERE id = $1`,
-            [item.id, file.bytes.length, kept ? (result.documentId ?? null) : null],
-          );
+          // The run row first, then the item: the same lock order as ending a run (`end` locks the
+          // run, then its items), so a file settling while another worker ends the run cannot deadlock.
           await this.progress(
             tx,
             runId,
             claim,
             `, fetched_bytes = fetched_bytes + $3, stats = jsonb_set(stats, '{fetched}', to_jsonb(COALESCE((stats->>'fetched')::int, 0) + 1))`,
             [file.bytes.length],
+          );
+          await tx.query(
+            `UPDATE import_item SET size_bytes = $2, document_id = COALESCE($3, document_id) WHERE id = $1`,
+            [item.id, file.bytes.length, kept ? (result.documentId ?? null) : null],
           );
         });
         if (result.code === 'vacancy_full') stopAll('full');

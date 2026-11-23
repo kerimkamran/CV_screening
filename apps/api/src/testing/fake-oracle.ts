@@ -6,11 +6,14 @@
  * The factory returns `fetch` (goes into `OracleHcmClient.fetcher`), `lookup` (stands in for DNS),
  * `state` (requisitions, applications, attachments and switches) and `calls` (the call log).
  */
+import { createPublicKey, verify } from 'node:crypto';
 import { crc32 } from 'node:zlib';
 
 export const FAKE_ORIGIN = 'https://parallax-test.fa.em2.oraclecloud.com';
 export const FAKE_FOREIGN = 'https://elsewhere.fa.em2.oraclecloud.com';
 export const FAKE_TOKEN_URL = 'https://idcs-parallax.identity.oraclecloud.com/oauth2/v1/token';
+/** The same fake Oracle on a company's own domain (gap fix: `ORACLE_OWN_HOSTS`). */
+export const FAKE_OWN_ORIGIN = 'https://hcm.parallax-test.example';
 const BASE = '/hcmRestApi/resources/11.13.18.05';
 const CONTENT = '/content/conn/FusionAppsContentRepository';
 /** The plan's field list (a copy: this file imports nothing from the app). */
@@ -35,7 +38,13 @@ const ALLOWED = new Set([
   'DmDocumentId',
   'FileUrl',
   'FileContents',
+  'CandidateNumber',
 ]);
+/** Oracle addresses one attachment by a hash key, not by its ID (a client must use the self link). */
+const keyOf = (id: string) =>
+  `00020000000EACED0005770800${Buffer.from(id).toString('hex').toUpperCase()}`;
+const idOfKey = (k: string) =>
+  k.startsWith('00020000000EACED0005770800') ? Buffer.from(k.slice(26), 'hex').toString() : k; // a bare ID still answers (the fileUrl and inline routes of older tests)
 
 export type FileKind =
   'txt' | 'pdf' | 'docx' | 'doc' | 'docAsPdf' | 'noExtension' | 'oversize' | 'docxBomb';
@@ -62,6 +71,8 @@ export interface FakeApplication {
   attachments: FakeAttachment[];
   /** The candidate name written inside the CV text (the scripted model reads it back). */
   name: string;
+  /** Files on the candidate profile only (gap fix: profile-only CVs). */
+  profile?: FakeAttachment[];
 }
 export interface FakeRequisition {
   id: string;
@@ -92,6 +103,14 @@ export interface FakeSwitches {
   /** OAuth: the client secret the token route accepts, and how long a token lives. */
   clientSecret: string;
   tokenSeconds: number;
+  /** OAuth JWT assertion: the client ID, the certificate alias and its public key (PEM). */
+  clientId: string;
+  keyId: string;
+  assertionPublicKey: string | null;
+  /** The enclosure (FileContents) download answers 403: the account may not read files that way. */
+  enclosureForbidden: boolean;
+  /** Attachment links point at this origin instead (a foreign link must not be followed). */
+  linkOrigin: string | null;
 }
 
 export interface CallEntry {
@@ -111,6 +130,10 @@ export interface CallEntry {
 export interface SeedFile {
   kind?: FileKind;
   sizeBytes?: number;
+  /** The attachment category (default `Resume`). */
+  category?: string;
+  /** The file sits on the candidate profile, not on the application. */
+  onProfile?: boolean;
 }
 export interface SeedRequisition {
   number: string;
@@ -298,6 +321,11 @@ const DEFAULTS = (): FakeSwitches => ({
   pace: null,
   clientSecret: 'fake-client-secret',
   tokenSeconds: 3600,
+  clientId: 'parallax-client',
+  keyId: 'parallax-cert',
+  assertionPublicKey: null,
+  enclosureForbidden: false,
+  linkOrigin: null,
 });
 
 export function createFakeOracle(seedNumber = 1): FakeOracle {
@@ -380,7 +408,7 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
               : '.txt';
     return {
       id: id(),
-      category: 'Resume',
+      category: f?.category ?? 'Resume',
       fileName:
         kind === 'noExtension'
           ? 'Resume'
@@ -415,7 +443,8 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
         attachments: [],
       };
       const f = r.files?.[k];
-      if (f !== null) app.attachments.push(attachment(app, f ?? undefined, 1));
+      if (f?.onProfile) app.profile = [attachment(app, f, 1)];
+      else if (f !== null) app.attachments.push(attachment(app, f ?? undefined, 1));
       req.applications.push(app);
     }
     requisitions.set(r.number, req);
@@ -474,13 +503,16 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
     h?.forEach((go) => go());
   };
   fake.inFlight = () => inFlight;
-  fake.downloads = () => calls.filter((c) => c.resource === 'file' && c.status === 200).length;
+  fake.downloads = () =>
+    calls.filter((c) => (c.resource === 'file' || c.resource === 'enclosure') && c.status === 200)
+      .length;
   fake.state = { requisitions, switches, served };
   Object.defineProperty(fake.state, 'switches', { get: () => switches });
   fake.calls = calls;
 
   fake.lookup = async (host: string) => {
     if (host.endsWith('.oraclecloud.com')) return ['129.146.10.20'];
+    if (host === new URL(FAKE_OWN_ORIGIN).hostname) return ['129.146.10.21'];
     if (host === 'localhost') return ['127.0.0.1'];
     throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' });
   };
@@ -542,6 +574,9 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
   function resourceOf(path: string) {
     if (path.startsWith(CONTENT)) return 'file';
     if (path.includes('/oauth2/')) return 'token';
+    if (path.endsWith('/enclosure/FileContents')) return 'enclosure';
+    if (path.includes('recruitingCandidates') && !path.includes('/child/'))
+      return 'recruitingCandidates';
     if (path.includes('/child/attachments/')) return 'attachment';
     if (path.includes('/child/attachments')) return 'attachments';
     if (path.includes('recruitingJobApplications')) return 'recruitingJobApplications';
@@ -559,18 +594,32 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
     const s = switches;
     // The OAuth token route.
     if (u.origin + u.pathname === FAKE_TOKEN_URL) {
+      const form = new URLSearchParams(typeof init.body === 'string' ? init.body : '');
       const [, cred] = authz.split(' ');
-      const secret = Buffer.from(cred ?? '', 'base64')
+      const [basicId, secret] = Buffer.from(cred ?? '', 'base64')
         .toString()
-        .split(':')[1];
-      if (secret !== s.clientSecret) return json(401, { error: 'invalid_client' });
+        .split(':');
+      const grant = form.get('grant_type');
+      if (grant === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
+        // The documented user assertion: RS256, the alias as kid, sub = the user, iss = the client.
+        const user = checkAssertion(form.get('assertion'));
+        if (!user || user.sub !== s.user || user.iss !== s.clientId)
+          return json(400, { error: 'invalid_grant' });
+        const clientOk = authz
+          ? basicId === s.clientId && secret === s.clientSecret
+          : form.get('client_assertion_type') ===
+              'urn:ietf:params:oauth:client-assertion-type:jwt-bearer' &&
+            checkAssertion(form.get('client_assertion'))?.sub === s.clientId;
+        if (!clientOk) return json(401, { error: 'invalid_client' });
+      } else if (secret !== s.clientSecret) return json(401, { error: 'invalid_client' });
       const t = `tok-${id()}`;
       tokens.set(t, Date.now() + s.tokenSeconds * 1000);
-      void init;
       return json(200, { access_token: t, token_type: 'Bearer', expires_in: s.tokenSeconds });
     }
     if (u.origin === FAKE_FOREIGN) return json(200, { items: [] });
-    if (u.origin !== FAKE_ORIGIN) return new Response('no such host', { status: 502 });
+    const origin = u.origin;
+    if (origin !== FAKE_ORIGIN && origin !== FAKE_OWN_ORIGIN)
+      return new Response('no such host', { status: 502 });
     if (s.hang === 'headers') await new Promise(() => undefined);
     // Sign-in.
     const isFile = u.pathname.startsWith(CONTENT);
@@ -684,15 +733,38 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
           : {}),
       });
     }
-    // Attachments of one application, and one attachment.
-    const m = /^recruitingJobApplications\/([^/]+)\/child\/attachments(?:\/([^/?]+))?$/.exec(rest);
+    // A candidate profile, found by the person ID of an application (documented finder).
+    if (rest === 'recruitingCandidates') {
+      const pid = /findByPersonId;personId=([^;&]+)/.exec(u.searchParams.get('finder') ?? '')?.[1];
+      const app = [...requisitions.values()]
+        .flatMap((r) => r.applications)
+        .find((a) => a.personId === pid);
+      return json(200, {
+        items: app && !app.purged ? [pick({ CandidateNumber: `CAND${app.personId}` }, fields)] : [],
+        hasMore: false,
+      });
+    }
+    // Attachments of an application or a candidate, one attachment, and its FileContents.
+    const m =
+      /^(recruitingJobApplications|recruitingCandidates)\/([^/]+)\/child\/attachments(?:\/([^/?]+))?(\/enclosure\/FileContents)?$/.exec(
+        rest,
+      );
     if (m) {
-      const app = findApp(decodeURIComponent(m[1]!));
+      const ownerId = decodeURIComponent(m[2]!);
+      const app =
+        m[1] === 'recruitingJobApplications'
+          ? findApp(ownerId)
+          : [...requisitions.values()]
+              .flatMap((r) => r.applications)
+              .find((a) => `CAND${a.personId}` === ownerId);
       if (!app || app.purged) return json(404, { title: 'Not Found' });
-      if (!m[2])
+      const list = m[1] === 'recruitingJobApplications' ? app.attachments : (app.profile ?? []);
+      const self = (t: FakeAttachment) =>
+        `${s.linkOrigin ?? origin}${BASE}/${m[1]}/${encodeURIComponent(ownerId)}/child/attachments/${keyOf(t.id)}`;
+      if (!m[3])
         return json(200, {
-          items: app.attachments.map((t) =>
-            pick(
+          items: list.map((t) => ({
+            ...pick(
               {
                 AttachedDocumentId: t.id,
                 CategoryName: t.category,
@@ -704,11 +776,29 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
               },
               fields,
             ),
-          ),
+            // Oracle sends link relations unless the call asks for data only.
+            ...(u.searchParams.get('onlyData') === 'true'
+              ? {}
+              : {
+                  links: [
+                    { rel: 'self', href: self(t), name: 'attachments', kind: 'item' },
+                    {
+                      rel: 'enclosure',
+                      href: `${self(t)}/enclosure/FileContents`,
+                      name: 'FileContents',
+                      kind: 'other',
+                    },
+                  ],
+                }),
+          })),
           hasMore: false,
         });
-      const att = app.attachments.find((t) => t.id === decodeURIComponent(m[2]!));
+      const att = list.find((t) => t.id === idOfKey(decodeURIComponent(m[3]!)));
       if (!att) return json(404, { title: 'Not Found' });
+      if (m[4]) {
+        if (s.enclosureForbidden) return json(403, { title: 'Forbidden' });
+        return sendBytes(att, app);
+      }
       if (s.download === 'fileContents' || fields?.includes('FileContents'))
         return json(
           200,
@@ -736,6 +826,10 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
     if (!app || !att) return new Response('gone', { status: 404 });
     if (Number(u.searchParams.get('exp')) < Date.now())
       return new Response('expired', { status: 401 });
+    return sendBytes(att, app);
+  }
+
+  function sendBytes(att: FakeAttachment, app: FakeApplication): Response {
     const bytes = bytesOf(att, app);
     served.set(att.id, (served.get(att.id) ?? 0) + bytes.length);
     const s = switches;
@@ -763,6 +857,31 @@ export function createFakeOracle(seedNumber = 1): FakeOracle {
       status: 200,
       headers: { 'content-type': 'application/octet-stream' },
     });
+  }
+
+  /** The claims of an RS256 assertion signed by the trusted key with the right alias, or null. */
+  function checkAssertion(jwt: string | null): { sub: string; iss: string } | null {
+    const pem = switches.assertionPublicKey;
+    if (!jwt || !pem) return null;
+    const [h, b, sig] = jwt.split('.');
+    if (!h || !b || !sig) return null;
+    try {
+      const header = JSON.parse(Buffer.from(h, 'base64url').toString()) as Record<string, unknown>;
+      const body = JSON.parse(Buffer.from(b, 'base64url').toString()) as Record<string, unknown>;
+      if (header['alg'] !== 'RS256' || header['kid'] !== switches.keyId) return null;
+      const ok = verify(
+        'RSA-SHA256',
+        Buffer.from(`${h}.${b}`),
+        createPublicKey(pem),
+        Buffer.from(sig, 'base64url'),
+      );
+      const aud = Array.isArray(body['aud']) ? body['aud'] : [body['aud']];
+      if (!ok || !aud.includes('https://identity.oraclecloud.com/')) return null;
+      if (typeof body['exp'] !== 'number' || body['exp'] * 1000 < Date.now()) return null;
+      return { sub: String(body['sub']), iss: String(body['iss']) };
+    } catch {
+      return null;
+    }
   }
 
   return fake;

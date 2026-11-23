@@ -6,6 +6,7 @@ import {
   ACTIVATE_CODES,
   oracleAdmin,
   type ActivateAnswer,
+  type CategoryCheck,
   type ActivateCode,
   type AdminRun,
   type AdminView,
@@ -463,11 +464,22 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
   const t = useT();
   const s = view.settings;
   const c = view.connection;
-  const [oauth, setOauth] = useState(c?.authMode === 'oauth_client_credentials');
+  const [mode, setMode] = useState<'basic' | 'oauth_client_credentials' | 'oauth_jwt_assertion'>(
+    c?.authMode ?? 'basic',
+  );
+  const oauth = mode !== 'basic';
   const [tokenUrl, setTokenUrl] = useState(c?.tokenUrl ?? '');
   const [clientId, setClientId] = useState(s.clientId ?? '');
   const [clientSecret, setClientSecret] = useState('');
+  const [scope, setScope] = useState(s.scope ?? '');
+  const [keyId, setKeyId] = useState(s.keyId ?? '');
+  const [privateKey, setPrivateKey] = useState('');
+  const [route, setRoute] = useState(s.downloadRoute ?? 'enclosure');
+  const [profile, setProfile] = useState(Boolean(s.profileFallback));
   const [categories, setCategories] = useState(s.categories.join(', '));
+  const [checkRef, setCheckRef] = useState('');
+  const [check, setCheck] = useState<CategoryCheck | null>(null);
+  const [checking, setChecking] = useState(false);
   const [lead, setLead] = useState(s.linkPolicy === 'lead_approval');
   const [eu, setEu] = useState(s.requireEuAi);
   const [gone, setGone] = useState(s.goneInSource);
@@ -476,20 +488,28 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const euHint = useId();
+  const routeHint = useId();
+  const profileHint = useId();
   if (!c) return null;
+  const list = categories
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
   const save = async () => {
     setSaved(false);
     setError('');
     try {
       await oracleAdmin.settings({
-        authMode: oauth ? 'oauth_client_credentials' : 'basic',
+        authMode: mode,
         tokenUrl: oauth ? tokenUrl || null : null,
         clientId: clientId || null,
+        scope: scope || null,
+        keyId: keyId || null,
         ...(clientSecret ? { clientSecret } : {}),
-        categories: categories
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean),
+        ...(privateKey ? { privateKey } : {}),
+        downloadRoute: route,
+        profileFallback: profile,
+        categories: list,
         linkPolicy: lead ? 'lead_approval' : 'open',
         requireEuAi: eu,
         goneInSource: gone,
@@ -497,11 +517,28 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
         noticeEffectiveFrom: noticeFrom || null,
       });
       setClientSecret('');
+      setPrivateKey('');
       setSaved(true);
       await reload();
     } catch (e) {
       setError(errMsg(e));
     }
+  };
+  const findCategories = async () => {
+    setError('');
+    setCheck(null);
+    setChecking(true);
+    try {
+      setCheck(await oracleAdmin.categories(checkRef.trim()));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+  const addCategory = (name: string) => {
+    if (!list.some((x) => x.toLowerCase() === name.toLowerCase()))
+      setCategories([...list, name].join(', '));
   };
   return (
     <details className="rounded-xl border border-line p-3">
@@ -514,8 +551,8 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
             <input
               type="radio"
               name="oracle-signin"
-              checked={!oauth}
-              onChange={() => setOauth(false)}
+              checked={mode === 'basic'}
+              onChange={() => setMode('basic')}
             />
             {t('User name and password')}
           </label>
@@ -523,10 +560,19 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
             <input
               type="radio"
               name="oracle-signin"
-              checked={oauth}
-              onChange={() => setOauth(true)}
+              checked={mode === 'oauth_client_credentials'}
+              onChange={() => setMode('oauth_client_credentials')}
             />
             {t('OAuth (client ID and secret)')}
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="oracle-signin"
+              checked={mode === 'oauth_jwt_assertion'}
+              onChange={() => setMode('oauth_jwt_assertion')}
+            />
+            {t('OAuth (JWT assertion with a private key)')}
           </label>
         </fieldset>
         {oauth && (
@@ -545,13 +591,49 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
                 onChange={(e) => setClientId(e.target.value)}
               />
             </Field>
-            <Field label={t('Client secret')}>
+            <Field
+              label={t('Client secret')}
+              hint={
+                mode === 'oauth_jwt_assertion'
+                  ? t('Optional. Without it the client signs in with the same key.')
+                  : undefined
+              }
+            >
               <input
                 type="password"
                 autoComplete="new-password"
                 className={input}
                 value={clientSecret}
+                placeholder={c.clientSecretSaved ? '••••••' : ''}
                 onChange={(e) => setClientSecret(e.target.value)}
+              />
+            </Field>
+            <Field label={t('Scope')}>
+              <input className={input} value={scope} onChange={(e) => setScope(e.target.value)} />
+            </Field>
+          </>
+        )}
+        {mode === 'oauth_jwt_assertion' && (
+          <>
+            <Field label={t('Certificate alias (key ID)')}>
+              <input className={input} value={keyId} onChange={(e) => setKeyId(e.target.value)} />
+            </Field>
+            <Field
+              label={t('Private key (PEM)')}
+              hint={
+                c.privateKeySaved
+                  ? t('A key is saved. Paste a new one only to replace it.')
+                  : t(
+                      'Paste the key that signs the assertion. It is stored encrypted and never shown again.',
+                    )
+              }
+            >
+              <textarea
+                className={`${input} h-28 font-mono text-xs`}
+                autoComplete="off"
+                spellCheck={false}
+                value={privateKey}
+                onChange={(e) => setPrivateKey(e.target.value)}
               />
             </Field>
           </>
@@ -563,6 +645,106 @@ function Advanced({ view, reload }: { view: AdminView; reload: () => Promise<voi
             onChange={(e) => setCategories(e.target.value)}
           />
         </Field>
+        <div className="space-y-2 rounded-lg border border-line bg-page p-2">
+          <Field
+            label={t('Find the category names Oracle uses')}
+            hint={t(
+              'Type one vacancy ID. Up to 20 applications are read; only names and counts are shown.',
+            )}
+          >
+            <div className="flex gap-2">
+              <input
+                className={input}
+                value={checkRef}
+                onChange={(e) => setCheckRef(e.target.value)}
+              />
+              <button
+                type="button"
+                className={btnSecondary}
+                disabled={!checkRef.trim() || checking}
+                onClick={() => void findCategories()}
+              >
+                {checking ? t('Checking…') : t('Find')}
+              </button>
+            </div>
+          </Field>
+          {check && !check.found && <p role="status">{t('No vacancy with this ID.')}</p>}
+          {check?.found && (
+            <ul className="space-y-1" aria-label={t('Category names')}>
+              {check.categories.length === 0 && <li>{t('No files on these applications.')}</li>}
+              {check.categories.map((x) => (
+                <li key={x.name} className="flex items-center gap-2">
+                  <span className="font-mono text-sm">{x.name}</span>
+                  <span className="text-xs text-ink-3">
+                    {x.files === 1 ? t('{n} file', { n: x.files }) : t('{n} files', { n: x.files })}{' '}
+                    ·{' '}
+                    {x.counted || list.some((y) => y.toLowerCase() === x.name.toLowerCase())
+                      ? t('counts as a CV')
+                      : t('not counted')}
+                  </span>
+                  {!x.counted && !list.some((y) => y.toLowerCase() === x.name.toLowerCase()) && (
+                    <button
+                      type="button"
+                      className={btnSecondary}
+                      onClick={() => addCategory(x.name)}
+                    >
+                      {t('Add')}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <fieldset className="space-y-1" aria-describedby={routeHint}>
+          <legend className="font-medium">{t('How files are read')}</legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="oracle-route"
+              checked={route === 'enclosure'}
+              onChange={() => setRoute('enclosure')}
+            />
+            {t('File download (recommended)')}
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="oracle-route"
+              checked={route === 'inline'}
+              onChange={() => setRoute('inline')}
+            />
+            {t('File inside the answer')}
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="oracle-route"
+              checked={route === 'fileUrl'}
+              onChange={() => setRoute('fileUrl')}
+            />
+            {t('Link to the content repository')}
+          </label>
+          <p id={routeHint} className="text-xs text-ink-3">
+            {t(
+              'Change this only if the Oracle team says files cannot be read the recommended way.',
+            )}
+          </p>
+        </fieldset>
+        <div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={profile}
+              aria-describedby={profileHint}
+              onChange={(e) => setProfile(e.target.checked)}
+            />
+            {t('When an application has no CV, use the CV on the candidate profile')}
+          </label>
+          <p id={profileHint} className="text-xs text-ink-3">
+            {t('Off by default. The profile CV may be older than the application.')}
+          </p>
+        </div>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={lead} onChange={(e) => setLead(e.target.checked)} />
           {t('A team lead approves each link')}
