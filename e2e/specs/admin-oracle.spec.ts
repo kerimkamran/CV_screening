@@ -83,3 +83,72 @@ uat(
     await expect(page.locator('main input')).toHaveCount(0);
   },
 );
+
+uat(
+  'AD-30',
+  'Advanced, gap fixes: JWT assertion fields, the file route, the profile CV, and Find category names (Oracle review)',
+  { on: ['D'] },
+  async ({ page, ux, meta }) => {
+    const t = T(meta.lang);
+    const saves: Record<string, unknown>[] = [];
+    await oracleAdminApi(page, {
+      view: () => ADMIN_ACTIVE,
+      categories: (ref) =>
+        ref === 'REQ-9'
+          ? {
+              found: true,
+              applicationsChecked: 2,
+              categories: [
+                { name: 'IRC_CANDIDATE_RESUME', files: 2, counted: false },
+                { name: 'Certificate', files: 1, counted: false },
+              ],
+            }
+          : { found: false, applicationsChecked: 0, categories: [] },
+      onSettings: (b) => saves.push(b),
+    });
+    await page.goto('about:blank');
+    await page.goto('/#/admin/oracle');
+    await page.locator('summary', { hasText: t('Advanced') }).click();
+    // The JWT assertion shows its own fields; the key goes in a text area, never shown back.
+    await page.getByRole('radio', { name: t('OAuth (JWT assertion with a private key)') }).check();
+    await expect(page.getByLabel(t('Certificate alias (key ID)'))).toBeVisible();
+    await expect(
+      page.getByLabel(new RegExp(`^${t('Private key (PEM)').replace(/[()]/g, '\\$&')}`)),
+    ).toBeVisible();
+    await expect(page.getByLabel(t('Scope'))).toBeVisible();
+    // Find category names: unknown ID, then a vacancy; Add puts the name in the list.
+    const find = page.getByLabel(new RegExp(`^${t('Find the category names Oracle uses')}`));
+    await find.fill('NOPE');
+    await page.getByRole('button', { name: t('Find'), exact: true }).click();
+    await expect(page.getByText(t('No vacancy with this ID.'))).toBeVisible();
+    await find.fill('REQ-9');
+    await page.getByRole('button', { name: t('Find'), exact: true }).click();
+    const names = page.getByRole('list', { name: t('Category names') });
+    await expect(names.getByText('IRC_CANDIDATE_RESUME')).toBeVisible();
+    await names
+      .getByRole('listitem')
+      .first()
+      .getByRole('button', { name: t('Add') })
+      .click();
+    await expect(
+      page.getByLabel(t('Oracle file categories that count as a CV (separate with commas)')),
+    ).toHaveValue('Resume, IRC_CANDIDATE_RESUME');
+    await expect(names.getByRole('listitem').first()).toContainText(t('counts as a CV'));
+    await page.getByRole('radio', { name: t('File inside the answer') }).check();
+    await page
+      .getByRole('checkbox', {
+        name: t('When an application has no CV, use the CV on the candidate profile'),
+      })
+      .check();
+    await ux.check('Advanced with the gap-fix settings', [...STD, 'AZ']);
+    await page.getByRole('button', { name: t('Save'), exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: t('Saved.') })).toBeVisible();
+    expect(saves.at(-1)).toMatchObject({
+      authMode: 'oauth_jwt_assertion',
+      downloadRoute: 'inline',
+      profileFallback: true,
+      categories: ['Resume', 'IRC_CANDIDATE_RESUME'],
+    });
+    expect(saves.at(-1)).not.toHaveProperty('privateKey');
+  },
+);
