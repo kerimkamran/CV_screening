@@ -26,18 +26,25 @@ import {
   oracleOrigin,
   resolvesPublic,
 } from './oracle-address';
+import { SourceError } from '../import-source';
 import {
   aadFor,
+  AuthCircuitOpen,
+  categoryKey,
+  isRsaPrivateKey,
   OracleConnectionService,
   type ConnectionRow,
   type OracleSettings,
 } from './oracle-connection.service';
+import { DOWNLOAD_ROUTES } from './oracle-hcm.client';
 import { OracleEnabledGuard } from './oracle-enabled.guard';
 import { refuse } from './oracle-refusals';
 
 export type ActivateCode =
   'ok' | 'auth_failed' | 'empty_scope' | 'unreachable' | 'not_oracle_address';
 export const NOT_ORACLE_ADDRESS = `This is not an Oracle address. It must start with https:// and end in ${ORACLE_HOST_SUFFIX}.`;
+/** How many applications "Find category names" reads at most (each costs one attachments call). */
+const CATEGORY_SAMPLE = 20;
 const TEST_EVERY_MS = 5 * 60_000;
 const DATE = z
   .string()
@@ -62,6 +69,11 @@ export class OracleAdminController {
     private readonly conns: OracleConnectionService,
   ) {}
 
+  /** The operator's own Oracle hosts (`ORACLE_OWN_HOSTS`), allowed besides `*.oraclecloud.com`. */
+  private get own() {
+    return this.conns.client.ownHosts;
+  }
+
   private async view(row: ConnectionRow | null) {
     const s = this.conns.settings(row);
     const name = async (id: string | null) =>
@@ -77,6 +89,7 @@ export class OracleAdminController {
       available: true,
       example: ORACLE_EXAMPLE_ADDRESS,
       suffix: ORACLE_HOST_SUFFIX,
+      ownHosts: [...this.own],
       notOracleAddress: NOT_ORACLE_ADDRESS,
       settings: {
         linkPolicy: s.linkPolicy,
@@ -85,6 +98,9 @@ export class OracleAdminController {
         categories: s.categories,
         clientId: s.clientId ?? null,
         scope: s.scope ?? null,
+        keyId: s.keyId ?? null,
+        downloadRoute: s.downloadRoute,
+        profileFallback: s.profileFallback,
       },
       connection: row
         ? {
@@ -101,6 +117,7 @@ export class OracleAdminController {
             passwordSetAt: row.secret_set_at ? new Date(row.secret_set_at).toISOString() : null,
             passwordExpiresOn: row.secret_expires_on,
             clientSecretSaved: Boolean(row.client_secret_ciphertext),
+            privateKeySaved: Boolean(row.assertion_key_ciphertext),
             notice: row.notice_attested_at
               ? {
                   by: await name(row.notice_attested_by),
@@ -158,7 +175,7 @@ export class OracleAdminController {
       // Replace password: the saved address, user name and tick stand; the new password is tested in memory.
       if (!b.password)
         throw new BadRequestException({ message: 'Type the password.', missing: ['password'] });
-      const origin = oracleOrigin(row.base_url)!;
+      const origin = oracleOrigin(row.base_url, this.own)!;
       const code = await this.conns.client.testCall(
         this.conns.target(row, { origin, user: row.principal_name, password: b.password }),
       );
@@ -188,7 +205,7 @@ export class OracleAdminController {
       !b.password &&
       row?.secret_ciphertext &&
       b.address !== undefined &&
-      oracleOrigin(b.address) === oracleOrigin(row.base_url) &&
+      oracleOrigin(b.address, this.own) === oracleOrigin(row.base_url, this.own) &&
       b.user === row.principal_name;
     const missing = [
       !b.address?.trim() && 'address',
@@ -197,7 +214,7 @@ export class OracleAdminController {
       b.notice !== true && !(row?.notice_attested_at && keepPassword) && 'notice',
     ].filter(Boolean) as string[];
     if (missing.length) throw new BadRequestException({ message: 'Fill in every field.', missing });
-    const origin = oracleOrigin(b.address);
+    const origin = oracleOrigin(b.address, this.own);
     if (!origin || !(await resolvesPublic(host(origin), this.conns.client.lookup))) {
       // Nothing is saved; an earlier connection stays as it was.
       await this.record(p, req.ip, 'oracle.activate', id, { code: 'not_oracle_address' });
@@ -207,7 +224,7 @@ export class OracleAdminController {
         message: NOT_ORACLE_ADDRESS,
       };
     }
-    if (row && oracleOrigin(row.base_url) !== origin) {
+    if (row && oracleOrigin(row.base_url, this.own) !== origin) {
       const running = await this.db.query(
         `SELECT 1 FROM import_run WHERE state IN ('queued','running','awaiting_confirm') LIMIT 1`,
       );
@@ -294,9 +311,82 @@ export class OracleAdminController {
     );
     await this.record(p, req.ip, 'oracle.test', row.id, {
       code,
-      host: new URL(oracleOrigin(row.base_url) ?? 'https://invalid').hostname,
+      host: new URL(oracleOrigin(row.base_url, this.own) ?? 'https://invalid').hostname,
     });
     return { code, enabled: r.rows[0]!.enabled };
+  }
+
+  /**
+   * Gap fix: which attachment categories Oracle really uses. For one vacancy number it reads up to
+   * 20 applications and lists each category name with how many files carry it, and whether
+   * parallax counts it as a CV today. Names and counts only: no file, no applicant.
+   */
+  @Post('categories')
+  @HttpCode(200)
+  async categories(
+    @Body() body: unknown,
+    @CurrentPrincipal() p: Principal,
+    @Req() req: FastifyRequest,
+  ) {
+    const b = parse(
+      z.object({
+        requisition: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .regex(/^[A-Za-z0-9_.-]+$/),
+      }),
+      body ?? {},
+    );
+    const row = await this.conns.row();
+    if (!row?.enabled) throw new ConflictException('Activate first.');
+    if (row.auth_failed_at) throw refuse('ORACLE_AUTH');
+    if (!(await this.conns.client.budgetLeft(row.id))) throw refuse('ORACLE_BUDGET');
+    const client = this.conns.client;
+    const counted = new Set(this.conns.settings(row).categories.map(categoryKey));
+    const seen = new Map<string, number>();
+    let apps: Record<string, unknown>[];
+    try {
+      const req0 = await this.conns.call((t) => client.findRequisition(t, b.requisition));
+      if (!req0) {
+        await this.record(p, req.ip, 'oracle.categories_checked', row.id, {
+          requisition: b.requisition,
+          applications: 0,
+        });
+        return { found: false, applicationsChecked: 0, categories: [] };
+      }
+      const page = await this.conns.call((t) => client.listApplications(t, req0.id, null));
+      apps = page.items.slice(0, CATEGORY_SAMPLE);
+      for (const it of apps) {
+        const atts = await this.conns.call((t) =>
+          client.attachments(t, String(it['JobApplicationId'])),
+        );
+        for (const a of atts) {
+          const name = String(a['CategoryName'] ?? '').trim() || '(none)';
+          seen.set(name, (seen.get(name) ?? 0) + 1);
+        }
+      }
+    } catch (e) {
+      if (e instanceof AuthCircuitOpen) throw refuse('ORACLE_AUTH');
+      if (e instanceof SourceError) {
+        if (e.code === 'auth') throw refuse('ORACLE_AUTH');
+        if (e.code === 'budget') throw refuse('ORACLE_BUDGET');
+        throw refuse('ORACLE_UNAVAILABLE');
+      }
+      throw e;
+    }
+    await this.record(p, req.ip, 'oracle.categories_checked', row.id, {
+      requisition: b.requisition,
+      applications: apps.length,
+    });
+    return {
+      found: true,
+      applicationsChecked: apps.length,
+      categories: [...seen.entries()]
+        .sort((x, y) => y[1] - x[1])
+        .map(([name, files]) => ({ name, files, counted: counted.has(categoryKey(name)) })),
+    };
   }
 
   /** Turn off: the import is switched off and every active run is cancelled; CVs already imported stay. */
@@ -347,6 +437,10 @@ export class OracleAdminController {
         clientId: z.string().trim().max(500).nullable().optional(),
         clientSecret: z.string().max(2000).optional(),
         scope: z.string().trim().max(500).nullable().optional(),
+        keyId: z.string().trim().max(200).nullable().optional(),
+        privateKey: z.string().max(10_000).optional(),
+        downloadRoute: z.enum(DOWNLOAD_ROUTES).optional(),
+        profileFallback: z.boolean().optional(),
         categories: z.array(z.string().trim().min(1).max(100)).min(1).max(20).optional(),
         linkPolicy: z.enum(['open', 'lead_approval']).optional(),
         requireEuAi: z.boolean().optional(),
@@ -358,8 +452,12 @@ export class OracleAdminController {
     );
     const row = await this.conns.row();
     if (!row) throw new ConflictException('Activate first.');
-    if (b.tokenUrl && !oracleOrigin(b.tokenUrl))
+    if (b.tokenUrl && !oracleOrigin(b.tokenUrl, this.own))
       throw new BadRequestException({ message: NOT_ORACLE_ADDRESS });
+    if (b.privateKey && !isRsaPrivateKey(b.privateKey))
+      throw new BadRequestException({
+        message: 'This is not an RSA private key in PEM form (-----BEGIN PRIVATE KEY-----).',
+      });
     const cur = this.conns.settings(row);
     const changes: { field: string; before: unknown; after: unknown }[] = [];
     const next: Partial<OracleSettings> = { ...row.settings };
@@ -370,6 +468,9 @@ export class OracleAdminController {
       'categories',
       'clientId',
       'scope',
+      'keyId',
+      'downloadRoute',
+      'profileFallback',
     ] as const) {
       if (b[k] === undefined) continue;
       const v = b[k] === null ? undefined : b[k];
@@ -388,7 +489,11 @@ export class OracleAdminController {
     };
     if (b.authMode !== undefined) col('auth_mode', row.auth_mode, b.authMode);
     if (b.tokenUrl !== undefined)
-      col('token_url', row.token_url, b.tokenUrl ? oracleOrigin(b.tokenUrl) && b.tokenUrl : null);
+      col(
+        'token_url',
+        row.token_url,
+        b.tokenUrl ? oracleOrigin(b.tokenUrl, this.own) && b.tokenUrl : null,
+      );
     if (b.passwordExpiresOn !== undefined)
       col('secret_expires_on', row.secret_expires_on, b.passwordExpiresOn);
     if (b.noticeEffectiveFrom !== undefined)
@@ -397,6 +502,11 @@ export class OracleAdminController {
       vals.push(this.crypto.encrypt(b.clientSecret, aadFor(row.id, 'client_secret')));
       cols.push(`client_secret_ciphertext = $${vals.length}`);
       changes.push({ field: 'clientSecret', before: null, after: 'replaced' });
+    }
+    if (b.privateKey) {
+      vals.push(this.crypto.encrypt(b.privateKey, aadFor(row.id, 'assertion_key')));
+      cols.push(`assertion_key_ciphertext = $${vals.length}`);
+      changes.push({ field: 'privateKey', before: null, after: 'replaced' });
     }
     if (!changes.length) return this.view(row);
     await this.db.withTx(async (tx) => {
