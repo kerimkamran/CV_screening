@@ -84,4 +84,20 @@ describe('loadEnv (PLAT-05)', () => {
     });
     expect(ok.ORACLE_IMPORT_ENABLED).toBe('true');
   });
+
+  it('accepts own Oracle hosts as exact names only (gap fix)', () => {
+    const base = { ...OIDC, DATABASE_URL: 'postgres://h/d' };
+    expect(
+      loadEnv({ ...base, ORACLE_OWN_HOSTS: 'hcm.azerconnect.az, oracle.example.org' })
+        .ORACLE_OWN_HOSTS,
+    ).toBe('hcm.azerconnect.az, oracle.example.org');
+    for (const bad of [
+      'https://hcm.azerconnect.az',
+      '*.azerconnect.az',
+      '10.0.0.5',
+      'hcm:443',
+      'local',
+    ])
+      expect(() => loadEnv({ ...base, ORACLE_OWN_HOSTS: bad })).toThrow(/ORACLE_OWN_HOSTS/);
+  });
 });
