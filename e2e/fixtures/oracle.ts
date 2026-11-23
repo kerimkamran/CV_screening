@@ -117,6 +117,10 @@ export async function oracleAdminApi(
     view: () => Record<string, unknown> | 404;
     activate?: () => Record<string, unknown>;
     runs?: unknown[];
+    /** Find category names (gap fix): the answer for one vacancy ID. */
+    categories?: (requisition: string) => Record<string, unknown>;
+    /** Receives each Advanced save body. */
+    onSettings?: (body: Record<string, unknown>) => void;
   },
 ) {
   return mockApi(page, {
@@ -137,6 +141,15 @@ export async function oracleAdminApi(
       if (p === '/admin/integrations/oracle/runs') return json({ runs: o.runs ?? [] });
       if (p === '/admin/integrations/oracle/activate')
         return json(o.activate?.() ?? { code: 'ok', enabled: true });
+      if (p === '/admin/integrations/oracle/categories' && o.categories) {
+        const b = route.request().postDataJSON() as { requisition: string };
+        return json(o.categories(b.requisition));
+      }
+      if (p === '/admin/integrations/oracle/settings' && method === 'PUT') {
+        o.onSettings?.(route.request().postDataJSON() as Record<string, unknown>);
+        const v = o.view();
+        return json(v === 404 ? {} : v);
+      }
       return false;
     },
   });
@@ -154,6 +167,9 @@ export const ADMIN_BASE = {
     categories: ['Resume'],
     clientId: null,
     scope: null,
+    keyId: null,
+    downloadRoute: 'enclosure',
+    profileFallback: false,
   },
   connection: null,
 };
