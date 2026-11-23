@@ -9,6 +9,7 @@ Story IDs (PLAT-02, KNOCK-03 …) appear in code comments and commit messages; k
 2. AISEC-01 before the first provider call from **any** environment. 4. PARSE-06 before MATCH-03.
 3. KNOCK-03 before MATCH-01. 6. EVAL-01/03/06 before any prompt/model reaches a shared environment.
 4. No live candidate data before all 21 R1a gates close (D3).
+5. Oracle import (Stage 3): the connection is switched on only under ADR 0011 (Accepted) and the owner-signed live-data exception in docs/decisions.md; DPO sign-off is still required.
 
 ## Invariants the code must not weaken
 
