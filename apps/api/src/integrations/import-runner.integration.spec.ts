@@ -427,15 +427,15 @@ describeDb('import runner (S3-INT-03, S3-INT-11, S3-INT-12)', () => {
     const src = new MemorySource(makeApps(6));
     runner(h).source = src;
     const rid = await seedRun(h, vid, who.userId, { estimate: 6 });
+    // The role goes during the third download, awaited, so the next check sees it (no race).
     let n = 0;
-    src.downloadFault = () => {
+    src.beforeDownload = async () => {
       n++;
       if (n === 3)
-        void q(
+        await q(
           `UPDATE role_assignment SET revoked_at = now(), revoked_by = $1 WHERE user_id = $1`,
           [who.userId],
         );
-      return null;
     };
     src.hold = 30;
     await drainAll(h);
