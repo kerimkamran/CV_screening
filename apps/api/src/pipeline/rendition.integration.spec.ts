@@ -69,6 +69,14 @@ describeDb('Word rendition queue (Stage 2, S2-BE7)', () => {
                OR (rendition_state IS NULL AND lower(filename) LIKE '%.docx'))`,
       [ids],
     );
+  /**
+   * One conversion of the only waiting CV. LibreOffice can fail a conversion once on a busy machine
+   * (the service tries a file twice, MAX_ATTEMPTS), so this allows that one retry.
+   */
+  const convert = async () => {
+    const r = await svc.runOnce(true);
+    return r === 'retry' ? svc.runOnce(true) : r;
+  };
 
   async function upload(email: string, files: { name: string; data: Buffer }[]) {
     const r = await h.recruiter(email);
@@ -123,7 +131,7 @@ describeDb('Word rendition queue (Stage 2, S2-BE7)', () => {
     expect((await state(id)).priority).toBe(true); // someone looked: front of the line
 
     await only(id);
-    expect(await svc.runOnce(true)).toBe('ready');
+    expect(await convert()).toBe('ready');
     const s = await state(id);
     expect(s).toMatchObject({ state: 'ready', pdf: true, priority: false });
     const after = (await r.api.get(`/documents/${id}`)).json();
@@ -184,7 +192,7 @@ describeDb('Word rendition queue (Stage 2, S2-BE7)', () => {
     const id = idOf('old.docx');
     await h.db.owner.query(`UPDATE cv_document SET rendition_state = NULL WHERE id = $1`, [id]);
     await only(id);
-    expect(await svc.runOnce(true)).toBe('ready');
+    expect(await convert()).toBe('ready');
     expect((await state(id)).state).toBe('ready');
   }, 120_000);
 
@@ -257,7 +265,7 @@ describeDb('Word rendition queue (Stage 2, S2-BE7)', () => {
     ]);
     const id = idOf('erase.docx');
     await only(id);
-    expect(await svc.runOnce(true)).toBe('ready');
+    expect(await convert()).toBe('ready');
     expect((await state(id)).pdf).toBe(true);
     expect((await r.api.post(`/documents/${id}/erase`)).statusCode).toBe(200);
     expect(await state(id)).toMatchObject({ state: null, pdf: false });
