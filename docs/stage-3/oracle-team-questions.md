@@ -15,6 +15,16 @@ Today recruiters upload CVs into Parallax by hand. The owner of Parallax has ask
 
 The other go-live conditions (retention switched on, a decision on antivirus scanning, network access confirmed) are in the plan, section 9, Phase 6.
 
+## Update, 23 November 2026: what changed after the Oracle developer review
+
+Parallax was checked against Oracle's REST documentation and changed in five places. Questions 4, 5, 14 and 17 still stand, but the answers no longer need code changes:
+
+- **Files** are read through the attachment's documented FileContents download (`…/child/attachments/{key}/enclosure/FileContents`), addressed by the attachment's own `self` link, as Oracle asks a client to do. The `FileUrl` link and the inline `FileContents` field remain as fallbacks the administrator can choose under Advanced. Please confirm the account may read attachment contents this way (question 7).
+- **CV categories** are compared without case, spaces, hyphens or underscores, and the default list adds Oracle's resume code. Under Advanced, **Find the category names Oracle uses** reads up to 20 applications of one vacancy and shows only category names and counts, so the administrator can add the right values (question 14).
+- **OAuth JWT assertion** is now supported (RS256, the certificate alias as `kid`, the documented claims). The client signs in with its secret, or with a client assertion signed by the same key (question 5).
+- **Your own domain**: if Oracle is reached through an Azerconnect domain instead of `*.oraclecloud.com`, the operator lists that host on the server (`ORACLE_OWN_HOSTS`). The admin form cannot add one (question 2).
+- **CVs only on the candidate profile**: an Advanced setting, off by default, reads the candidate profile (`recruitingCandidates`, finder `findByPersonId`, field `CandidateNumber` only) when an application has no CV file. Switching it on adds one candidate lookup per such application (questions 16 and 17). Until it is switched on, the statement below that Parallax makes no call to the candidate resource still holds.
+
 ## 1. What Parallax will do
 
 - **It only reads.** Every call to your data is a read (HTTP GET). Parallax never creates, changes or deletes anything in Oracle. If you ask us to sign in with OAuth, there is one extra sign-in call to get a token; it changes no data.
